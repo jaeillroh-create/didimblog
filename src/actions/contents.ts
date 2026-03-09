@@ -112,9 +112,9 @@ const DEMO_STATE_TRANSITIONS: StateTransition[] = [
     entity_type: "content",
     from_status: "S0",
     to_status: "S1",
-    conditions: { briefing_done: true },
-    auto_checks: ["briefing_exists"],
-    description: "기획→초안: 브리핑 완료 필요",
+    conditions: { ai_generation_done: true },
+    auto_checks: ["ai_generation_exists"],
+    description: "기획→초안: AI 초안 생성 완료 필요",
     is_reversible: false,
   },
   {
@@ -211,6 +211,10 @@ function makeDemoContent(overrides: Partial<Content> & { id: string; title: stri
     quality_score_1st: null,
     quality_score_final: null,
     quality_grade: null,
+    ai_generation_id: null,
+    is_ai_generated: false,
+    ai_edited_by: null,
+    ai_edit_ratio: null,
     notes: null,
     created_at: "2026-01-15T00:00:00Z",
     updated_at: "2026-03-01T00:00:00Z",
@@ -517,6 +521,10 @@ export async function createContent(input: CreateContentInput): Promise<{
       quality_score_1st: null,
       quality_score_final: null,
       quality_grade: null,
+      ai_generation_id: null,
+      is_ai_generated: false,
+      ai_edited_by: null,
+      ai_edit_ratio: null,
       notes: null,
     };
 
@@ -577,8 +585,8 @@ export async function validateTransition(
 
       if (content) {
         // 실제 조건 검증
-        if (conditions.briefing_done && !content.briefing_done_at) {
-          failedConditions.push("브리핑이 완료되지 않았습니다.");
+        if (conditions.ai_generation_done && !content.ai_generation_id) {
+          failedConditions.push("AI 초안 생성이 완료되지 않았습니다.");
         }
         if (conditions.review_done && !content.review_done_at) {
           failedConditions.push("검토가 완료되지 않았습니다.");

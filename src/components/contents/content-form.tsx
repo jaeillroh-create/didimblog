@@ -181,7 +181,7 @@ export function ContentForm({
               onChange={(e) => setPublishDate(e.target.value)}
             />
             <p className="text-xs text-[var(--neutral-text-muted)]">
-              SLA: 브리핑 D-5 ({formatDate(slaDates.briefingDue)}) / 초안 D-3 (
+              SLA: AI 주제선정 D-5 ({formatDate(slaDates.briefingDue)}) / 초안 D-3 (
               {formatDate(slaDates.draftDue)}) / 검토 D-2 (
               {formatDate(slaDates.reviewDue)}) / 이미지 D-1 (
               {formatDate(slaDates.imageDue)})

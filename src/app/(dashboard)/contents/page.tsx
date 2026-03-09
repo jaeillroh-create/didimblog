@@ -6,6 +6,7 @@ import {
   getProfiles,
   getStateTransitions,
 } from "@/actions/contents";
+import { getLLMConfigs } from "@/actions/ai";
 
 export default async function ContentsPage() {
   const [
@@ -13,11 +14,13 @@ export default async function ContentsPage() {
     { data: categories },
     { data: profiles },
     { data: transitions },
+    { data: llmConfigs },
   ] = await Promise.all([
     getContents(),
     getCategories(),
     getProfiles(),
     getStateTransitions(),
+    getLLMConfigs(),
   ]);
 
   return (
@@ -32,6 +35,7 @@ export default async function ContentsPage() {
         categories={categories}
         profiles={profiles}
         transitions={transitions}
+        llmConfigs={llmConfigs}
       />
     </div>
   );
