@@ -9,34 +9,86 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: [
+          '"Pretendard Variable"',
+          "Pretendard",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"Segoe UI"',
+          "sans-serif",
+        ],
+        mono: ['"JetBrains Mono"', '"Fira Code"', "Consolas", "monospace"],
+      },
+      fontSize: {
+        xs: "0.75rem",
+        sm: "0.8125rem",
+        base: "0.875rem",
+        md: "1rem",
+        lg: "1.125rem",
+        xl: "1.25rem",
+        "2xl": "1.5rem",
+        "3xl": "1.875rem",
+      },
       colors: {
-        // 디딤 CI 색상
-        navy: {
-          DEFAULT: "#1B3A5C",
-          50: "#EBF0F5",
-          100: "#D7E1EB",
-          200: "#AFC3D7",
-          300: "#87A5C3",
-          400: "#5F87AF",
-          500: "#1B3A5C",
-          600: "#163050",
-          700: "#112644",
-          800: "#0C1C38",
-          900: "#07122C",
+        // 브랜드
+        brand: {
+          primary: "var(--brand-primary)",
+          accent: "var(--brand-accent)",
+          cta: "var(--brand-cta)",
+          "cta-hover": "var(--brand-cta-hover)",
         },
-        orange: {
-          DEFAULT: "#D4740A",
-          50: "#FEF3E6",
-          100: "#FDE7CC",
-          200: "#FBCF99",
-          300: "#F9B766",
-          400: "#F79F33",
-          500: "#D4740A",
-          600: "#AA5D08",
-          700: "#804606",
-          800: "#552F04",
-          900: "#2B1802",
+        // 카테고리
+        category: {
+          "field-note": "var(--category-field-note)",
+          "ip-lounge": "var(--category-ip-lounge)",
+          diary: "var(--category-diary)",
+          intro: "var(--category-intro)",
+          consult: "var(--category-consult)",
         },
+        // 상태
+        status: {
+          s0: "var(--status-s0)",
+          s1: "var(--status-s1)",
+          s2: "var(--status-s2)",
+          s3: "var(--status-s3)",
+          s4: "var(--status-s4)",
+          s5: "var(--status-s5)",
+        },
+        // 품질
+        quality: {
+          excellent: "var(--quality-excellent)",
+          good: "var(--quality-good)",
+          average: "var(--quality-average)",
+          poor: "var(--quality-poor)",
+          critical: "var(--quality-critical)",
+        },
+        // SEO
+        seo: {
+          required: "var(--seo-required)",
+          recommended: "var(--seo-recommended)",
+          optional: "var(--seo-optional)",
+        },
+        // SLA
+        sla: {
+          "on-track": "var(--sla-on-track)",
+          warning: "var(--sla-warning)",
+          overdue: "var(--sla-overdue)",
+          future: "var(--sla-future)",
+        },
+        // 시맨틱
+        semantic: {
+          success: "var(--semantic-success)",
+          warning: "var(--semantic-warning)",
+          error: "var(--semantic-error)",
+          info: "var(--semantic-info)",
+        },
+        // 뉴트럴
+        sidebar: {
+          DEFAULT: "var(--neutral-sidebar)",
+          hover: "var(--neutral-sidebar-hover)",
+        },
+        // shadcn/ui 호환
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -75,6 +127,26 @@ const config: Config = {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      boxShadow: {
+        card: "var(--shadow-card)",
+        "card-hover": "var(--shadow-card-hover)",
+        dropdown: "var(--shadow-dropdown)",
+        modal: "var(--shadow-modal)",
+      },
+      spacing: {
+        sidebar: "var(--sidebar-width)",
+        "sidebar-collapsed": "var(--sidebar-collapsed-width)",
+        header: "var(--header-height)",
+      },
+      transitionDuration: {
+        fast: "150ms",
+        normal: "200ms",
+        slow: "300ms",
+      },
+      width: {
+        sidebar: "var(--sidebar-width)",
+        "sidebar-collapsed": "var(--sidebar-collapsed-width)",
       },
     },
   },

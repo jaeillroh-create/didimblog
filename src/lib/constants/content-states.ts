@@ -1,11 +1,13 @@
-// S0~S5 콘텐츠 상태 정의
+import { colors } from "./design-tokens";
+
+// S0~S5 콘텐츠 상태 정의 — 디자인 토큰 참조
 export const CONTENT_STATES = {
-  S0: { label: "기획중", color: "#94A3B8" },
-  S1: { label: "초안완료", color: "#3B82F6" },
-  S2: { label: "검토완료", color: "#F59E0B" },
-  S3: { label: "발행예정", color: "#8B5CF6" },
-  S4: { label: "발행완료", color: "#10B981" },
-  S5: { label: "성과측정", color: "#EC4899" },
+  S0: { label: "기획중", color: colors.status.s0 },
+  S1: { label: "초안완료", color: colors.status.s1 },
+  S2: { label: "검토완료", color: colors.status.s2 },
+  S3: { label: "발행예정", color: colors.status.s3 },
+  S4: { label: "발행완료", color: colors.status.s4 },
+  S5: { label: "성과측정", color: colors.status.s5 },
 } as const;
 
 export type ContentStatus = keyof typeof CONTENT_STATES;

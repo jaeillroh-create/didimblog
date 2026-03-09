@@ -1,29 +1,109 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 210 40% 98%; /* #F8FAFC */
-    --foreground: 215 28% 17%;
+    /* ── shadcn/ui 기본 변수 ── */
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 215 28% 17%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 215 28% 17%;
-    --primary: 213 52% 23%; /* 네이비 #1B3A5C */
-    --primary-foreground: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 213 52% 23%;
+    --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96%;
-    --secondary-foreground: 215 28% 17%;
+    --secondary-foreground: 222 47% 11%;
     --muted: 210 40% 96%;
     --muted-foreground: 215 16% 47%;
     --accent: 210 40% 96%;
-    --accent-foreground: 215 28% 17%;
+    --accent-foreground: 222 47% 11%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 91%; /* #E2E8F0 */
+    --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 213 52% 23%;
     --radius: 0.5rem;
+
+    /* ── 브랜드 ── */
+    --brand-primary: #1B3A5C;
+    --brand-accent: #2E75B6;
+    --brand-cta: #D4740A;
+    --brand-cta-hover: #B8620A;
+
+    /* ── 카테고리 ── */
+    --category-field-note: #D4740A;
+    --category-ip-lounge: #1B3A5C;
+    --category-diary: #6B7280;
+    --category-intro: #94A3B8;
+    --category-consult: #2E75B6;
+
+    /* ── 콘텐츠 상태 (S0~S5) ── */
+    --status-s0: #94A3B8;
+    --status-s1: #3B82F6;
+    --status-s2: #8B5CF6;
+    --status-s3: #F59E0B;
+    --status-s4: #10B981;
+    --status-s5: #6366F1;
+
+    /* ── 품질 등급 ── */
+    --quality-excellent: #059669;
+    --quality-good: #2563EB;
+    --quality-average: #D97706;
+    --quality-poor: #DC2626;
+    --quality-critical: #7F1D1D;
+
+    /* ── SEO 등급 ── */
+    --seo-required: #DC2626;
+    --seo-recommended: #EA580C;
+    --seo-optional: #6B7280;
+
+    /* ── SLA 상태 ── */
+    --sla-on-track: #10B981;
+    --sla-warning: #F59E0B;
+    --sla-overdue: #DC2626;
+    --sla-future: #E2E8F0;
+
+    /* ── 시맨틱 ── */
+    --semantic-success: #10B981;
+    --semantic-warning: #F59E0B;
+    --semantic-error: #EF4444;
+    --semantic-info: #3B82F6;
+
+    /* ── 뉴트럴 ── */
+    --neutral-bg: #F8FAFC;
+    --neutral-card: #FFFFFF;
+    --neutral-sidebar: #1B3A5C;
+    --neutral-sidebar-hover: #24476E;
+    --neutral-border: #E2E8F0;
+    --neutral-border-hover: #CBD5E1;
+    --neutral-text: #0F172A;
+    --neutral-text-secondary: #64748B;
+    --neutral-text-muted: #94A3B8;
+    --neutral-text-on-dark: #F8FAFC;
+    --neutral-placeholder: #CBD5E1;
+
+    /* ── 레이아웃 ── */
+    --sidebar-width: 240px;
+    --sidebar-collapsed-width: 64px;
+    --header-height: 56px;
+    --page-gutter: 24px;
+    --card-gap: 16px;
+    --section-gap: 32px;
+
+    /* ── 그림자 ── */
+    --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.03);
+    --shadow-card-hover: 0 4px 12px 0 rgba(0, 0, 0, 0.08);
+    --shadow-dropdown: 0 4px 16px 0 rgba(0, 0, 0, 0.12);
+    --shadow-modal: 0 20px 60px 0 rgba(0, 0, 0, 0.15);
+
+    /* ── 트랜지션 ── */
+    --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 }
 
@@ -33,5 +113,8 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.5;
   }
 }
