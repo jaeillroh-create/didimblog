@@ -1,12 +1,12 @@
-"use client";
-
-import { useMemo } from "react";
 import { addWeeks, isBefore, isAfter, startOfWeek } from "date-fns";
 import { PageHeader } from "@/components/common/page-header";
 import { MonthlyCalendar, type ScheduleItem } from "@/components/calendar/monthly-calendar";
 import { RatioGauge } from "@/components/calendar/ratio-gauge";
+import { EmptyState } from "@/components/common/empty-state";
+import { getCalendarSchedules } from "@/actions/calendar";
+import { Calendar } from "lucide-react";
 
-/** 12주 스케줄 원본 데이터 */
+/** 12주 스케줄 원본 데이터 (Supabase 데이터 없을 때 폴백) */
 const SCHEDULE_RAW = [
   { week: 1, category: "현장 수첩", sub: "절세 시뮬레이션", title: "법인세 2억 내던 대표님, 지금은 5천만원입니다", keyword: "직무발명보상금 절세" },
   { week: 2, category: "IP 라운지", sub: "특허 전략 노트", title: "특허 1건으로 벤처인증 + 투자유치 + 정부과제 3마리 토끼", keyword: "스타트업 특허 전략" },
@@ -22,24 +22,18 @@ const SCHEDULE_RAW = [
   { week: 12, category: "디딤 다이어리", sub: "디딤 일상", title: "변리사가 서울대 AI 과정을 듣는 이유" },
 ] as const;
 
-/** 카테고리명 → ID 매핑 */
 const CATEGORY_ID_MAP: Record<string, string> = {
   "현장 수첩": "CAT-A",
   "IP 라운지": "CAT-B",
   "디딤 다이어리": "CAT-C",
 };
 
-/**
- * 12주 스케줄을 실제 화요일 날짜에 매핑하여 ScheduleItem 배열 생성.
- * 첫 번째 화요일: 2026-01-06
- */
-function generateScheduleData(): ScheduleItem[] {
-  const firstTuesday = new Date(2026, 0, 6); // 2026-01-06 화요일
+function generateFallbackSchedules(): ScheduleItem[] {
+  const firstTuesday = new Date(2026, 0, 6);
   const now = new Date();
 
   return SCHEDULE_RAW.map((item) => {
     const plannedDate = addWeeks(firstTuesday, item.week - 1);
-    // 해당 주의 시작 (일요일 기준) 을 구해서 현재 주와 비교
     const weekStart = startOfWeek(now, { weekStartsOn: 0 });
     const itemWeekStart = startOfWeek(plannedDate, { weekStartsOn: 0 });
 
@@ -66,8 +60,10 @@ function generateScheduleData(): ScheduleItem[] {
   });
 }
 
-export default function CalendarPage() {
-  const schedules = useMemo(() => generateScheduleData(), []);
+export default async function CalendarPage() {
+  const dbSchedules = await getCalendarSchedules();
+  const schedules: ScheduleItem[] =
+    dbSchedules.length > 0 ? dbSchedules : generateFallbackSchedules();
 
   return (
     <div className="space-y-6">
@@ -76,34 +72,37 @@ export default function CalendarPage() {
         description="매주 화요일 발행 스케줄"
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        {/* 월별 캘린더 */}
-        <MonthlyCalendar schedules={schedules} />
-
-        {/* 발행 비율 게이지 */}
-        <div className="space-y-6">
-          <RatioGauge schedules={schedules} />
-
-          {/* 범례 카드 */}
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <h3 className="mb-3 text-sm font-semibold">상태 안내</h3>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
-                <span className="text-sm text-muted-foreground">발행 완료</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500" />
-                <span className="text-sm text-muted-foreground">진행 중</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-400" />
-                <span className="text-sm text-muted-foreground">예정</span>
+      {schedules.length === 0 ? (
+        <EmptyState
+          icon={<Calendar className="h-6 w-6" />}
+          title="발행 스케줄이 없습니다"
+          description="콘텐츠를 기획하고 발행일을 설정하면 캘린더에 표시됩니다."
+        />
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+          <MonthlyCalendar schedules={schedules} />
+          <div className="space-y-6">
+            <RatioGauge schedules={schedules} />
+            <div className="rounded-lg border bg-card p-4 shadow-sm">
+              <h3 className="mb-3 text-sm font-semibold">상태 안내</h3>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
+                  <span className="text-sm text-muted-foreground">발행 완료</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500" />
+                  <span className="text-sm text-muted-foreground">진행 중</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-400" />
+                  <span className="text-sm text-muted-foreground">예정</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

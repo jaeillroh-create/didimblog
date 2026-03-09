@@ -1,8 +1,9 @@
 "use server";
 
+import { createClient } from "@/lib/supabase/server";
 import type { Category, CategoryMetric } from "@/lib/types/database";
 
-// ── 데모 카테고리 데이터 ──────────────────────────────────────────
+// ── 데모 카테고리 데이터 (Supabase 미연결 시 폴백) ──
 const DEMO_CATEGORIES: Category[] = [
   {
     id: "CAT-INTRO",
@@ -230,135 +231,41 @@ const DEMO_CATEGORIES: Category[] = [
   },
 ];
 
-// ── 데모 메트릭 데이터 ──────────────────────────────────────────
+// ── 데모 메트릭 데이터 ──
 const DEMO_METRICS: CategoryMetric[] = [
-  // CAT-A 메트릭
-  {
-    id: 1,
-    category_id: "CAT-A",
-    month: "2026-01",
-    published_count: 3,
-    target_ratio: 1.5,
-    total_views: 1850,
-    avg_duration_sec: 185,
-    estimated_conversions: 4,
-    composite_score: 72,
-    grade: "good",
-  },
-  {
-    id: 2,
-    category_id: "CAT-A",
-    month: "2026-02",
-    published_count: 2,
-    target_ratio: 1.0,
-    total_views: 2340,
-    avg_duration_sec: 195,
-    estimated_conversions: 6,
-    composite_score: 78,
-    grade: "good",
-  },
-  {
-    id: 3,
-    category_id: "CAT-A",
-    month: "2026-03",
-    published_count: 4,
-    target_ratio: 2.0,
-    total_views: 2890,
-    avg_duration_sec: 210,
-    estimated_conversions: 8,
-    composite_score: 85,
-    grade: "excellent",
-  },
-  // CAT-B 메트릭
-  {
-    id: 4,
-    category_id: "CAT-B",
-    month: "2026-01",
-    published_count: 1,
-    target_ratio: 1.0,
-    total_views: 980,
-    avg_duration_sec: 145,
-    estimated_conversions: 1,
-    composite_score: 58,
-    grade: "average",
-  },
-  {
-    id: 5,
-    category_id: "CAT-B",
-    month: "2026-02",
-    published_count: 2,
-    target_ratio: 2.0,
-    total_views: 1560,
-    avg_duration_sec: 160,
-    estimated_conversions: 2,
-    composite_score: 65,
-    grade: "good",
-  },
-  {
-    id: 6,
-    category_id: "CAT-B",
-    month: "2026-03",
-    published_count: 1,
-    target_ratio: 1.0,
-    total_views: 2100,
-    avg_duration_sec: 170,
-    estimated_conversions: 3,
-    composite_score: 70,
-    grade: "good",
-  },
-  // CAT-C 메트릭
-  {
-    id: 7,
-    category_id: "CAT-C",
-    month: "2026-01",
-    published_count: 2,
-    target_ratio: 2.0,
-    total_views: 620,
-    avg_duration_sec: 120,
-    estimated_conversions: 0,
-    composite_score: 45,
-    grade: "average",
-  },
-  {
-    id: 8,
-    category_id: "CAT-C",
-    month: "2026-02",
-    published_count: 1,
-    target_ratio: 1.0,
-    total_views: 890,
-    avg_duration_sec: 135,
-    estimated_conversions: 0,
-    composite_score: 52,
-    grade: "average",
-  },
-  {
-    id: 9,
-    category_id: "CAT-C",
-    month: "2026-03",
-    published_count: 2,
-    target_ratio: 2.0,
-    total_views: 1250,
-    avg_duration_sec: 150,
-    estimated_conversions: 1,
-    composite_score: 60,
-    grade: "good",
-  },
+  { id: 1, category_id: "CAT-A", month: "2026-01", published_count: 3, target_ratio: 1.5, total_views: 1850, avg_duration_sec: 185, estimated_conversions: 4, composite_score: 72, grade: "good" },
+  { id: 2, category_id: "CAT-A", month: "2026-02", published_count: 2, target_ratio: 1.0, total_views: 2340, avg_duration_sec: 195, estimated_conversions: 6, composite_score: 78, grade: "good" },
+  { id: 3, category_id: "CAT-A", month: "2026-03", published_count: 4, target_ratio: 2.0, total_views: 2890, avg_duration_sec: 210, estimated_conversions: 8, composite_score: 85, grade: "excellent" },
+  { id: 4, category_id: "CAT-B", month: "2026-01", published_count: 1, target_ratio: 1.0, total_views: 980, avg_duration_sec: 145, estimated_conversions: 1, composite_score: 58, grade: "average" },
+  { id: 5, category_id: "CAT-B", month: "2026-02", published_count: 2, target_ratio: 2.0, total_views: 1560, avg_duration_sec: 160, estimated_conversions: 2, composite_score: 65, grade: "good" },
+  { id: 6, category_id: "CAT-B", month: "2026-03", published_count: 1, target_ratio: 1.0, total_views: 2100, avg_duration_sec: 170, estimated_conversions: 3, composite_score: 70, grade: "good" },
+  { id: 7, category_id: "CAT-C", month: "2026-01", published_count: 2, target_ratio: 2.0, total_views: 620, avg_duration_sec: 120, estimated_conversions: 0, composite_score: 45, grade: "average" },
+  { id: 8, category_id: "CAT-C", month: "2026-02", published_count: 1, target_ratio: 1.0, total_views: 890, avg_duration_sec: 135, estimated_conversions: 0, composite_score: 52, grade: "average" },
+  { id: 9, category_id: "CAT-C", month: "2026-03", published_count: 2, target_ratio: 2.0, total_views: 1250, avg_duration_sec: 150, estimated_conversions: 1, composite_score: 60, grade: "good" },
 ];
 
 /**
  * 전체 카테고리 조회 (sort_order 정렬)
  */
 export async function getCategories(): Promise<Category[]> {
-  // TODO: Supabase 연동 시 아래 코드로 교체
-  // const supabase = await createClient();
-  // const { data, error } = await supabase
-  //   .from("categories")
-  //   .select("*")
-  //   .order("sort_order", { ascending: true });
-  // if (error) throw error;
-  // return data;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("categories")
+      .select("*")
+      .order("sort_order", { ascending: true });
 
-  return DEMO_CATEGORIES.sort((a, b) => a.sort_order - b.sort_order);
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      return data as Category[];
+    }
+
+    return DEMO_CATEGORIES.sort((a, b) => a.sort_order - b.sort_order);
+  } catch (err) {
+    console.error("[getCategories] 에러:", err);
+    return DEMO_CATEGORIES.sort((a, b) => a.sort_order - b.sort_order);
+  }
 }
 
 /**
@@ -367,17 +274,25 @@ export async function getCategories(): Promise<Category[]> {
 export async function getCategoryMetrics(
   categoryId: string
 ): Promise<CategoryMetric[]> {
-  // TODO: Supabase 연동 시 아래 코드로 교체
-  // const supabase = await createClient();
-  // const { data, error } = await supabase
-  //   .from("category_metrics")
-  //   .select("*")
-  //   .eq("category_id", categoryId)
-  //   .order("month", { ascending: true });
-  // if (error) throw error;
-  // return data;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("category_metrics")
+      .select("*")
+      .eq("category_id", categoryId)
+      .order("month", { ascending: true });
 
-  return DEMO_METRICS.filter((m) => m.category_id === categoryId);
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      return data as CategoryMetric[];
+    }
+
+    return DEMO_METRICS.filter((m) => m.category_id === categoryId);
+  } catch (err) {
+    console.error("[getCategoryMetrics] 에러:", err);
+    return DEMO_METRICS.filter((m) => m.category_id === categoryId);
+  }
 }
 
 /**
@@ -388,23 +303,17 @@ export async function updateCategory(
   data: Partial<Omit<Category, "id" | "created_at">>
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // TODO: Supabase 연동 시 아래 코드로 교체
-    // const supabase = await createClient();
-    // const { error } = await supabase
-    //   .from("categories")
-    //   .update(data)
-    //   .eq("id", id);
-    // if (error) throw error;
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("categories")
+      .update(data)
+      .eq("id", id);
 
-    // 데모 모드: 메모리 내 업데이트
-    const idx = DEMO_CATEGORIES.findIndex((c) => c.id === id);
-    if (idx === -1) {
-      return { success: false, error: "카테고리를 찾을 수 없습니다." };
-    }
-    Object.assign(DEMO_CATEGORIES[idx], data);
+    if (error) throw error;
+
     return { success: true };
   } catch (err) {
-    console.error("카테고리 수정 오류:", err);
+    console.error("[updateCategory] 에러:", err);
     return {
       success: false,
       error: "카테고리 수정 중 오류가 발생했습니다.",

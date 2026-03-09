@@ -13,107 +13,87 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/common/empty-state";
+import { getDashboardRecentLeads } from "@/actions/dashboard";
+import { Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** 리드 상태 타입 */
-type LeadStatus = "신규" | "연락완료" | "상담예정" | "계약완료";
-
-/** 리드 항목 */
-interface LeadItem {
-  id: string;
-  name: string;
-  inquiry: string;
-  date: string;
-  status: LeadStatus;
-}
-
-/** 더미 데이터: 최근 리드 5건 */
-const leadsData: LeadItem[] = [
-  {
-    id: "lead-1",
-    name: "김철수",
-    inquiry: "특허 출원 상담",
-    date: "2024-03-08",
-    status: "신규",
-  },
-  {
-    id: "lead-2",
-    name: "이영희",
-    inquiry: "상표 등록 문의",
-    date: "2024-03-07",
-    status: "연락완료",
-  },
-  {
-    id: "lead-3",
-    name: "박민수",
-    inquiry: "PCT 출원 상담",
-    date: "2024-03-06",
-    status: "상담예정",
-  },
-  {
-    id: "lead-4",
-    name: "정수진",
-    inquiry: "디자인 출원",
-    date: "2024-03-05",
-    status: "신규",
-  },
-  {
-    id: "lead-5",
-    name: "최동혁",
-    inquiry: "특허 침해 분석",
-    date: "2024-03-04",
-    status: "계약완료",
-  },
-];
-
 /** 상태별 배지 스타일 */
-const statusStyles: Record<LeadStatus, string> = {
-  신규: "bg-blue-100 text-blue-700 hover:bg-blue-100",
-  연락완료: "bg-amber-100 text-amber-700 hover:bg-amber-100",
-  상담예정: "bg-purple-100 text-purple-700 hover:bg-purple-100",
-  계약완료: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100",
+const STATUS_CONFIG: Record<string, { label: string; style: string }> = {
+  S3: { label: "상담대기", style: "bg-blue-100 text-blue-700 hover:bg-blue-100" },
+  S4: { label: "제안발송", style: "bg-amber-100 text-amber-700 hover:bg-amber-100" },
+  S5: { label: "계약완료", style: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100" },
 };
 
-/** 최근 리드 테이블 카드 */
-export function RecentLeads() {
+const SERVICE_LABELS: Record<string, string> = {
+  tax_consulting: "절세컨설팅",
+  lab_management: "연구소 관리",
+  venture_cert: "벤처인증",
+  invention_cert: "발명진흥",
+  patent: "특허출원",
+  other: "기타",
+};
+
+/** 최근 리드 테이블 카드 — Supabase 데이터 */
+export async function RecentLeads() {
+  const leads = await getDashboardRecentLeads();
+
   return (
     <Card className="h-full">
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold">최근 리드</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>이름</TableHead>
-              <TableHead>문의 내용</TableHead>
-              <TableHead>날짜</TableHead>
-              <TableHead>상태</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {leadsData.map((lead) => (
-              <TableRow key={lead.id}>
-                <TableCell className="font-medium">{lead.name}</TableCell>
-                <TableCell>{lead.inquiry}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {lead.date}
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant="secondary"
-                    className={cn(
-                      "border-none font-medium",
-                      statusStyles[lead.status]
-                    )}
-                  >
-                    {lead.status}
-                  </Badge>
-                </TableCell>
+        {leads.length === 0 ? (
+          <EmptyState
+            icon={<Users className="h-6 w-6" />}
+            title="아직 리드가 없습니다"
+            description="블로그를 통해 유입된 리드가 여기에 표시됩니다."
+            className="py-8"
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>회사명</TableHead>
+                <TableHead>관심 서비스</TableHead>
+                <TableHead>연락일</TableHead>
+                <TableHead>상태</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {leads.map((lead) => {
+                const config = STATUS_CONFIG[lead.visitor_status] ?? {
+                  label: lead.visitor_status,
+                  style: "bg-gray-100 text-gray-700",
+                };
+                return (
+                  <TableRow key={lead.id}>
+                    <TableCell className="font-medium">
+                      {lead.company_name}
+                    </TableCell>
+                    <TableCell>
+                      {lead.interested_service
+                        ? SERVICE_LABELS[lead.interested_service] ?? lead.interested_service
+                        : "-"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {lead.contact_date}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="secondary"
+                        className={cn("border-none font-medium", config.style)}
+                      >
+                        {config.label}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   );
