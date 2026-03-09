@@ -1,7 +1,57 @@
-export default function SettingsPage() {
+import { PageHeader } from "@/components/common/page-header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TeamManagement } from "@/components/settings/team-management";
+import { CtaTemplateEditor } from "@/components/settings/cta-template-editor";
+import { SeoCriteriaEditor } from "@/components/settings/seo-criteria-editor";
+import { StateTransitionEditor } from "@/components/settings/state-transition-editor";
+import {
+  getTeamMembers,
+  getCtaTemplates,
+  getSeoSettings,
+  getAllStateTransitions,
+} from "@/actions/settings";
+
+export default async function SettingsPage() {
+  const [
+    { data: members },
+    { data: ctaTemplates },
+    { data: seoItems },
+    { data: transitions },
+  ] = await Promise.all([
+    getTeamMembers(),
+    getCtaTemplates(),
+    getSeoSettings(),
+    getAllStateTransitions(),
+  ]);
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">설정</h1>
+      <PageHeader title="설정" description="시스템 설정 및 관리" />
+
+      <Tabs defaultValue="team" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="team">팀 관리</TabsTrigger>
+          <TabsTrigger value="cta">CTA 템플릿</TabsTrigger>
+          <TabsTrigger value="seo">SEO 기준</TabsTrigger>
+          <TabsTrigger value="transitions">상태 규칙</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="team">
+          <TeamManagement initialMembers={members} />
+        </TabsContent>
+
+        <TabsContent value="cta">
+          <CtaTemplateEditor initialTemplates={ctaTemplates} />
+        </TabsContent>
+
+        <TabsContent value="seo">
+          <SeoCriteriaEditor initialItems={seoItems} />
+        </TabsContent>
+
+        <TabsContent value="transitions">
+          <StateTransitionEditor initialTransitions={transitions} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
