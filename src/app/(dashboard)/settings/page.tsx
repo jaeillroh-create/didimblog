@@ -6,6 +6,7 @@ import { SeoCriteriaEditor } from "@/components/settings/seo-criteria-editor";
 import { StateTransitionEditor } from "@/components/settings/state-transition-editor";
 import {
   getTeamMembers,
+  getPendingMembers,
   getCtaTemplates,
   getSeoSettings,
   getAllStateTransitions,
@@ -14,11 +15,13 @@ import {
 export default async function SettingsPage() {
   const [
     { data: members },
+    { data: pendingMembers },
     { data: ctaTemplates },
     { data: seoItems },
     { data: transitions },
   ] = await Promise.all([
     getTeamMembers(),
+    getPendingMembers(),
     getCtaTemplates(),
     getSeoSettings(),
     getAllStateTransitions(),
@@ -37,7 +40,7 @@ export default async function SettingsPage() {
         </TabsList>
 
         <TabsContent value="team">
-          <TeamManagement initialMembers={members} />
+          <TeamManagement initialMembers={members} initialPendingMembers={pendingMembers} />
         </TabsContent>
 
         <TabsContent value="cta">

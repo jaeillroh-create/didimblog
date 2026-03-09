@@ -3,7 +3,17 @@ import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import type { Profile } from "@/lib/types/database";
 
-/** 대시보드 레이아웃 — 인증 체크 + 사용자 정보 + 사이드바 + 메인 콘텐츠 영역 */
+const ROLE_LABELS: Record<string, string> = {
+  admin: "관리자",
+  editor: "에디터",
+  designer: "디자이너",
+};
+
+/**
+ * 대시보드 레이아웃
+ * - 인증: 미들웨어에서 1차 처리, 여기서 2차 안전장치 (defense-in-depth)
+ * - 사용자 정보 조회 후 사이드바에 전달
+ */
 export default async function DashboardLayout({
   children,
 }: {
@@ -14,31 +24,24 @@ export default async function DashboardLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
+  // 미들웨어에서 이미 리다이렉트하지만, 안전장치로 유지
   if (!user) {
     redirect("/login");
   }
 
   // profiles 테이블에서 현재 사용자 정보 조회
   let profile: Pick<Profile, "name" | "role"> | null = null;
-  try {
-    const { data } = await supabase
-      .from("profiles")
-      .select("name, role")
-      .eq("id", user.id)
-      .single();
+  const { data } = await supabase
+    .from("profiles")
+    .select("name, role")
+    .eq("id", user.id)
+    .single();
+  if (data) {
     profile = data;
-  } catch {
-    // profiles 테이블이 없거나 조회 실패 시 무시
   }
 
   const userName = profile?.name ?? user.email?.split("@")[0] ?? "사용자";
   const userRole = profile?.role ?? "admin";
-
-  const ROLE_LABELS: Record<string, string> = {
-    admin: "관리자",
-    editor: "에디터",
-    designer: "디자이너",
-  };
 
   return (
     <div className="flex min-h-screen">
