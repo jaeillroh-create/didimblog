@@ -40,6 +40,7 @@ export default function LoginPage() {
       }
 
       toast.success("로그인 성공");
+      router.refresh();
       router.push("/dashboard");
     } catch (error) {
       console.error("로그인 오류:", error);

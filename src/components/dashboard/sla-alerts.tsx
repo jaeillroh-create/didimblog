@@ -4,47 +4,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { EmptyState } from "@/components/common/empty-state";
+import { getDashboardSlaAlerts } from "@/actions/dashboard";
+import { Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** SLA 알림 상태 타입 */
-type SlaStatus = "overdue" | "warning" | "on-track";
-
-/** SLA 알림 항목 */
-interface SlaAlertItem {
-  id: string;
-  status: SlaStatus;
-  statusLabel: string;
-  content: string;
-  timeInfo: string;
-}
-
-/** 더미 데이터: SLA 알림 */
-const alertData: SlaAlertItem[] = [
-  {
-    id: "sla-1",
-    status: "overdue",
-    statusLabel: "초과",
-    content: "현장수첩 #45",
-    timeInfo: "검토 SLA 1일 초과",
-  },
-  {
-    id: "sla-2",
-    status: "warning",
-    statusLabel: "주의",
-    content: "IP라운지 #11",
-    timeInfo: "발행 SLA 내일 마감",
-  },
-  {
-    id: "sla-3",
-    status: "on-track",
-    statusLabel: "정상",
-    content: "현장수첩 #47",
-    timeInfo: "초안 SLA 3일 남음",
-  },
-];
-
 /** 상태별 스타일 매핑 */
-const statusStyles: Record<SlaStatus, { dot: string; text: string; badge: string }> = {
+const statusStyles = {
   overdue: {
     dot: "bg-sla-overdue",
     text: "text-sla-overdue",
@@ -60,53 +26,62 @@ const statusStyles: Record<SlaStatus, { dot: string; text: string; badge: string
     text: "text-sla-on-track",
     badge: "bg-emerald-50 text-sla-on-track",
   },
-};
+} as const;
 
-/** SLA 알림 카드 */
-export function SlaAlerts() {
+/** SLA 알림 카드 — Supabase 데이터 */
+export async function SlaAlerts() {
+  const alerts = await getDashboardSlaAlerts();
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold">SLA 알림</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {alertData.map((alert) => {
-          const style = statusStyles[alert.status];
-          return (
-            <div
-              key={alert.id}
-              className="flex items-center gap-3 rounded-md border p-3"
-            >
-              {/* 상태 도트 */}
-              <span
-                className={cn(
-                  "h-2.5 w-2.5 shrink-0 rounded-full",
-                  style.dot
-                )}
-              />
-              {/* 상태 배지 */}
-              <span
-                className={cn(
-                  "shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold",
-                  style.badge
-                )}
-              >
-                {alert.statusLabel}
-              </span>
-              {/* 콘텐츠 제목 */}
-              <span className="font-medium">{alert.content}</span>
-              {/* 시간 정보 */}
-              <span
-                className={cn(
-                  "ml-auto shrink-0 text-xs font-medium",
-                  style.text
-                )}
-              >
-                {alert.timeInfo}
-              </span>
-            </div>
-          );
-        })}
+      <CardContent>
+        {alerts.length === 0 ? (
+          <EmptyState
+            icon={<Clock className="h-6 w-6" />}
+            title="SLA 알림이 없습니다"
+            description="진행 중인 콘텐츠의 SLA 현황이 여기에 표시됩니다."
+            className="py-8"
+          />
+        ) : (
+          <div className="space-y-3">
+            {alerts.map((alert) => {
+              const style = statusStyles[alert.status];
+              return (
+                <div
+                  key={alert.id}
+                  className="flex items-center gap-3 rounded-md border p-3"
+                >
+                  <span
+                    className={cn(
+                      "h-2.5 w-2.5 shrink-0 rounded-full",
+                      style.dot
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      "shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold",
+                      style.badge
+                    )}
+                  >
+                    {alert.statusLabel}
+                  </span>
+                  <span className="font-medium truncate flex-1">{alert.content}</span>
+                  <span
+                    className={cn(
+                      "ml-auto shrink-0 text-xs font-medium",
+                      style.text
+                    )}
+                  >
+                    {alert.timeInfo}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
