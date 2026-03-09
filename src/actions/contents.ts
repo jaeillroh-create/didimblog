@@ -112,9 +112,9 @@ const DEMO_STATE_TRANSITIONS: StateTransition[] = [
     entity_type: "content",
     from_status: "S0",
     to_status: "S1",
-    conditions: { briefing_done: true },
-    auto_checks: ["briefing_exists"],
-    description: "기획→초안: 브리핑 완료 필요",
+    conditions: { ai_generation_done: true },
+    auto_checks: ["ai_generation_exists"],
+    description: "기획→초안: AI 초안 생성 완료 필요",
     is_reversible: false,
   },
   {
@@ -585,8 +585,8 @@ export async function validateTransition(
 
       if (content) {
         // 실제 조건 검증
-        if (conditions.briefing_done && !content.briefing_done_at) {
-          failedConditions.push("브리핑이 완료되지 않았습니다.");
+        if (conditions.ai_generation_done && !content.ai_generation_id) {
+          failedConditions.push("AI 초안 생성이 완료되지 않았습니다.");
         }
         if (conditions.review_done && !content.review_done_at) {
           failedConditions.push("검토가 완료되지 않았습니다.");

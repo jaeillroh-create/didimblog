@@ -15,7 +15,7 @@ export function formatDateKo(date: Date | string): string {
 // 발행일(화요일) 기준 SLA 날짜 계산
 export function calculateSlaDates(publishDate: Date) {
   return {
-    briefingDue: subDays(publishDate, 5), // D-5 목요일
+    briefingDue: subDays(publishDate, 5), // D-5 목요일 (AI 주제선정+초안생성)
     draftDue: subDays(publishDate, 3), // D-3 토요일
     reviewDue: subDays(publishDate, 2), // D-2 일요일
     imageDue: subDays(publishDate, 1), // D-1 월요일

@@ -5,7 +5,6 @@ import type {
   Category,
   Profile,
   StateTransition,
-  Briefing,
 } from "@/lib/types/database";
 import { ContentDetailClient } from "./content-detail-client";
 
@@ -141,9 +140,9 @@ function getDemoTransitions(): StateTransition[] {
       entity_type: "content",
       from_status: "S0",
       to_status: "S1",
-      conditions: { briefing_done: true },
-      auto_checks: ["briefing_exists"],
-      description: "기획→초안: 브리핑 완료 필요",
+      conditions: { ai_generation_done: true },
+      auto_checks: ["ai_generation_exists"],
+      description: "기획→초안: AI 초안 생성 완료 필요",
       is_reversible: false,
     },
     {
@@ -209,22 +208,6 @@ function getDemoTransitions(): StateTransition[] {
   ];
 }
 
-function getDemoBriefing(contentId: string): Briefing | null {
-  return {
-    id: 1,
-    content_id: contentId,
-    type: "text",
-    file_url: null,
-    key_points: [
-      "법인 설립 후 첫 세금 신고 시기와 종류",
-      "부가가치세, 법인세 신고 절차",
-      "초기 스타트업이 놓치기 쉬운 세무 포인트",
-    ],
-    created_at: "2026-03-11T10:00:00Z",
-    created_by: "user-1",
-  };
-}
-
 interface PageProps {
   params: Promise<{ id: string }>;
 }
@@ -236,13 +219,12 @@ export default async function ContentDetailPage({ params }: PageProps) {
   let categories: Category[] = [];
   let profiles: Profile[] = [];
   let transitions: StateTransition[] = [];
-  let briefing: Briefing | null = null;
 
   try {
     const supabase = await createClient();
 
     // 병렬로 데이터 조회
-    const [contentRes, categoriesRes, profilesRes, transitionsRes, briefingRes] =
+    const [contentRes, categoriesRes, profilesRes, transitionsRes] =
       await Promise.all([
         supabase.from("contents").select("*").eq("id", id).single(),
         supabase.from("categories").select("*").order("sort_order"),
@@ -251,13 +233,6 @@ export default async function ContentDetailPage({ params }: PageProps) {
           .from("state_transitions")
           .select("*")
           .eq("entity_type", "content"),
-        supabase
-          .from("briefings")
-          .select("*")
-          .eq("content_id", id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
       ]);
 
     if (contentRes.data) content = contentRes.data as Content;
@@ -265,7 +240,6 @@ export default async function ContentDetailPage({ params }: PageProps) {
     if (profilesRes.data) profiles = profilesRes.data as Profile[];
     if (transitionsRes.data)
       transitions = transitionsRes.data as StateTransition[];
-    if (briefingRes.data) briefing = briefingRes.data as Briefing;
   } catch {
     console.log("Supabase 연결 실패, 데모 데이터 사용");
   }
@@ -275,7 +249,6 @@ export default async function ContentDetailPage({ params }: PageProps) {
   if (categories.length === 0) categories = getDemoCategories();
   if (profiles.length === 0) profiles = getDemoProfiles();
   if (transitions.length === 0) transitions = getDemoTransitions();
-  if (!briefing) briefing = getDemoBriefing(id);
 
   // SEO 체크 데이터
   const seoCheck = await getSeoCheck(id);
@@ -286,7 +259,6 @@ export default async function ContentDetailPage({ params }: PageProps) {
       categories={categories}
       profiles={profiles}
       transitions={transitions}
-      briefing={briefing}
       seoCheck={seoCheck}
     />
   );

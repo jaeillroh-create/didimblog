@@ -11,7 +11,7 @@ export interface SlaItem {
 }
 
 // SLA 기준 (발행일 기준 역산)
-// D-5 (목요일): 음성 브리핑 완료
+// D-5 (목요일): AI 주제선정 + 초안생성
 // D-3 (토요일): 초안 작성 완료
 // D-2 (일요일): 팩트체크 + 검수 완료
 // D-1 (월요일): 이미지 제작 완료
@@ -22,7 +22,7 @@ export function checkSla(content: Content): SlaItem[] {
 
   const items: SlaItem[] = [
     {
-      label: "브리핑 (D-5)",
+      label: "AI 주제선정 (D-5)",
       dueDate: content.briefing_due,
       completedAt: content.briefing_done_at,
       status: getSlaStatus(content.briefing_due, content.briefing_done_at, now),

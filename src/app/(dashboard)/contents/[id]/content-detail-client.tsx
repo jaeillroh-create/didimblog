@@ -23,13 +23,11 @@ import { QualityScore } from "@/components/contents/quality-score";
 import { saveSeoCheck } from "@/actions/seo-checks";
 import { checkSla } from "@/lib/utils/sla-checker";
 import { CONTENT_STATES } from "@/lib/constants/content-states";
-import { cn } from "@/lib/utils";
 import type {
   Content,
   Category,
   Profile,
   StateTransition,
-  Briefing,
   SeoCheck,
   ContentStatus,
   TargetAudience,
@@ -53,7 +51,6 @@ interface ContentDetailClientProps {
   categories: Category[];
   profiles: Profile[];
   transitions: StateTransition[];
-  briefing: Briefing | null;
   seoCheck: SeoCheck | null;
 }
 
@@ -62,7 +59,6 @@ export function ContentDetailClient({
   categories,
   profiles,
   transitions,
-  briefing: initialBriefing,
   seoCheck,
 }: ContentDetailClientProps) {
   const router = useRouter();
@@ -81,12 +77,6 @@ export function ContentDetailClient({
     content.target_audience ?? ""
   );
 
-  // 브리핑 상태
-  const [briefingText, setBriefingText] = useState("");
-  const [keyPoints, setKeyPoints] = useState<string[]>(
-    initialBriefing?.key_points ?? ["", "", ""]
-  );
-
   // 상태 전이 다이얼로그
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingTransition, setPendingTransition] =
@@ -94,7 +84,6 @@ export function ContentDetailClient({
 
   // 저장 중 상태
   const [isSavingContent, setIsSavingContent] = useState(false);
-  const [isSavingBriefing, setIsSavingBriefing] = useState(false);
 
   // 유효한 전이 목록
   const validTransitions = transitions.filter(
@@ -148,17 +137,6 @@ export function ContentDetailClient({
     }
   }, [title, categoryId, secondaryCategory, targetKeyword, targetAudience]);
 
-  // 브리핑 저장
-  const handleSaveBriefing = useCallback(async () => {
-    setIsSavingBriefing(true);
-    try {
-      // 데모: 로컬 상태만 업데이트
-      console.log("브리핑 저장:", { briefingText, keyPoints });
-    } finally {
-      setIsSavingBriefing(false);
-    }
-  }, [briefingText, keyPoints]);
-
   // 상태 전이
   const handleTransition = useCallback(
     (transition: StateTransition) => {
@@ -187,18 +165,6 @@ export function ContentDetailClient({
       }
     },
     [content.id]
-  );
-
-  // 키포인트 변경
-  const handleKeyPointChange = useCallback(
-    (index: number, value: string) => {
-      setKeyPoints((prev) => {
-        const next = [...prev];
-        next[index] = value;
-        return next;
-      });
-    },
-    []
   );
 
   const statusIndex = ["S0", "S1", "S2", "S3", "S4", "S5"].indexOf(
@@ -338,59 +304,41 @@ export function ContentDetailClient({
             </CardContent>
           </Card>
 
-          {/* 브리핑 섹션 */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">브리핑</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="briefing-text">브리핑 내용</Label>
-                <textarea
-                  id="briefing-text"
-                  className={cn(
-                    "flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2",
-                    "text-sm ring-offset-background placeholder:text-muted-foreground",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                    "disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-                  )}
-                  value={briefingText}
-                  onChange={(e) => setBriefingText(e.target.value)}
-                  placeholder="브리핑 내용을 입력하세요..."
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>핵심 포인트</Label>
-                {keyPoints.map((point, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground w-6 text-center">
-                      {index + 1}
-                    </span>
-                    <Input
-                      value={point}
-                      onChange={(e) =>
-                        handleKeyPointChange(index, e.target.value)
-                      }
-                      placeholder={`핵심 포인트 ${index + 1}`}
-                    />
+          {/* AI 생성 정보 (AI 생성 콘텐츠인 경우) */}
+          {content.is_ai_generated && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" style={{ color: "#7c3aed" }} />
+                  AI 생성 정보
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">생성 방식</span>
+                  <span className="font-medium">AI 자동 생성</span>
+                </div>
+                {content.ai_generation_id && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">생성 ID</span>
+                    <span className="font-medium">#{content.ai_generation_id}</span>
                   </div>
-                ))}
-              </div>
-
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleSaveBriefing}
-                  disabled={isSavingBriefing}
-                  size="sm"
-                  variant="outline"
-                >
-                  <Save className="h-4 w-4 mr-1" />
-                  {isSavingBriefing ? "저장 중..." : "브리핑 저장"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                )}
+                {content.ai_edit_ratio !== null && content.ai_edit_ratio !== undefined && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">편집 비율</span>
+                    <span className="font-medium">{content.ai_edit_ratio}%</span>
+                  </div>
+                )}
+                {content.ai_edited_by && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">편집자</span>
+                    <span className="font-medium">{getProfileName(content.ai_edited_by)}</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* SEO 체크리스트 (S1 이상) */}
           {statusIndex >= 1 && (

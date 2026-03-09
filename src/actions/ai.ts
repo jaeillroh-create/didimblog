@@ -341,7 +341,20 @@ export async function generateDraft(
           })
           .eq("id", llmConfig.id);
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류";
+        let errorMessage = "알 수 없는 오류가 발생했습니다.";
+        if (err instanceof Error) {
+          if (err.message.includes("401") || err.message.includes("authentication") || err.message.includes("Unauthorized")) {
+            errorMessage = "API 키가 유효하지 않습니다. 설정 > AI 설정에서 API 키를 확인해주세요.";
+          } else if (err.message.includes("429") || err.message.includes("rate limit")) {
+            errorMessage = "API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
+          } else if (err.message.includes("timeout") || err.message.includes("ECONNREFUSED") || err.message.includes("ENOTFOUND") || err.message.includes("fetch failed")) {
+            errorMessage = "네트워크 오류가 발생했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.";
+          } else if (err.message.includes("context_length") || err.message.includes("max_tokens") || err.message.includes("too long")) {
+            errorMessage = "입력이 토큰 한도를 초과했습니다. 참고 사항을 줄이고 다시 시도해주세요.";
+          } else {
+            errorMessage = err.message;
+          }
+        }
         await supabase
           .from("ai_generations")
           .update({
@@ -573,7 +586,18 @@ export async function requestCrossValidation(
           })
           .eq("id", validationId);
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "교차검증 실패";
+        let errorMessage = "교차검증에 실패했습니다.";
+        if (err instanceof Error) {
+          if (err.message.includes("401") || err.message.includes("Unauthorized")) {
+            errorMessage = "교차검증용 LLM의 API 키가 유효하지 않습니다. 설정에서 확인해주세요.";
+          } else if (err.message.includes("429") || err.message.includes("rate limit")) {
+            errorMessage = "API 요청 한도 초과. 잠시 후 다시 시도해주세요.";
+          } else if (err.message.includes("timeout") || err.message.includes("fetch failed")) {
+            errorMessage = "네트워크 오류로 교차검증에 실패했습니다. 다시 시도해주세요.";
+          } else {
+            errorMessage = err.message;
+          }
+        }
         await supabase
           .from("ai_generations")
           .update({
@@ -834,9 +858,18 @@ export async function testLLMConnection(
       })
       .eq("id", configId);
 
-    return { success: result };
+    return { success: result, error: result ? undefined : "연결 테스트에 실패했습니다. API 키와 모델 설정을 확인해주세요." };
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류";
+    let errorMessage = "연결 테스트에 실패했습니다.";
+    if (err instanceof Error) {
+      if (err.message.includes("401") || err.message.includes("Unauthorized")) {
+        errorMessage = "API 키가 유효하지 않습니다. 올바른 키를 입력해주세요.";
+      } else if (err.message.includes("fetch failed") || err.message.includes("ENOTFOUND")) {
+        errorMessage = "LLM 서비스에 연결할 수 없습니다. 네트워크를 확인해주세요.";
+      } else {
+        errorMessage = err.message;
+      }
+    }
 
     // 실패 결과 저장
     try {

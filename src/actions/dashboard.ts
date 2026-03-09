@@ -172,7 +172,7 @@ export async function getDashboardSlaAlerts(): Promise<DashboardSlaAlert[]> {
 
     const alerts: DashboardSlaAlert[] = [];
     const SLA_MAP: Record<string, { field: string; label: string }> = {
-      S0: { field: "briefing_due", label: "브리핑" },
+      S0: { field: "briefing_due", label: "AI 주제선정" },
       S1: { field: "draft_due", label: "초안" },
       S2: { field: "review_due", label: "검토" },
       S3: { field: "publish_due", label: "발행" },

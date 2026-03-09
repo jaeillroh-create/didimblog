@@ -44,9 +44,9 @@ const DEMO_STATE_TRANSITIONS: StateTransition[] = [
     entity_type: "content",
     from_status: "S0",
     to_status: "S1",
-    conditions: { briefing_done: true },
-    auto_checks: ["briefing_exists"],
-    description: "기획→초안: 브리핑 완료 필요",
+    conditions: { ai_generation_done: true },
+    auto_checks: ["ai_generation_exists"],
+    description: "기획→초안: AI 초안 생성 완료 필요",
     is_reversible: false,
   },
   {
