@@ -2,19 +2,20 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
   // Supabase auth 쿠키 존재 여부로 세션 확인
-  // @supabase/ssr은 Edge Runtime에서 호환 문제가 있으므로 쿠키 직접 확인
+  // Supabase v2는 sb-<ref>-auth-token 또는 chunked 쿠키(.0, .1 등)를 사용
   const hasAuthCookie = request.cookies
     .getAll()
-    .some(
-      (cookie) =>
-        cookie.name.startsWith("sb-") && cookie.name.endsWith("-auth-token")
-    );
+    .some((cookie) => cookie.name.startsWith("sb-") && cookie.name.includes("-auth-token"));
 
-  const isLoginPage = request.nextUrl.pathname.startsWith("/login");
-  const isAuthCallback = request.nextUrl.pathname.startsWith("/auth");
+  const { pathname } = request.nextUrl;
 
-  // 인증 쿠키가 없고 로그인/auth 페이지가 아니면 리다이렉트
-  if (!hasAuthCookie && !isLoginPage && !isAuthCallback) {
+  // 로그인/auth 경로는 미들웨어 skip
+  if (pathname.startsWith("/login") || pathname.startsWith("/auth")) {
+    return NextResponse.next();
+  }
+
+  // 인증 쿠키가 없으면 로그인으로 리다이렉트
+  if (!hasAuthCookie) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
