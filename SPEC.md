@@ -560,3 +560,26 @@ D-0 (화요일): 최종 편집 + 09:00 예약 발행
 - 데스크톱 우선 (1280px+)
 - 태블릿 지원 (768px+)
 - 모바일은 뷰어 전용 (편집 기능 제한)
+
+## 추가: 컴포넌트 구조 (SPEC.md에 붙여넣기)
+
+### 재사용 가능 공통 컴포넌트 (12개)
+
+| 컴포넌트 | Props | 사용 위치 |
+|---------|-------|----------|
+| StatusBadge | status: 'S0'~'S5', size?: 'sm'|'md' | 칸반카드, 테이블, 상세 |
+| QualityBadge | grade: 'excellent'~'critical' | 테이블, 상세, 분석 |
+| CategoryBadge | categoryId: string | 칸반, 캘린더, 테이블 |
+| SLAIndicator | steps: SLAStep[], current: number | 대시보드, 칸반, 상세 |
+| KPICard | title, value, change?, icon? | 대시보드, 분석 |
+| EmptyState | title, description, action? | 모든 리스트 |
+| LoadingSkeleton | variant: 'card'|'table'|'kanban' | 모든 페이지 |
+| ConfirmDialog | title, message, onConfirm, variant? | 삭제/상태변경 |
+| SearchInput | placeholder, value, onChange, filters? | 콘텐츠, 리드 |
+| DataTable | columns, data, sorting?, pagination? | 리드, 분석 |
+| TimelineStep | steps: Step[], activeIndex | SLA, 파이프라인 |
+| PageHeader | title, description?, actions? | 모든 페이지 |
+
+### 디자인 토큰 파일
+design-tokens.ts → src/lib/constants/design-tokens.ts에 배치
+globals.css에서 CSS 변수로 변환, tailwind.config.ts에서 extend
