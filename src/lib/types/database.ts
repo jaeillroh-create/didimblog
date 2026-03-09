@@ -1,6 +1,6 @@
 // Supabase 데이터베이스 타입 (추후 supabase gen types로 자동생성 대체)
 
-export type UserRole = "admin" | "editor" | "designer";
+export type UserRole = "admin" | "editor" | "designer" | "pending";
 
 export interface Profile {
   id: string;

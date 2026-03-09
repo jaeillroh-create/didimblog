@@ -200,6 +200,7 @@ export async function getTeamMembers(): Promise<{
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
+      .neq("role", "pending")
       .order("name", { ascending: true });
 
     if (error) throw error;
@@ -251,6 +252,75 @@ export async function removeMember(
   } catch (err) {
     console.error("[removeMember] 에러:", err);
     return { error: "멤버 삭제에 실패했습니다." };
+  }
+}
+
+/** pending 사용자 목록 조회 */
+export async function getPendingMembers(): Promise<{
+  data: Profile[];
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("role", "pending")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    return { data: (data as Profile[]) ?? [], error: null };
+  } catch (err) {
+    console.error("[getPendingMembers] 에러:", err);
+    return { data: [], error: null };
+  }
+}
+
+/** pending 사용자 승인 (역할 부여) */
+export async function approveMember(
+  userId: string,
+  role: UserRole
+): Promise<{ error: string | null }> {
+  if (role === "pending") {
+    return { error: "유효한 역할을 선택해주세요." };
+  }
+
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("profiles")
+      .update({ role })
+      .eq("id", userId);
+
+    if (error) throw error;
+
+    return { error: null };
+  } catch (err) {
+    console.error("[approveMember] 에러:", err);
+    return { error: "승인에 실패했습니다." };
+  }
+}
+
+/** pending 사용자 거부 (프로필 삭제) */
+export async function rejectMember(
+  userId: string
+): Promise<{ error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    // profiles 테이블에서 삭제
+    const { error } = await supabase
+      .from("profiles")
+      .delete()
+      .eq("id", userId);
+
+    if (error) throw error;
+
+    return { error: null };
+  } catch (err) {
+    console.error("[rejectMember] 에러:", err);
+    return { error: "거부에 실패했습니다." };
   }
 }
 
