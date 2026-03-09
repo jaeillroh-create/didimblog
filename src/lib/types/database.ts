@@ -68,9 +68,135 @@ export interface Content {
   quality_score_1st: number | null;
   quality_score_final: number | null;
   quality_grade: QualityGrade | null;
+  // AI 관련 필드
+  ai_generation_id: number | null;
+  is_ai_generated: boolean;
+  ai_edited_by: string | null;
+  ai_edit_ratio: number | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ── AI 콘텐츠 생성 엔진 타입 ──
+
+export type LLMProvider = "claude" | "openai" | "gemini";
+export type GenerationStatus = "pending" | "generating" | "completed" | "failed" | "cancelled";
+export type GenerationType = "draft" | "cross_validation" | "regeneration";
+export type TemplateType = "draft_generation" | "cross_validation" | "seo_optimization";
+export type ValidationVerdict = "pass" | "fix_required" | "major_issues";
+export type IssueSeverity = "high" | "medium" | "low";
+export type IssueCategory = "팩트체크" | "논리" | "톤" | "SEO" | "독자" | "CTA";
+
+export interface LLMConfig {
+  id: number;
+  provider: LLMProvider;
+  display_name: string;
+  model_id: string;
+  api_key_encrypted: string | null;
+  is_active: boolean;
+  is_default: boolean;
+  monthly_token_limit: number | null;
+  monthly_tokens_used: number;
+  last_tested_at: string | null;
+  test_result: "success" | "failed" | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+export interface PromptTemplateVariable {
+  name: string;
+  description: string;
+  required: boolean;
+}
+
+export interface PromptTemplateOutputFormat {
+  min_chars?: number;
+  max_chars?: number;
+  image_markers?: { min: number; max: number };
+  include_title?: boolean;
+  include_tags?: boolean;
+  include_cta?: boolean;
+  format?: string;
+  response_schema?: string;
+}
+
+export interface PromptTemplate {
+  id: number;
+  name: string;
+  category_id: string | null;
+  template_type: TemplateType;
+  system_prompt: string;
+  user_prompt_template: string;
+  variables: PromptTemplateVariable[] | null;
+  output_format: PromptTemplateOutputFormat | null;
+  is_active: boolean;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ValidationIssue {
+  category: IssueCategory;
+  severity: IssueSeverity;
+  description: string;
+  suggestion: string;
+}
+
+export interface ValidationResult {
+  llm: LLMProvider;
+  verdict: ValidationVerdict;
+  overall_score: number;
+  issues: ValidationIssue[];
+  strengths: string[];
+  improvement_suggestions: string[];
+}
+
+export interface ImageMarker {
+  position: number;
+  description: string;
+  suggested_type?: string;
+}
+
+export interface AIGeneration {
+  id: number;
+  content_id: string | null;
+  generation_type: GenerationType;
+  topic: string;
+  category_id: string | null;
+  target_keyword: string | null;
+  additional_context: string | null;
+  prompt_template_id: number | null;
+  llm_provider: LLMProvider;
+  llm_model: string;
+  generated_text: string | null;
+  generated_title: string | null;
+  generated_tags: string[] | null;
+  image_markers: ImageMarker[] | null;
+  validation_results: ValidationResult[] | null;
+  status: GenerationStatus;
+  tokens_used: number | null;
+  generation_time_ms: number | null;
+  error_message: string | null;
+  parent_generation_id: number | null;
+  feedback: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
+// LLM 메시지 인터페이스 (프록시 유틸리티용)
+export interface LLMMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface LLMStreamConfig {
+  provider: LLMProvider;
+  model: string;
+  apiKey: string;
+  maxTokens?: number;
+  temperature?: number;
 }
 
 export type SeoVerdict = "pass" | "fix_required" | "blocked";
