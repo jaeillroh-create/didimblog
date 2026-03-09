@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   FileText,
@@ -12,9 +12,12 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavItem } from "@/components/layout/nav-item";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 
 /** 사이드바 네비게이션 메뉴 목록 */
 const NAVIGATION_ITEMS = [
@@ -27,10 +30,29 @@ const NAVIGATION_ITEMS = [
   { href: "/settings", icon: Settings, label: "설정" },
 ] as const;
 
+interface SidebarProps {
+  userName?: string;
+  userRole?: string;
+}
+
 /** 사이드바 컴포넌트 - 네이비 배경, 접기/펼치기 지원 */
-export function Sidebar() {
+export function Sidebar({ userName = "사용자", userRole = "관리자" }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error("로그아웃에 실패했습니다");
+      return;
+    }
+    router.push("/login");
+  };
+
+  // 이름 첫 글자
+  const initial = userName.charAt(0);
 
   return (
     <aside
@@ -72,24 +94,36 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* 하단: 사용자 프로필 영역 */}
+      {/* 하단: 사용자 프로필 영역 + 로그아웃 */}
       <div className="border-t border-white/10 px-3 py-4">
         <div className="flex items-center gap-3">
           {/* 아바타 */}
           <div className="h-8 w-8 flex-shrink-0 rounded-full bg-[var(--brand-cta)] flex items-center justify-center">
-            <span className="text-xs font-medium text-white">관</span>
+            <span className="text-xs font-medium text-white">{initial}</span>
           </div>
 
           {/* 이름 + 역할 - 접힌 상태에서는 숨김 */}
           {!isCollapsed && (
-            <div className="overflow-hidden">
+            <div className="flex-1 overflow-hidden">
               <p className="truncate text-sm font-medium text-[var(--neutral-text-on-dark)]">
-                관리자
+                {userName}
               </p>
               <p className="truncate text-xs text-[var(--neutral-text-on-dark)] opacity-60">
-                운영팀
+                {userRole}
               </p>
             </div>
+          )}
+
+          {/* 로그아웃 버튼 */}
+          {!isCollapsed && (
+            <button
+              onClick={handleLogout}
+              className="shrink-0 rounded p-1 text-[var(--neutral-text-on-dark)] opacity-60 hover:opacity-100 transition-opacity"
+              aria-label="로그아웃"
+              title="로그아웃"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           )}
         </div>
       </div>
