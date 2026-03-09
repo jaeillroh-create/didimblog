@@ -4,6 +4,7 @@ import { TeamManagement } from "@/components/settings/team-management";
 import { CtaTemplateEditor } from "@/components/settings/cta-template-editor";
 import { SeoCriteriaEditor } from "@/components/settings/seo-criteria-editor";
 import { StateTransitionEditor } from "@/components/settings/state-transition-editor";
+import { AiSettings } from "@/components/settings/ai-settings";
 import {
   getTeamMembers,
   getPendingMembers,
@@ -11,6 +12,7 @@ import {
   getSeoSettings,
   getAllStateTransitions,
 } from "@/actions/settings";
+import { getLLMConfigs, getPromptTemplates } from "@/actions/ai";
 
 export default async function SettingsPage() {
   const [
@@ -19,12 +21,16 @@ export default async function SettingsPage() {
     { data: ctaTemplates },
     { data: seoItems },
     { data: transitions },
+    { data: llmConfigs },
+    { data: promptTemplates },
   ] = await Promise.all([
     getTeamMembers(),
     getPendingMembers(),
     getCtaTemplates(),
     getSeoSettings(),
     getAllStateTransitions(),
+    getLLMConfigs(),
+    getPromptTemplates(),
   ]);
 
   return (
@@ -37,6 +43,7 @@ export default async function SettingsPage() {
           <TabsTrigger value="cta">CTA 템플릿</TabsTrigger>
           <TabsTrigger value="seo">SEO 기준</TabsTrigger>
           <TabsTrigger value="transitions">상태 규칙</TabsTrigger>
+          <TabsTrigger value="ai">AI 설정</TabsTrigger>
         </TabsList>
 
         <TabsContent value="team">
@@ -53,6 +60,10 @@ export default async function SettingsPage() {
 
         <TabsContent value="transitions">
           <StateTransitionEditor initialTransitions={transitions} />
+        </TabsContent>
+
+        <TabsContent value="ai">
+          <AiSettings initialConfigs={llmConfigs} initialTemplates={promptTemplates} />
         </TabsContent>
       </Tabs>
     </div>

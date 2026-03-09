@@ -43,6 +43,7 @@ import {
   Calendar,
   FileEdit,
   Info,
+  Sparkles,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
@@ -208,7 +209,20 @@ export function ContentDetailClient({
     <div className="space-y-6">
       {/* 헤더 */}
       <PageHeader
-        title={content.title ?? "제목 없음"}
+        title={
+          <span className="flex items-center gap-2">
+            {content.title ?? "제목 없음"}
+            {content.is_ai_generated && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                style={{ backgroundColor: "#ede9fe", color: "#7c3aed" }}
+              >
+                <Sparkles className="h-3 w-3" />
+                AI 생성
+              </span>
+            )}
+          </span>
+        }
         description={`${CONTENT_STATES[content.status].label} | ${getCategoryName(content.category_id)}`}
       >
         <Button
@@ -496,6 +510,43 @@ export function ContentDetailClient({
               />
             </CardContent>
           </Card>
+
+          {/* AI 생성 정보 (AI 생성 콘텐츠만) */}
+          {content.is_ai_generated && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" style={{ color: "#7c3aed" }} />
+                  AI 생성 정보
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <InfoRow
+                  label="생성 방식"
+                  value="AI 자동 생성"
+                />
+                {content.ai_generation_id && (
+                  <InfoRow
+                    label="생성 ID"
+                    value={`#${content.ai_generation_id}`}
+                  />
+                )}
+                {content.ai_edit_ratio !== null && content.ai_edit_ratio !== undefined && (
+                  <InfoRow
+                    label="편집 비율"
+                    value={`${content.ai_edit_ratio}%`}
+                  />
+                )}
+                {content.ai_edited_by && (
+                  <InfoRow
+                    icon={User}
+                    label="편집자"
+                    value={getProfileName(content.ai_edited_by)}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 

@@ -3,10 +3,11 @@ import { cn } from "@/lib/utils";
 
 interface PageHeaderProps {
   /** 페이지 제목 */
-  title: string;
+  title: React.ReactNode;
   /** 부가 설명 */
   description?: string;
-  /** 우측 액션 영역 (버튼 등) */
+  /** 우측 액션 영역 (버튼 등) — actions 또는 children 사용 가능 */
+  actions?: React.ReactNode;
   children?: React.ReactNode;
   /** 추가 CSS 클래스 */
   className?: string;
@@ -15,7 +16,8 @@ interface PageHeaderProps {
 /**
  * 페이지 상단 헤더 — 좌측에 제목·설명, 우측에 액션 버튼 배치
  */
-export function PageHeader({ title, description, children, className }: PageHeaderProps) {
+export function PageHeader({ title, description, actions, children, className }: PageHeaderProps) {
+  const rightContent = actions || children;
   return (
     <div className={cn("space-y-4", className)}>
       <div className="flex items-start justify-between gap-4">
@@ -25,8 +27,8 @@ export function PageHeader({ title, description, children, className }: PageHead
             <p className="text-sm text-muted-foreground">{description}</p>
           )}
         </div>
-        {children && (
-          <div className="flex shrink-0 items-center gap-2">{children}</div>
+        {rightContent && (
+          <div className="flex shrink-0 items-center gap-2">{rightContent}</div>
         )}
       </div>
       <Separator />

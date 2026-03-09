@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
-import { Plus, RotateCcw } from "lucide-react";
+import { Plus, RotateCcw, Sparkles, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -12,9 +12,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { KanbanColumn } from "@/components/contents/kanban-column";
 import { ContentForm } from "@/components/contents/content-form";
+import { AiDraftDialog } from "@/components/contents/ai-draft-dialog";
 import { CONTENT_STATUS_OPTIONS } from "@/lib/constants/content-states";
 import { CONTENT_STATES } from "@/lib/constants/content-states";
 import { useContentFilterStore } from "@/stores/content-filter";
@@ -28,6 +35,7 @@ import type {
   Profile,
   StateTransition,
   ContentStatus,
+  LLMConfig,
 } from "@/lib/types/database";
 
 interface KanbanBoardProps {
@@ -39,6 +47,8 @@ interface KanbanBoardProps {
   profiles: Profile[];
   /** 상태 전이 규칙 */
   transitions: StateTransition[];
+  /** LLM 설정 (AI 생성용) */
+  llmConfigs?: LLMConfig[];
 }
 
 /**
@@ -49,10 +59,12 @@ export function KanbanBoard({
   categories,
   profiles,
   transitions,
+  llmConfigs = [],
 }: KanbanBoardProps) {
   const router = useRouter();
   const [contents, setContents] = useState(initialContents);
   const [formOpen, setFormOpen] = useState(false);
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [errorDialog, setErrorDialog] = useState<{
     open: boolean;
     title: string;
@@ -234,17 +246,31 @@ export function KanbanBoard({
           </Button>
         )}
 
-        {/* 새 글 만들기 버튼 */}
-        <Button
-          onClick={() => setFormOpen(true)}
-          className="ml-auto"
-          style={{
-            backgroundColor: "var(--brand-cta)",
-          }}
-        >
-          <Plus className="mr-1 h-4 w-4" />
-          새 글 만들기
-        </Button>
+        {/* 새 글 만들기 드롭다운 */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              className="ml-auto"
+              style={{
+                backgroundColor: "var(--brand-cta)",
+              }}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              새 글 만들기
+              <ChevronDown className="ml-1 h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setFormOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              수동 작성
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setAiDialogOpen(true)}>
+              <Sparkles className="mr-2 h-4 w-4" />
+              AI 생성
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* 칸반 보드 */}
@@ -261,12 +287,20 @@ export function KanbanBoard({
         </div>
       </DragDropContext>
 
-      {/* 새 글 만들기 다이얼로그 */}
+      {/* 새 글 만들기 다이얼로그 (수동) */}
       <ContentForm
         open={formOpen}
         onOpenChange={setFormOpen}
         categories={categories}
         onCreated={handleContentCreated}
+      />
+
+      {/* AI 초안 생성 다이얼로그 */}
+      <AiDraftDialog
+        open={aiDialogOpen}
+        onOpenChange={setAiDialogOpen}
+        categories={categories}
+        llmConfigs={llmConfigs}
       />
 
       {/* 에러 다이얼로그 */}

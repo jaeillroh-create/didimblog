@@ -7,7 +7,7 @@ import { CategoryBadge } from "@/components/common/category-badge";
 import { SLAIndicator } from "@/components/common/sla-indicator";
 import type { Category } from "@/lib/types/database";
 import type { ContentWithCategory } from "@/actions/contents";
-import { Calendar } from "lucide-react";
+import { Calendar, Sparkles } from "lucide-react";
 
 // 카테고리 색상 매핑
 const CATEGORY_COLORS: Record<string, string> = {
@@ -93,13 +93,22 @@ export function ContentCard({ content, index, profiles }: ContentCardProps) {
             {content.title ?? "제목 없음"}
           </p>
 
-          {/* 카테고리 배지 */}
-          <div className="mb-2">
+          {/* 배지 영역 */}
+          <div className="mb-2 flex items-center gap-1.5 flex-wrap">
             <CategoryBadge
               categoryId={content.category_id ?? ""}
               categoryName={categoryName}
               color={categoryColor}
             />
+            {content.is_ai_generated && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                style={{ backgroundColor: "#ede9fe", color: "#7c3aed" }}
+              >
+                <Sparkles className="h-2.5 w-2.5" />
+                AI
+              </span>
+            )}
           </div>
 
           {/* 하단 메타 정보 */}

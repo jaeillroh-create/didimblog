@@ -927,3 +927,78 @@ export async function getTopicRecommendations(
     return { success: false, error: errorMessage };
   }
 }
+
+/**
+ * LLM 설정 목록 조회
+ */
+export async function getLLMConfigs(): Promise<{
+  data: LLMConfig[];
+  error?: string;
+}> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("llm_configs")
+      .select("*")
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      return { data: [], error: error.message };
+    }
+    return { data: (data as LLMConfig[]) || [] };
+  } catch {
+    return { data: [] };
+  }
+}
+
+/**
+ * 프롬프트 템플릿 목록 조회
+ */
+export async function getPromptTemplates(
+  categoryId?: string
+): Promise<{ data: PromptTemplate[]; error?: string }> {
+  try {
+    const supabase = await createClient();
+    let query = supabase
+      .from("prompt_templates")
+      .select("*")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+
+    if (categoryId) {
+      query = query.eq("category_id", categoryId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return { data: [], error: error.message };
+    }
+    return { data: (data as PromptTemplate[]) || [] };
+  } catch {
+    return { data: [] };
+  }
+}
+
+/**
+ * AI 생성 이력 조회 (콘텐츠별)
+ */
+export async function getAIGenerations(
+  contentId: string
+): Promise<{ data: AIGeneration[]; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("ai_generations")
+      .select("*")
+      .eq("content_id", contentId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return { data: [], error: error.message };
+    }
+    return { data: (data as AIGeneration[]) || [] };
+  } catch {
+    return { data: [] };
+  }
+}
