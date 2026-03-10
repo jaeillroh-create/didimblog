@@ -45,6 +45,7 @@ export type PromptKey = (typeof PROMPT_KEYS)[keyof typeof PROMPT_KEYS];
 export const CTA_KEYS = {
   현장수첩_절세: "현장수첩_절세",
   현장수첩_인증: "현장수첩_인증",
+  현장수첩_연구소: "현장수첩_연구소",
   IP라운지: "IP라운지",
   디딤다이어리: "디딤다이어리",
 } as const;
@@ -76,7 +77,9 @@ export function getCtaKey(category: string, subCategory: string): CtaKey | null 
   // 현장 수첩: subCategory별 CTA 분기
   if (subCategory === "절세 시뮬레이션") return CTA_KEYS.현장수첩_절세;
   if (subCategory === "인증 가이드") return CTA_KEYS.현장수첩_인증;
-  // 연구소 운영 등 기타 현장 수첩 → 절세 CTA를 기본으로 사용
+  if (subCategory === "연구소 운영" || subCategory === "연구소 운영 실무")
+    return CTA_KEYS.현장수첩_연구소;
+  // 기타 현장 수첩 → 절세 CTA를 기본으로 사용
   return CTA_KEYS.현장수첩_절세;
 }
 
