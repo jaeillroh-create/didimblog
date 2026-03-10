@@ -22,10 +22,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { generateDraft, getTopicRecommendations } from "@/actions/ai";
+import { generateDraft, getPublishedWeeks } from "@/actions/ai";
 import { searchNews, expandKeywords, summarizeSearchResults } from "@/actions/news-search";
 import type { SearchSortOption } from "@/actions/news-search";
 import type { Category, LLMConfig, NewsArticle } from "@/lib/types/database";
+import {
+  SCHEDULE_DATA,
+  CATEGORY_COLORS,
+  getCurrentWeek,
+  getMonthWeeks,
+} from "@/lib/constants/schedule-data";
+import type { ScheduleItem } from "@/lib/constants/schedule-data";
 import {
   Sparkles,
   Lightbulb,
@@ -37,17 +44,9 @@ import {
   X,
   ArrowUpDown,
   FileText,
+  CheckCircle2,
+  Calendar,
 } from "lucide-react";
-
-interface TopicRecommendation {
-  week: number;
-  category: string;
-  sub: string;
-  title: string;
-  keyword: string;
-  cta: string;
-  target: string;
-}
 
 interface AiDraftDialogProps {
   open: boolean;
@@ -66,9 +65,10 @@ export function AiDraftDialog({
   const [isPending, startTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<"recommend" | "manual">("recommend");
 
-  // 추천 주제
-  const [recommendations, setRecommendations] = useState<TopicRecommendation[]>([]);
-  const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+  // 스케줄 추천
+  const [publishedWeeks, setPublishedWeeks] = useState<Set<number>>(new Set());
+  const [blogStartDate, setBlogStartDate] = useState("2026-01-06");
+  const [loadingSchedule, setLoadingSchedule] = useState(true);
 
   // 폼 상태
   const [topic, setTopic] = useState("");
@@ -104,30 +104,46 @@ export function AiDraftDialog({
   );
   const activeConfigs = llmConfigs.filter((c) => c.is_active);
 
-  // 추천 주제 로드
+  // 현재 주차 계산
+  const currentWeek = getCurrentWeek(blogStartDate);
+  const monthWeeks = getMonthWeeks(currentWeek);
+  const isPhase1Complete = currentWeek > 12;
+
+  // 이번 주 스케줄
+  const thisWeekSchedule = SCHEDULE_DATA.find((s) => s.week === currentWeek) || null;
+
+  // 이번 달(4주 묶음) 중 이번 주 제외 + 미발행
+  const monthRemainingSchedules = SCHEDULE_DATA.filter(
+    (s) => monthWeeks.includes(s.week) && s.week !== currentWeek
+  );
+
+  // 발행 완료 상태 로드
   useEffect(() => {
-    if (!open || activeTab !== "recommend" || recommendations.length > 0) return;
+    if (!open) return;
 
     let cancelled = false;
-    setLoadingRecommendations(true);
 
-    getTopicRecommendations().then((result) => {
+    getPublishedWeeks().then((result) => {
       if (cancelled) return;
-      if (result.success && result.topics) {
-        setRecommendations(result.topics);
+      if (result.success) {
+        setPublishedWeeks(new Set(result.publishedWeeks || []));
+        if (result.blogStartDate) {
+          setBlogStartDate(result.blogStartDate);
+        }
       }
-      setLoadingRecommendations(false);
+      setLoadingSchedule(false);
     });
 
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeTab]);
+  }, [open]);
 
-  function selectRecommendation(rec: TopicRecommendation) {
-    setTopic(rec.title);
-    setKeyword(rec.keyword);
+  function selectSchedule(schedule: ScheduleItem) {
+    setTopic(schedule.title);
+    setKeyword(schedule.keywords[0] || "");
+
+    // 카테고리 매핑
     const matched = categories.find((c) =>
-      c.name.includes(rec.category) || rec.category.includes(c.name)
+      c.name.includes(schedule.category) || schedule.category.includes(c.name)
     );
     if (matched) {
       if (matched.tier === "secondary" && matched.parent_id) {
@@ -137,6 +153,8 @@ export function AiDraftDialog({
         setCategoryId(matched.id);
       }
     }
+
+    setActiveTab("manual");
   }
 
   // AI 키워드 확장
@@ -282,6 +300,118 @@ export function AiDraftDialog({
     });
   }
 
+  // 스케줄 카드 렌더링
+  function renderScheduleCard(schedule: ScheduleItem, isMain: boolean) {
+    const isPublished = publishedWeeks.has(schedule.week);
+    const colors = CATEGORY_COLORS[schedule.category] || CATEGORY_COLORS["디딤 다이어리"];
+
+    if (isMain) {
+      return (
+        <div
+          key={schedule.week}
+          className={`rounded-xl border-2 p-4 transition-colors ${
+            isPublished
+              ? "border-gray-200 bg-gray-50 opacity-60"
+              : `${colors.border} bg-white hover:shadow-md`
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Badge className={`${colors.bg} ${colors.text} border-0 text-xs`}>
+                {schedule.category}
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {schedule.subCategory}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-[var(--neutral-text-muted)]">
+                W{schedule.week}
+              </span>
+              {isPublished && (
+                <Badge className="bg-green-100 text-green-700 border-0 text-xs">
+                  <CheckCircle2 className="mr-1 h-3 w-3" />
+                  발행 완료
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          <p className={`text-base font-semibold leading-snug ${isPublished ? "line-through text-gray-400" : ""}`}>
+            {schedule.title}
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {schedule.keywords.map((kw, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center rounded-full bg-[var(--neutral-surface)] px-2.5 py-0.5 text-xs text-[var(--neutral-text-default)]"
+              >
+                {kw}
+              </span>
+            ))}
+          </div>
+
+          {schedule.cta !== "없음" && (
+            <p className="mt-2 text-xs text-[var(--neutral-text-muted)]">
+              CTA: {schedule.cta}
+            </p>
+          )}
+
+          <div className="mt-3">
+            <Button
+              size="sm"
+              disabled={isPublished}
+              onClick={() => selectSchedule(schedule)}
+              style={!isPublished ? { backgroundColor: "var(--brand-accent)" } : undefined}
+              className="w-full"
+            >
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              {isPublished ? "이미 발행됨" : "이 주제로 생성하기"}
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    // 작은 카드 (이번 달 잔여)
+    return (
+      <button
+        key={schedule.week}
+        type="button"
+        disabled={isPublished}
+        onClick={() => !isPublished && selectSchedule(schedule)}
+        className={`w-full rounded-lg border p-3 text-left transition-colors ${
+          isPublished
+            ? "border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed"
+            : "hover:border-[var(--brand-accent)] hover:bg-[var(--neutral-surface)]"
+        }`}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Badge className={`${colors.bg} ${colors.text} border-0 text-[10px] px-1.5 py-0`}>
+              {schedule.category}
+            </Badge>
+            <span className="text-xs text-[var(--neutral-text-muted)]">W{schedule.week}</span>
+          </div>
+          {isPublished && (
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+          )}
+        </div>
+        <p className={`mt-1 text-sm font-medium leading-snug ${isPublished ? "line-through text-gray-400" : ""}`}>
+          {schedule.title}
+        </p>
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {schedule.keywords.slice(0, 2).map((kw, i) => (
+            <span key={i} className="text-[10px] text-[var(--neutral-text-muted)]">
+              #{kw}
+            </span>
+          ))}
+        </div>
+      </button>
+    );
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[680px] max-h-[85vh] overflow-y-auto">
@@ -301,7 +431,7 @@ export function AiDraftDialog({
         >
           <TabsList className="w-full">
             <TabsTrigger value="recommend" className="flex-1">
-              <Lightbulb className="mr-1 h-4 w-4" />
+              <Calendar className="mr-1 h-4 w-4" />
               추천 주제
             </TabsTrigger>
             <TabsTrigger value="manual" className="flex-1">
@@ -309,16 +439,21 @@ export function AiDraftDialog({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="recommend" className="mt-4 space-y-3">
-            {loadingRecommendations ? (
+          <TabsContent value="recommend" className="mt-4 space-y-4">
+            {loadingSchedule ? (
               <div className="py-8 text-center text-sm text-[var(--neutral-text-muted)]">
-                추천 주제를 불러오는 중...
+                <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
+                스케줄을 불러오는 중...
               </div>
-            ) : recommendations.length === 0 ? (
-              <div className="py-8 text-center space-y-2">
-                <p className="text-sm text-[var(--neutral-text-muted)]">
-                  추천 주제 없음 — 직접 입력해주세요
-                </p>
+            ) : isPhase1Complete ? (
+              <div className="py-8 text-center space-y-3">
+                <Lightbulb className="mx-auto h-8 w-8 text-[var(--neutral-text-muted)]" />
+                <div>
+                  <p className="text-sm font-medium">Phase 1 스케줄 완료</p>
+                  <p className="mt-1 text-xs text-[var(--neutral-text-muted)]">
+                    12주 콘텐츠 스케줄이 모두 완료되었습니다. Phase 2 주제를 직접 입력해주세요.
+                  </p>
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -328,32 +463,37 @@ export function AiDraftDialog({
                 </Button>
               </div>
             ) : (
-              recommendations.map((rec, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => {
-                    selectRecommendation(rec);
-                    setActiveTab("manual");
-                  }}
-                  className="w-full rounded-lg border p-3 text-left transition-colors hover:border-[var(--brand-accent)] hover:bg-[var(--neutral-surface)]"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium" style={{ color: "var(--brand-accent)" }}>
-                      {rec.category} {rec.sub ? `> ${rec.sub}` : ""}
-                    </span>
-                    <span className="text-xs text-[var(--neutral-text-muted)]">
-                      W{rec.week}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm font-medium">{rec.title}</p>
-                  {rec.keyword && (
-                    <p className="mt-1 text-xs text-[var(--neutral-text-muted)]">
-                      키워드: {rec.keyword}
-                    </p>
+              <>
+                {/* 영역 1: 이번 주 추천 */}
+                <div>
+                  <h3 className="text-xs font-semibold text-[var(--neutral-text-muted)] uppercase tracking-wider mb-2">
+                    이번 주 추천 · W{currentWeek}
+                  </h3>
+                  {thisWeekSchedule ? (
+                    renderScheduleCard(thisWeekSchedule, true)
+                  ) : (
+                    <div className="rounded-xl border-2 border-dashed border-gray-200 p-4 text-center">
+                      <p className="text-sm text-[var(--neutral-text-muted)]">
+                        이번 주(W{currentWeek})에 해당하는 스케줄이 없습니다.
+                      </p>
+                    </div>
                   )}
-                </button>
-              ))
+                </div>
+
+                {/* 영역 2: 이번 달 잔여 */}
+                {monthRemainingSchedules.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-[var(--neutral-text-muted)] uppercase tracking-wider mb-2">
+                      이번 달 잔여
+                    </h3>
+                    <div className="space-y-2">
+                      {monthRemainingSchedules.map((schedule) =>
+                        renderScheduleCard(schedule, false)
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </TabsContent>
 
