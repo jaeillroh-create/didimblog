@@ -11,6 +11,15 @@ import type {
   LLMConfig,
   ValidationResult,
 } from "@/lib/types/database";
+import {
+  getPromptKey,
+  getFieldCta,
+  SYSTEM_PROMPTS,
+  USER_PROMPTS,
+  validateGeneratedDraft,
+  type PromptKey,
+  type DraftValidationWarning,
+} from "@/lib/constants/prompts";
 
 // ── 타입 정의 ──
 
@@ -20,6 +29,7 @@ interface GenerateDraftInput {
   keyword: string;
   targetAudience?: string;
   additionalContext?: string;
+  subCategoryId?: string;
   llmConfigId?: number;
   contentId?: string;
 }
@@ -27,6 +37,7 @@ interface GenerateDraftInput {
 interface GenerateDraftResult {
   success: boolean;
   generationId?: number;
+  promptKey?: PromptKey;
   error?: string;
 }
 
@@ -36,6 +47,7 @@ interface GenerationStatusResult {
   generatedText?: string | null;
   generatedTitle?: string | null;
   generatedTags?: string[] | null;
+  validationWarnings?: DraftValidationWarning[];
   error?: string;
 }
 
@@ -239,10 +251,14 @@ export async function generateDraft(
       return { success: false, error: "월간 토큰 사용 한도를 초과했습니다." };
     }
 
-    // 2. 프롬프트 템플릿 조회
+    // 2. 프롬프트 키 결정 (category + subCategory → 4개 분기)
+    const effectiveCategoryId = input.subCategoryId || input.categoryId;
+    const promptKey = getPromptKey(effectiveCategoryId);
+
+    // DB 프롬프트 템플릿도 함께 조회 (있으면 우선, 없으면 상수 폴백)
     const template = await getPromptTemplate(
       supabase,
-      input.categoryId,
+      effectiveCategoryId,
       "draft_generation"
     );
 
@@ -282,31 +298,50 @@ export async function generateDraft(
 
         const apiKey = await decryptApiKey(llmConfig.api_key_encrypted!);
 
-        // 메시지 구성
+        // 메시지 구성: DB 템플릿 우선, 없으면 상수 프롬프트 사용
         const messages: LLMMessage[] = [];
+
+        // 현장수첩(PROMPT_FIELD)의 subCategory별 CTA 변수 준비
+        const fieldCta = promptKey === "PROMPT_FIELD"
+          ? getFieldCta(effectiveCategoryId)
+          : { cta: "", emailSubject: "" };
+
+        const templateVariables: Record<string, string> = {
+          topic: input.topic,
+          keyword: input.keyword,
+          target_audience: input.targetAudience || "",
+          additional_context: input.additionalContext || "",
+          subcategory: input.subCategoryId || "",
+          cta_text: fieldCta.cta,
+          email_subject: fieldCta.emailSubject,
+        };
+
         if (template) {
+          // DB 프롬프트 템플릿 사용
           messages.push({
             role: "system",
             content: template.system_prompt,
           });
           messages.push({
             role: "user",
-            content: replaceTemplateVariables(template.user_prompt_template, {
-              topic: input.topic,
-              keyword: input.keyword,
-              target_audience: input.targetAudience || "",
-              additional_context: input.additionalContext || "",
-            }),
+            content: replaceTemplateVariables(
+              template.user_prompt_template,
+              templateVariables
+            ),
           });
         } else {
-          messages.push({
-            role: "system",
-            content: "당신은 특허그룹 디딤의 전문 블로그 작가입니다. 네이버 블로그 SEO를 고려하여 고품질 글을 작성합니다.",
-          });
-          messages.push({
-            role: "user",
-            content: `다음 주제로 블로그 글을 작성해주세요.\n\n주제: ${input.topic}\n핵심 키워드: ${input.keyword}\n${input.targetAudience ? `타깃 고객: ${input.targetAudience}` : ""}\n${input.additionalContext ? `참고 사항: ${input.additionalContext}` : ""}`,
-          });
+          // 상수 프롬프트 폴백 (getPromptKey 기반)
+          const systemPrompt = replaceTemplateVariables(
+            SYSTEM_PROMPTS[promptKey],
+            templateVariables
+          );
+          const userPrompt = replaceTemplateVariables(
+            USER_PROMPTS[promptKey],
+            templateVariables
+          );
+
+          messages.push({ role: "system", content: systemPrompt });
+          messages.push({ role: "user", content: userPrompt });
         }
 
         const streamConfig: LLMStreamConfig = {
@@ -395,7 +430,7 @@ export async function generateDraft(
       }
     })();
 
-    return { success: true, generationId };
+    return { success: true, generationId, promptKey };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류";
     return { success: false, error: errorMessage };
@@ -406,18 +441,28 @@ export async function generateDraft(
  * 생성 상태 조회
  */
 export async function getGenerationStatus(
-  generationId: number
+  generationId: number,
+  promptKeyOverride?: PromptKey
 ): Promise<GenerationStatusResult> {
   try {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("ai_generations")
-      .select("status, generated_text, generated_title, generated_tags, error_message")
+      .select("status, generated_text, generated_title, generated_tags, category_id, error_message")
       .eq("id", generationId)
       .single();
 
     if (error || !data) {
       return { success: false, error: "생성 이력을 찾을 수 없습니다." };
+    }
+
+    // 생성 완료 시 자동 검증
+    let validationWarnings: DraftValidationWarning[] | undefined;
+    if (data.status === "completed" && data.generated_text) {
+      const key = promptKeyOverride || (data.category_id ? getPromptKey(data.category_id) : undefined);
+      if (key) {
+        validationWarnings = validateGeneratedDraft(data.generated_text, key);
+      }
     }
 
     return {
@@ -426,6 +471,7 @@ export async function getGenerationStatus(
       generatedText: data.generated_text,
       generatedTitle: data.generated_title,
       generatedTags: data.generated_tags,
+      validationWarnings: validationWarnings?.length ? validationWarnings : undefined,
       error: data.error_message || undefined,
     };
   } catch (err) {
