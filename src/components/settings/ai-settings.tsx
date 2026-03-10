@@ -92,7 +92,7 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // 뉴스 API 편집 다이얼로그
-  const [editSearchOpen, setEditSearchOpen] = useState(false);
+  const [editSearchProvider, setEditSearchProvider] = useState<"naver" | "google" | null>(null);
   const [searchClientId, setSearchClientId] = useState("");
   const [searchClientSecret, setSearchClientSecret] = useState("");
   const [showSearchSecret, setShowSearchSecret] = useState(false);
@@ -193,14 +193,15 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
     });
   }
 
-  // 네이버 검색 API 설정 저장
+  // 검색 API 설정 저장
   function handleSaveSearchConfig() {
-    if (!searchClientId.trim() || !searchClientSecret.trim()) return;
+    if (!editSearchProvider || !searchClientId.trim() || !searchClientSecret.trim()) return;
 
     startTransition(async () => {
+      const displayName = editSearchProvider === "naver" ? "네이버 검색 API" : "구글 검색 API";
       const result = await saveSearchApiConfig({
-        provider: "naver",
-        displayName: "네이버 검색 API",
+        provider: editSearchProvider,
+        displayName,
         clientId: searchClientId.trim(),
         clientSecret: searchClientSecret.trim(),
       });
@@ -210,12 +211,11 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
         return;
       }
 
-      // 로컬 상태 업데이트
       if (result.configId) {
         const updated: SearchApiConfig = {
           id: result.configId,
-          provider: "naver",
-          display_name: "네이버 검색 API",
+          provider: editSearchProvider,
+          display_name: displayName,
           client_id: searchClientId,
           client_secret_encrypted: "***",
           is_active: true,
@@ -224,7 +224,7 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
           created_by: null,
         };
         setSearchConfigs((prev) => {
-          const idx = prev.findIndex((c) => c.provider === "naver");
+          const idx = prev.findIndex((c) => c.provider === editSearchProvider);
           if (idx >= 0) {
             const next = [...prev];
             next[idx] = updated;
@@ -234,20 +234,21 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
         });
       }
 
-      setTimeout(() => setEditSearchOpen(false), 500);
+      setTimeout(() => setEditSearchProvider(null), 500);
     });
   }
 
-  function openSearchEditDialog() {
-    const existing = searchConfigs.find((c) => c.provider === "naver");
+  function openSearchEditDialog(provider: "naver" | "google") {
+    const existing = searchConfigs.find((c) => c.provider === provider);
     setSearchClientId(existing?.client_id || "");
     setSearchClientSecret("");
     setShowSearchSecret(false);
     setSearchSaveError(null);
-    setEditSearchOpen(true);
+    setEditSearchProvider(provider);
   }
 
   const naverConfig = searchConfigs.find((c) => c.provider === "naver");
+  const googleConfig = searchConfigs.find((c) => c.provider === "google");
 
   return (
     <div className="space-y-6">
@@ -369,44 +370,59 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
             뉴스 검색 API
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between py-2">
+        <CardContent className="space-y-0">
+          {/* 네이버 */}
+          <div className="flex items-center justify-between py-3">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-sm">네이버 검색 API</span>
                 {naverConfig?.is_active ? (
-                  <Badge
-                    variant="outline"
-                    className="text-xs"
-                    style={{
-                      borderColor: "var(--quality-excellent)",
-                      color: "var(--quality-excellent)",
-                    }}
-                  >
+                  <Badge variant="outline" className="text-xs" style={{ borderColor: "var(--quality-excellent)", color: "var(--quality-excellent)" }}>
                     활성
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-xs text-[var(--neutral-text-muted)]">
-                    미설정
-                  </Badge>
+                  <Badge variant="outline" className="text-xs text-[var(--neutral-text-muted)]">미설정</Badge>
                 )}
               </div>
               <p className="text-xs text-[var(--neutral-text-muted)]">
                 {naverConfig?.client_id
                   ? `Client ID: ${naverConfig.client_id.substring(0, 8)}...`
-                  : "AI 초안 생성 시 최신 뉴스를 검색하여 참고자료로 활용합니다."}
+                  : "developers.naver.com에서 검색 API 등록"}
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={openSearchEditDialog}
-            >
+            <Button variant="outline" size="sm" onClick={() => openSearchEditDialog("naver")}>
               {naverConfig ? "수정" : "설정"}
             </Button>
           </div>
-          <p className="mt-2 text-xs text-[var(--neutral-text-muted)]">
-            네이버 개발자 센터(developers.naver.com)에서 검색 API 애플리케이션을 등록하세요.
+
+          <Separator />
+
+          {/* 구글 */}
+          <div className="flex items-center justify-between py-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm">구글 Custom Search API</span>
+                {googleConfig?.is_active ? (
+                  <Badge variant="outline" className="text-xs" style={{ borderColor: "var(--quality-excellent)", color: "var(--quality-excellent)" }}>
+                    활성
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs text-[var(--neutral-text-muted)]">미설정</Badge>
+                )}
+              </div>
+              <p className="text-xs text-[var(--neutral-text-muted)]">
+                {googleConfig?.client_id
+                  ? `Search Engine ID: ${googleConfig.client_id.substring(0, 8)}...`
+                  : "console.cloud.google.com에서 Custom Search API 등록"}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => openSearchEditDialog("google")}>
+              {googleConfig ? "수정" : "설정"}
+            </Button>
+          </div>
+
+          <p className="pt-2 text-xs text-[var(--neutral-text-muted)]">
+            네이버 또는 구글 중 하나만 설정해도 뉴스 검색을 사용할 수 있습니다. 둘 다 설정하면 병행 검색됩니다.
           </p>
         </CardContent>
       </Card>
@@ -640,33 +656,37 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
         </DialogContent>
       </Dialog>
 
-      {/* 네이버 검색 API 설정 Dialog */}
-      <Dialog open={editSearchOpen} onOpenChange={setEditSearchOpen}>
+      {/* 검색 API 설정 Dialog (네이버/구글 공통) */}
+      <Dialog open={!!editSearchProvider} onOpenChange={() => setEditSearchProvider(null)}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>네이버 검색 API 설정</DialogTitle>
+            <DialogTitle>
+              {editSearchProvider === "naver" ? "네이버 검색 API 설정" : "구글 Custom Search API 설정"}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="rounded-md bg-blue-50 p-3 text-xs text-blue-700">
-              네이버 개발자 센터(developers.naver.com) → 애플리케이션 등록 → 검색 API를 선택하면 Client ID와 Client Secret을 받을 수 있습니다.
+              {editSearchProvider === "naver"
+                ? "네이버 개발자 센터(developers.naver.com) → 애플리케이션 등록 → 검색 API를 선택하면 Client ID와 Client Secret을 받을 수 있습니다."
+                : "Google Cloud Console → Custom Search API 활성화 → API 키 생성. Programmable Search Engine(programmablesearchengine.google.com)에서 검색 엔진 ID를 생성하세요."}
             </div>
 
             <div className="space-y-2">
-              <Label>Client ID</Label>
+              <Label>{editSearchProvider === "naver" ? "Client ID" : "Search Engine ID (cx)"}</Label>
               <Input
-                placeholder="네이버 API Client ID"
+                placeholder={editSearchProvider === "naver" ? "네이버 API Client ID" : "Google Search Engine ID"}
                 value={searchClientId}
                 onChange={(e) => setSearchClientId(e.target.value)}
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Client Secret</Label>
+              <Label>{editSearchProvider === "naver" ? "Client Secret" : "API Key"}</Label>
               <div className="relative">
                 <Input
                   type={showSearchSecret ? "text" : "password"}
-                  placeholder="네이버 API Client Secret"
+                  placeholder={editSearchProvider === "naver" ? "네이버 API Client Secret" : "Google API Key"}
                   value={searchClientSecret}
                   onChange={(e) => setSearchClientSecret(e.target.value)}
                 />
@@ -675,11 +695,7 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--neutral-text-muted)]"
                   onClick={() => setShowSearchSecret(!showSearchSecret)}
                 >
-                  {showSearchSecret ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showSearchSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
@@ -692,7 +708,7 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditSearchOpen(false)}>
+            <Button variant="outline" onClick={() => setEditSearchProvider(null)}>
               취소
             </Button>
             <Button

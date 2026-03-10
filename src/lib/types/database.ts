@@ -220,6 +220,7 @@ export interface NewsArticle {
   description: string;
   link: string;
   pubDate: string;
+  source?: SearchApiProvider;
 }
 
 export interface SeoCheck {

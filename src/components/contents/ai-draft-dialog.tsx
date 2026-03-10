@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -22,9 +23,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateDraft, getTopicRecommendations } from "@/actions/ai";
-import { searchNews } from "@/actions/news-search";
+import { searchNews, expandKeywords, summarizeSearchResults } from "@/actions/news-search";
+import type { SearchSortOption } from "@/actions/news-search";
 import type { Category, LLMConfig, NewsArticle } from "@/lib/types/database";
-import { Sparkles, Lightbulb, Newspaper, Loader2, ExternalLink, Check } from "lucide-react";
+import {
+  Sparkles,
+  Lightbulb,
+  Newspaper,
+  Loader2,
+  ExternalLink,
+  Check,
+  Wand2,
+  X,
+  ArrowUpDown,
+  FileText,
+} from "lucide-react";
 
 interface TopicRecommendation {
   week: number;
@@ -72,6 +85,15 @@ export function AiDraftDialog({
   const [selectedNews, setSelectedNews] = useState<Set<number>>(new Set());
   const [searchingNews, setSearchingNews] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
+  const [sortOption, setSortOption] = useState<SearchSortOption>("date");
+
+  // AI 키워드 확장
+  const [expandedKeywords, setExpandedKeywords] = useState<string[]>([]);
+  const [expandingKeywords, setExpandingKeywords] = useState(false);
+
+  // AI 요약
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryText, setSummaryText] = useState<string | null>(null);
 
   // 에러
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +126,6 @@ export function AiDraftDialog({
   function selectRecommendation(rec: TopicRecommendation) {
     setTopic(rec.title);
     setKeyword(rec.keyword);
-    // 카테고리 매핑
     const matched = categories.find((c) =>
       c.name.includes(rec.category) || rec.category.includes(c.name)
     );
@@ -118,9 +139,22 @@ export function AiDraftDialog({
     }
   }
 
+  // AI 키워드 확장
+  async function handleExpandKeywords() {
+    const kw = keyword.trim();
+    if (!kw) return;
+
+    setExpandingKeywords(true);
+    const result = await expandKeywords(kw);
+    if (result.success && result.keywords) {
+      setExpandedKeywords(result.keywords);
+    }
+    setExpandingKeywords(false);
+  }
+
   // 뉴스 검색
-  async function handleSearchNews() {
-    const q = newsQuery.trim() || keyword.trim();
+  async function handleSearchNews(queryOverride?: string) {
+    const q = queryOverride || newsQuery.trim() || keyword.trim();
     if (!q) {
       setNewsError("키워드를 입력하거나 핵심 키워드를 먼저 입력해주세요.");
       return;
@@ -128,8 +162,9 @@ export function AiDraftDialog({
 
     setSearchingNews(true);
     setNewsError(null);
+    setSummaryText(null);
 
-    const result = await searchNews(q, 10);
+    const result = await searchNews(q, 10, sortOption);
 
     if (!result.success) {
       setNewsError(result.error || "뉴스 검색에 실패했습니다.");
@@ -140,6 +175,28 @@ export function AiDraftDialog({
     setNewsResults(result.articles || []);
     setSelectedNews(new Set());
     setSearchingNews(false);
+  }
+
+  // AI 요약
+  async function handleSummarize() {
+    const selected = newsResults.filter((_, i) => selectedNews.has(i));
+    if (selected.length === 0) return;
+
+    setSummarizing(true);
+    const result = await summarizeSearchResults(selected, keyword.trim() || newsQuery.trim());
+    if (result.success && result.summary) {
+      setSummaryText(result.summary);
+    }
+    setSummarizing(false);
+  }
+
+  // 요약 결과를 참고사항에 첨부
+  function applySummary() {
+    if (!summaryText) return;
+    setAdditionalContext((prev) =>
+      prev ? `${prev}\n\n--- AI 뉴스 분석 ---\n${summaryText}` : `--- AI 뉴스 분석 ---\n${summaryText}`
+    );
+    setSummaryText(null);
   }
 
   // 선택된 뉴스를 참고사항에 첨부
@@ -170,6 +227,17 @@ export function AiDraftDialog({
     });
   }
 
+  function formatDate(dateStr: string): string {
+    if (!dateStr) return "";
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return "";
+      return `${d.getMonth() + 1}/${d.getDate()}`;
+    } catch {
+      return "";
+    }
+  }
+
   function resetForm() {
     setTopic("");
     setCategoryId("");
@@ -183,6 +251,9 @@ export function AiDraftDialog({
     setNewsResults([]);
     setSelectedNews(new Set());
     setNewsError(null);
+    setExpandedKeywords([]);
+    setSummaryText(null);
+    setSortOption("date");
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -207,14 +278,13 @@ export function AiDraftDialog({
 
       resetForm();
       onOpenChange(false);
-      // AI 에디터 페이지로 이동
       router.push(`/contents/ai-editor/${result.generationId}`);
     });
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[640px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[680px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" style={{ color: "var(--brand-accent)" }} />
@@ -346,13 +416,55 @@ export function AiDraftDialog({
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="ai-keyword">핵심 키워드 *</Label>
-                  <Input
-                    id="ai-keyword"
-                    placeholder="SEO 핵심 키워드"
-                    value={keyword}
-                    onChange={(e) => setKeyword(e.target.value)}
-                    required
-                  />
+                  <div className="flex gap-1.5">
+                    <Input
+                      id="ai-keyword"
+                      placeholder="SEO 핵심 키워드"
+                      value={keyword}
+                      onChange={(e) => setKeyword(e.target.value)}
+                      required
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0 h-9 w-9"
+                      onClick={handleExpandKeywords}
+                      disabled={expandingKeywords || !keyword.trim()}
+                      title="AI 연관 키워드 확장"
+                    >
+                      {expandingKeywords ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Wand2 className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                  {/* 확장 키워드 pills */}
+                  {expandedKeywords.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {expandedKeywords.map((kw, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            setNewsQuery(kw);
+                            handleSearchNews(kw);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors hover:border-[var(--brand-accent)] hover:bg-[var(--brand-accent)]/5"
+                        >
+                          {kw}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedKeywords([])}
+                        className="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs text-[var(--neutral-text-muted)] hover:text-red-500"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>타깃 고객군</Label>
@@ -391,7 +503,7 @@ export function AiDraftDialog({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={handleSearchNews}
+                    onClick={() => handleSearchNews()}
                     disabled={searchingNews}
                     className="shrink-0"
                   >
@@ -402,13 +514,99 @@ export function AiDraftDialog({
                     )}
                   </Button>
                 </div>
+
+                {/* 정렬 옵션 */}
+                {newsResults.length > 0 && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-[var(--neutral-text-muted)]">
+                        검색 결과 {newsResults.length}건
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = sortOption === "date" ? "relevance" : "date";
+                          setSortOption(next);
+                          handleSearchNews();
+                        }}
+                        className="flex items-center gap-1 text-xs text-[var(--neutral-text-muted)] hover:text-[var(--brand-accent)]"
+                      >
+                        <ArrowUpDown className="h-3 w-3" />
+                        {sortOption === "date" ? "최신순" : "관련순"}
+                      </button>
+                      {selectedNews.size > 0 && (
+                        <>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleSummarize}
+                            disabled={summarizing}
+                            className="text-xs h-7"
+                          >
+                            {summarizing ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              <FileText className="mr-1 h-3 w-3" />
+                            )}
+                            AI 요약
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={applySelectedNews}
+                            className="text-xs h-7"
+                          >
+                            {selectedNews.size}건 첨부
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {newsError && (
                   <p className="text-xs text-red-600">{newsError}</p>
                 )}
 
+                {/* AI 요약 결과 */}
+                {summaryText && (
+                  <div className="rounded-md border border-[var(--brand-accent)]/30 bg-[var(--brand-accent)]/5 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium" style={{ color: "var(--brand-accent)" }}>
+                        AI 뉴스 분석
+                      </span>
+                      <div className="flex gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={applySummary}
+                          className="text-xs h-6 px-2"
+                        >
+                          참고사항에 추가
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => setSummaryText(null)}
+                          className="text-[var(--neutral-text-muted)] hover:text-red-500"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-xs leading-relaxed whitespace-pre-wrap text-[var(--neutral-text-default)]">
+                      {summaryText}
+                    </div>
+                  </div>
+                )}
+
                 {/* 뉴스 결과 */}
                 {newsResults.length > 0 && (
-                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto rounded-md border p-2">
+                  <div className="space-y-1 max-h-[220px] overflow-y-auto rounded-md border p-2">
                     {newsResults.map((article, i) => (
                       <button
                         key={i}
@@ -431,12 +629,32 @@ export function AiDraftDialog({
                             {selectedNews.has(i) && <Check className="h-3 w-3" />}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="font-medium leading-snug line-clamp-1">
-                              {article.title}
-                            </p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-medium leading-snug line-clamp-1 flex-1">
+                                {article.title}
+                              </p>
+                              {article.source && (
+                                <Badge
+                                  variant="outline"
+                                  className="shrink-0 text-[10px] px-1.5 py-0"
+                                  style={
+                                    article.source === "naver"
+                                      ? { borderColor: "#03c75a", color: "#03c75a" }
+                                      : { borderColor: "#4285f4", color: "#4285f4" }
+                                  }
+                                >
+                                  {article.source === "naver" ? "N" : "G"}
+                                </Badge>
+                              )}
+                            </div>
                             <p className="mt-0.5 text-[var(--neutral-text-muted)] line-clamp-2">
                               {article.description}
                             </p>
+                            <div className="mt-1 flex items-center gap-2 text-[var(--neutral-text-muted)]">
+                              {article.pubDate && (
+                                <span className="text-[10px]">{formatDate(article.pubDate)}</span>
+                              )}
+                            </div>
                           </div>
                           <a
                             href={article.link}
@@ -450,18 +668,6 @@ export function AiDraftDialog({
                         </div>
                       </button>
                     ))}
-                    <div className="flex justify-end pt-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={applySelectedNews}
-                        disabled={selectedNews.size === 0}
-                        className="text-xs h-7"
-                      >
-                        선택한 뉴스 {selectedNews.size}건 참고사항에 첨부
-                      </Button>
-                    </div>
                   </div>
                 )}
               </div>
