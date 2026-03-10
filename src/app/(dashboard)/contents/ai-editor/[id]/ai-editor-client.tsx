@@ -354,9 +354,9 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                     color:
                       seoResult.score >= seoResult.totalMax * 0.8
                         ? "var(--quality-excellent)"
-                        : seoResult.score >= seoResult.totalMax * 0.6
+                        : seoResult.score >= seoResult.totalMax * 0.5
                           ? "var(--quality-good)"
-                          : "var(--quality-average)",
+                          : "var(--quality-critical)",
                   }}
                 >
                   {seoResult.score}/{seoResult.totalMax}

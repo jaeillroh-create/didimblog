@@ -672,3 +672,71 @@ export async function updateContentStatus(
     return { data: null, error: "상태 변경에 실패했습니다." };
   }
 }
+
+// ── 콘텐츠 수정 ──
+
+interface UpdateContentInput {
+  title?: string;
+  category_id?: string | null;
+  secondary_category?: string | null;
+  target_keyword?: string | null;
+  target_audience?: string | null;
+}
+
+export async function updateContent(
+  contentId: string,
+  input: UpdateContentInput
+): Promise<{
+  data: Content | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const updateData: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (input.title !== undefined) updateData.title = input.title;
+    if (input.category_id !== undefined) updateData.category_id = input.category_id;
+    if (input.secondary_category !== undefined) updateData.secondary_category = input.secondary_category;
+    if (input.target_keyword !== undefined) updateData.target_keyword = input.target_keyword;
+    if (input.target_audience !== undefined) updateData.target_audience = input.target_audience;
+
+    const { data, error } = await supabase
+      .from("contents")
+      .update(updateData)
+      .eq("id", contentId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return { data: data as Content, error: null };
+  } catch (err) {
+    console.error("[updateContent] 에러:", err);
+    return { data: null, error: "콘텐츠 저장에 실패했습니다." };
+  }
+}
+
+// ── 콘텐츠 삭제 ──
+
+export async function deleteContent(
+  contentId: string
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const supabase = await createClient();
+
+    const { error } = await supabase
+      .from("contents")
+      .delete()
+      .eq("id", contentId);
+
+    if (error) throw error;
+
+    return { success: true, error: null };
+  } catch (err) {
+    console.error("[deleteContent] 에러:", err);
+    return { success: false, error: "콘텐츠 삭제에 실패했습니다." };
+  }
+}

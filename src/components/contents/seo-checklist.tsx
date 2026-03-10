@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -13,42 +13,22 @@ import {
   type SeoItem,
 } from "@/lib/constants/seo-items";
 import type { SeoVerdict } from "@/lib/types/database";
-import { CheckCircle2, AlertTriangle, XCircle, Save } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, Save, Info } from "lucide-react";
 
 interface SeoChecklistProps {
   contentId: string;
   initialItems?: Record<string, { passed: boolean; note: string }>;
   onSave?: (items: Record<string, { passed: boolean; note: string }>) => void;
+  /** 카테고리 ID — CTA 체크 기준 분기 */
+  categoryId?: string | null;
+  /** 현재 콘텐츠 상태 — 예약 시간 필수 여부 분기 */
+  contentStatus?: string;
 }
 
 type SeoItemState = Record<string, { passed: boolean; note: string }>;
 
-const GRADE_CONFIG: Record<
-  SeoGrade,
-  { label: string; total: number; colorVar: string; bgClass: string }
-> = {
-  required: {
-    label: "필수",
-    total: 10,
-    colorVar: "var(--seo-required)",
-    bgClass: "bg-[var(--seo-required)]",
-  },
-  recommended: {
-    label: "권장",
-    total: 5,
-    colorVar: "var(--seo-recommended)",
-    bgClass: "bg-[var(--seo-recommended)]",
-  },
-  optional: {
-    label: "선택",
-    total: 3,
-    colorVar: "var(--seo-optional)",
-    bgClass: "bg-[var(--seo-optional)]",
-  },
-};
-
 const VERDICT_CONFIG: Record<
-  SeoVerdict,
+  SeoVerdict | "preparing",
   { label: string; icon: React.ElementType; className: string }
 > = {
   pass: {
@@ -66,11 +46,70 @@ const VERDICT_CONFIG: Record<
     icon: XCircle,
     className: "text-[var(--semantic-error)]",
   },
+  preparing: {
+    label: "발행 준비 중",
+    icon: Info,
+    className: "text-[var(--neutral-text-muted)]",
+  },
 };
 
-function getVerdict(items: SeoItemState): SeoVerdict {
-  const requiredItems = SEO_ITEMS.filter((i) => i.grade === "required");
-  const recommendedItems = SEO_ITEMS.filter((i) => i.grade === "recommended");
+/**
+ * 카테고리별로 SEO 항목을 조정
+ * - CTA 배치(id:16): 다이어리는 "CTA 없음 확인"으로 변경, IP 뉴스 한 입은 "이웃 추가"로 변경
+ * - 예약 시간(id:18): 발행예정(S3) 이전 단계에서는 제외
+ */
+function getAdjustedItems(
+  categoryId?: string | null,
+  contentStatus?: string
+): { items: SeoItem[]; excludedIds: Set<number> } {
+  const excludedIds = new Set<number>();
+  const items = SEO_ITEMS.map((item) => {
+    // 예약 시간: S3 이전 단계에서는 제외
+    if (item.id === 18) {
+      const statusOrder = ["S0", "S1", "S2", "S3", "S4", "S5"];
+      const idx = statusOrder.indexOf(contentStatus || "S0");
+      if (idx < 3) {
+        // S0, S1, S2에서는 예약 시간 비필수 (제외)
+        excludedIds.add(18);
+        return item;
+      }
+    }
+
+    // CTA 배치: 카테고리별 기준 변경
+    if (item.id === 16 && categoryId) {
+      // 디딤 다이어리 (CAT-C): CTA 없음 확인
+      if (categoryId === "CAT-C" || categoryId.startsWith("CAT-C-")) {
+        return { ...item, label: "CTA 없음 확인", description: "CTA 키워드 미포함" };
+      }
+      // IP 뉴스 한 입 (CAT-B-03): 이웃 추가 유도
+      if (categoryId === "CAT-B-03") {
+        return { ...item, label: "CTA 배치", description: "이웃 추가 유도" };
+      }
+      // IP 라운지 (CAT-B): 이웃 추가 유도
+      if (categoryId === "CAT-B" || categoryId.startsWith("CAT-B-")) {
+        return { ...item, label: "CTA 배치", description: "이웃 추가 + 이메일 안내" };
+      }
+    }
+
+    return item;
+  });
+
+  return { items: items.filter((i) => !excludedIds.has(i.id)), excludedIds };
+}
+
+function getVerdict(
+  items: SeoItemState,
+  activeItems: SeoItem[],
+  contentStatus?: string
+): SeoVerdict | "preparing" {
+  // 기획중(S0), 초안완료(S1)에서는 "발행 준비 중"
+  const earlyStatuses = ["S0", "S1"];
+  if (earlyStatuses.includes(contentStatus || "S0")) {
+    return "preparing";
+  }
+
+  const requiredItems = activeItems.filter((i) => i.grade === "required");
+  const recommendedItems = activeItems.filter((i) => i.grade === "recommended");
 
   const requiredPass = requiredItems.filter(
     (i) => items[String(i.id)]?.passed
@@ -79,29 +118,39 @@ function getVerdict(items: SeoItemState): SeoVerdict {
     (i) => items[String(i.id)]?.passed
   ).length;
 
-  if (requiredPass < 10) return "blocked";
+  if (requiredPass < requiredItems.length) return "blocked";
   const recommendedFail = recommendedItems.length - recommendedPass;
   if (recommendedFail > 2) return "fix_required";
   return "pass";
 }
 
-function getGradePassCount(grade: SeoGrade, items: SeoItemState): number {
-  return SEO_ITEMS.filter(
+function getGradePassCount(grade: SeoGrade, items: SeoItemState, activeItems: SeoItem[]): number {
+  return activeItems.filter(
     (i) => i.grade === grade && items[String(i.id)]?.passed
   ).length;
 }
 
+function getGradeTotal(grade: SeoGrade, activeItems: SeoItem[]): number {
+  return activeItems.filter((i) => i.grade === grade).length;
+}
+
 /**
- * SEO 18항목 체크리스트 컴포넌트
+ * SEO 체크리스트 컴포넌트 — 카테고리/상태 인식
  */
 export function SeoChecklist({
   contentId,
   initialItems,
   onSave,
+  categoryId,
+  contentStatus,
 }: SeoChecklistProps) {
+  const { items: activeItems, excludedIds } = useMemo(
+    () => getAdjustedItems(categoryId, contentStatus),
+    [categoryId, contentStatus]
+  );
+
   const [items, setItems] = useState<SeoItemState>(() => {
     if (initialItems) return initialItems;
-    // 기본 빈 상태
     const defaultItems: SeoItemState = {};
     SEO_ITEMS.forEach((item) => {
       defaultItems[String(item.id)] = { passed: false, note: "" };
@@ -141,14 +190,14 @@ export function SeoChecklist({
     }
   }, [items, onSave]);
 
-  const verdict = getVerdict(items);
+  const verdict = getVerdict(items, activeItems, contentStatus);
   const verdictConfig = VERDICT_CONFIG[verdict];
   const VerdictIcon = verdictConfig.icon;
 
   const grouped: Record<SeoGrade, SeoItem[]> = {
-    required: SEO_ITEMS.filter((i) => i.grade === "required"),
-    recommended: SEO_ITEMS.filter((i) => i.grade === "recommended"),
-    optional: SEO_ITEMS.filter((i) => i.grade === "optional"),
+    required: activeItems.filter((i) => i.grade === "required"),
+    recommended: activeItems.filter((i) => i.grade === "recommended"),
+    optional: activeItems.filter((i) => i.grade === "optional"),
   };
 
   return (
@@ -178,12 +227,20 @@ export function SeoChecklist({
       <CardContent className="space-y-4">
         {(["required", "recommended", "optional"] as SeoGrade[]).map(
           (grade) => {
-            const config = GRADE_CONFIG[grade];
-            const passCount = getGradePassCount(grade, items);
+            const gradeItems = grouped[grade];
+            if (gradeItems.length === 0) return null;
+            const passCount = getGradePassCount(grade, items, activeItems);
+            const total = getGradeTotal(grade, activeItems);
+
+            const gradeConfig: Record<SeoGrade, { label: string; bgClass: string }> = {
+              required: { label: "필수", bgClass: "bg-[var(--seo-required)]" },
+              recommended: { label: "권장", bgClass: "bg-[var(--seo-recommended)]" },
+              optional: { label: "선택", bgClass: "bg-[var(--seo-optional)]" },
+            };
+            const config = gradeConfig[grade];
 
             return (
               <div key={grade} className="space-y-2">
-                {/* 등급 헤더 */}
                 <div className="flex items-center gap-2">
                   <Badge
                     className={cn(
@@ -194,13 +251,12 @@ export function SeoChecklist({
                     {config.label}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
-                    {passCount}/{config.total} 통과
+                    {passCount}/{total} 통과
                   </span>
                 </div>
 
-                {/* 항목 리스트 */}
                 <div className="space-y-1.5">
-                  {grouped[grade].map((item) => {
+                  {gradeItems.map((item) => {
                     const state = items[String(item.id)];
                     return (
                       <div

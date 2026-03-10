@@ -14,12 +14,14 @@ interface KanbanColumnProps {
   contents: ContentWithCategory[];
   /** 프로필 목록 (카드에 전달) */
   profiles: { id: string; name: string }[];
+  /** 콘텐츠 삭제 후 콜백 */
+  onContentDeleted?: () => void;
 }
 
 /**
  * 칸반보드의 단일 칼럼 — Droppable 영역
  */
-export function KanbanColumn({ status, contents, profiles }: KanbanColumnProps) {
+export function KanbanColumn({ status, contents, profiles, onContentDeleted }: KanbanColumnProps) {
   const state = CONTENT_STATES[status];
 
   return (
@@ -69,6 +71,7 @@ export function KanbanColumn({ status, contents, profiles }: KanbanColumnProps) 
                   content={content}
                   index={index}
                   profiles={profiles}
+                  onDeleted={onContentDeleted}
                 />
               ))
             )}

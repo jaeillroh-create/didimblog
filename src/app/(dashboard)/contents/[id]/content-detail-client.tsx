@@ -20,6 +20,7 @@ import { TimelineStep } from "@/components/common/timeline-step";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { SeoChecklist } from "@/components/contents/seo-checklist";
 import { QualityScore } from "@/components/contents/quality-score";
+import { updateContent, deleteContent } from "@/actions/contents";
 import { saveSeoCheck } from "@/actions/seo-checks";
 import { checkSla } from "@/lib/utils/sla-checker";
 import { CONTENT_STATES } from "@/lib/constants/content-states";
@@ -42,9 +43,11 @@ import {
   FileEdit,
   Info,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
+import { toast } from "sonner";
 
 interface ContentDetailClientProps {
   content: Content;
@@ -81,6 +84,10 @@ export function ContentDetailClient({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingTransition, setPendingTransition] =
     useState<StateTransition | null>(null);
+
+  // 삭제 다이얼로그
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // 저장 중 상태
   const [isSavingContent, setIsSavingContent] = useState(false);
@@ -122,20 +129,56 @@ export function ContentDetailClient({
   const handleSaveContent = useCallback(async () => {
     setIsSavingContent(true);
     try {
-      // 데모: 로컬 상태만 업데이트
+      const secCat = secondaryCategory === "none" ? null : secondaryCategory || null;
+      const { data, error } = await updateContent(content.id, {
+        title,
+        category_id: categoryId || null,
+        secondary_category: secCat,
+        target_keyword: targetKeyword || null,
+        target_audience: (targetAudience as TargetAudience) || null,
+      });
+
+      if (error) {
+        toast.error(error);
+        return;
+      }
+
+      // 로컬 상태 업데이트
       setContent((prev) => ({
         ...prev,
         title,
         category_id: categoryId || null,
-        secondary_category: secondaryCategory === "none" ? null : secondaryCategory || null,
+        secondary_category: secCat,
         target_keyword: targetKeyword || null,
         target_audience: (targetAudience as TargetAudience) || null,
-        updated_at: new Date().toISOString(),
+        updated_at: data?.updated_at ?? new Date().toISOString(),
       }));
+      toast.success("저장되었습니다");
+    } catch {
+      toast.error("저장에 실패했습니다.");
     } finally {
       setIsSavingContent(false);
     }
-  }, [title, categoryId, secondaryCategory, targetKeyword, targetAudience]);
+  }, [content.id, title, categoryId, secondaryCategory, targetKeyword, targetAudience]);
+
+  // 콘텐츠 삭제
+  const handleDelete = useCallback(async () => {
+    setIsDeleting(true);
+    try {
+      const { success, error } = await deleteContent(content.id);
+      if (!success) {
+        toast.error(error || "삭제에 실패했습니다.");
+        return;
+      }
+      toast.success("삭제되었습니다");
+      router.push("/contents");
+    } catch {
+      toast.error("삭제에 실패했습니다.");
+    } finally {
+      setIsDeleting(false);
+      setDeleteOpen(false);
+    }
+  }, [content.id, router]);
 
   // 상태 전이
   const handleTransition = useCallback(
@@ -146,15 +189,26 @@ export function ContentDetailClient({
     []
   );
 
-  const confirmTransition = useCallback(() => {
+  const confirmTransition = useCallback(async () => {
     if (!pendingTransition) return;
+    const { updateContentStatus } = await import("@/actions/contents");
+    const { error } = await updateContentStatus(
+      content.id,
+      pendingTransition.to_status as ContentStatus
+    );
+    if (error) {
+      toast.error(error);
+      setPendingTransition(null);
+      return;
+    }
     setContent((prev) => ({
       ...prev,
       status: pendingTransition.to_status as ContentStatus,
       updated_at: new Date().toISOString(),
     }));
+    toast.success(`상태가 변경되었습니다`);
     setPendingTransition(null);
-  }, [pendingTransition]);
+  }, [pendingTransition, content.id]);
 
   // SEO 체크 저장
   const handleSaveSeoCheck = useCallback(
@@ -191,14 +245,25 @@ export function ContentDetailClient({
         }
         description={`${CONTENT_STATES[content.status]?.label ?? content.status} | ${getCategoryName(content.category_id)}`}
       >
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => router.push("/contents")}
-        >
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          목록
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/contents")}
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            목록
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            삭제
+          </Button>
+        </div>
       </PageHeader>
 
       {/* 2-column 레이아웃 */}
@@ -346,6 +411,8 @@ export function ContentDetailClient({
               contentId={content.id}
               initialItems={seoCheck?.items}
               onSave={handleSaveSeoCheck}
+              categoryId={content.category_id}
+              contentStatus={content.status}
             />
           )}
         </div>
@@ -508,6 +575,20 @@ export function ContentDetailClient({
         }
         confirmLabel="변경"
         onConfirm={confirmTransition}
+      />
+
+      {/* 삭제 확인 다이얼로그 */}
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="콘텐츠 삭제"
+        description={
+          content.status === "S4" || content.status === "S5"
+            ? "발행된 콘텐츠입니다. 삭제하시겠습니까? 네이버 블로그에서도 별도 삭제가 필요합니다."
+            : "이 콘텐츠를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
+        }
+        confirmLabel={isDeleting ? "삭제 중..." : "삭제"}
+        onConfirm={handleDelete}
       />
     </div>
   );

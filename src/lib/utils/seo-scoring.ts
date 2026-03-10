@@ -1,6 +1,6 @@
 import { getPromptKey, type PromptKey } from "@/lib/constants/prompts";
 
-// ── 카테고리별 SEO 채점 기준 ──
+// ── 카테고리별 SEO 채점 기준 (부분 점수 적용) ──
 
 export interface SeoCheckItem {
   label: string;
@@ -39,8 +39,55 @@ function countTags(text: string): number {
   return (text.match(/#[^\s#]+/g) || []).length;
 }
 
-function charCount(text: string): number {
+function chars(text: string): number {
   return text.replace(/\s/g, "").length;
+}
+
+// ── 부분 점수 헬퍼 ──
+
+/** 제목 길이 점수 (기준 25~30자) */
+function scoreTitleLength(len: number, max: number): number {
+  if (len >= 25 && len <= 30) return max;
+  if ((len >= 20 && len <= 24) || (len >= 31 && len <= 35)) return Math.round(max * 0.7);
+  if ((len >= 15 && len <= 19) || (len >= 36 && len <= 40)) return Math.round(max * 0.4);
+  return 0;
+}
+
+/** 키워드 횟수 점수 (현장수첩/라운지: 3~5회) */
+function scoreKeywordCount35(count: number, max: number): number {
+  if (count >= 3 && count <= 5) return max;
+  if (count === 2 || count === 6) return Math.round(max * 0.67);
+  if (count === 1) return Math.round(max * 0.33);
+  return 0; // 0회 또는 7+
+}
+
+/** 키워드 횟수 점수 (뉴스 한 입: 2~3회) */
+function scoreKeywordCount23(count: number, max: number): number {
+  if (count >= 2 && count <= 3) return max;
+  if (count === 1 || count === 4) return Math.round(max * 0.5);
+  return 0;
+}
+
+/** 분량 점수 (현장수첩/라운지: 1,500~2,000자) */
+function scoreChars1500_2000(c: number, max: number): number {
+  if (c >= 1500 && c <= 2000) return max;
+  if ((c >= 1200 && c < 1500) || (c > 2000 && c <= 2500)) return Math.round(max * 0.67);
+  if ((c >= 800 && c < 1200) || (c > 2500 && c <= 3000)) return Math.round(max * 0.33);
+  return 0;
+}
+
+/** 분량 점수 (뉴스 한 입: 800~1,200자) */
+function scoreChars800_1200(c: number, max: number): number {
+  if (c >= 800 && c <= 1200) return max;
+  if ((c >= 600 && c < 800) || (c > 1200 && c <= 1500)) return Math.round(max * 0.5);
+  return 0;
+}
+
+/** 분량 점수 (다이어리: 800~1,500자) */
+function scoreChars800_1500(c: number, max: number): number {
+  if (c >= 800 && c <= 1500) return max;
+  if ((c >= 500 && c < 800) || (c > 1500 && c <= 2000)) return Math.round(max * 0.5);
+  return 0;
 }
 
 // ── 현장수첩 (CAT-A) / IP 라운지 일반 (CAT-B) ──
@@ -55,7 +102,7 @@ function scoreFieldOrLounge(
   const kwCount = countKeyword(text, keyword);
   const headings = countHeadings(text);
   const images = countImageMarkers(text);
-  const chars = charCount(text);
+  const c = chars(text);
   const tags = countTags(text);
   const hasCta = isLounge
     ? text.includes("이웃") || text.includes("추가")
@@ -67,12 +114,16 @@ function scoreFieldOrLounge(
   const keywordInFirst15 =
     keyword.length > 0 && title.substring(0, 15).includes(keyword);
 
+  const titleScore = scoreTitleLength(titleLen, 15);
+  const kwScore = scoreKeywordCount35(kwCount, 15);
+  const charScore = scoreChars1500_2000(c, 15);
+
   return [
     {
       label: "제목 길이 25~30자",
       passed: titleLen >= 25 && titleLen <= 30,
       detail: `${titleLen}자`,
-      score: titleLen >= 25 && titleLen <= 30 ? 15 : 0,
+      score: titleScore,
       maxScore: 15,
     },
     {
@@ -86,7 +137,7 @@ function scoreFieldOrLounge(
       label: "본문 키워드 3~5회",
       passed: kwCount >= 3 && kwCount <= 5,
       detail: `${kwCount}회`,
-      score: kwCount >= 3 && kwCount <= 5 ? 15 : kwCount >= 1 ? 7 : 0,
+      score: kwScore,
       maxScore: 15,
     },
     {
@@ -100,19 +151,14 @@ function scoreFieldOrLounge(
       label: "이미지 마커 3개 이상",
       passed: images >= 3,
       detail: `${images}개`,
-      score: images >= 3 ? 10 : images >= 1 ? 5 : 0,
+      score: images >= 3 ? 10 : images >= 2 ? 7 : images >= 1 ? 3 : 0,
       maxScore: 10,
     },
     {
       label: "본문 1,500~2,000자",
-      passed: chars >= 1500 && chars <= 2000,
-      detail: `${chars.toLocaleString()}자`,
-      score:
-        chars >= 1500 && chars <= 2000
-          ? 15
-          : chars >= 1200 && chars <= 2500
-            ? 8
-            : 0,
+      passed: c >= 1500 && c <= 2000,
+      detail: `${c.toLocaleString()}자`,
+      score: charScore,
       maxScore: 15,
     },
     {
@@ -143,19 +189,23 @@ function scoreBite(
   const kwCount = countKeyword(text, keyword);
   const headings = countHeadings(text);
   const images = countImageMarkers(text);
-  const chars = charCount(text);
+  const c = chars(text);
   const tags = countTags(text);
   const hasCta = text.includes("이웃") || text.includes("추가");
 
   const keywordInFirst15 =
     keyword.length > 0 && title.substring(0, 15).includes(keyword);
 
+  const titleScore = scoreTitleLength(titleLen, 20);
+  const kwScore = scoreKeywordCount23(kwCount, 15);
+  const charScore = scoreChars800_1200(c, 20);
+
   return [
     {
       label: "제목 길이 25~30자",
       passed: titleLen >= 25 && titleLen <= 30,
       detail: `${titleLen}자`,
-      score: titleLen >= 25 && titleLen <= 30 ? 20 : 0,
+      score: titleScore,
       maxScore: 20,
     },
     {
@@ -169,7 +219,7 @@ function scoreBite(
       label: "본문 키워드 2~3회",
       passed: kwCount >= 2 && kwCount <= 3,
       detail: `${kwCount}회`,
-      score: kwCount >= 2 && kwCount <= 3 ? 15 : kwCount >= 1 ? 7 : 0,
+      score: kwScore,
       maxScore: 15,
     },
     {
@@ -188,14 +238,9 @@ function scoreBite(
     },
     {
       label: "본문 800~1,200자",
-      passed: chars >= 800 && chars <= 1200,
-      detail: `${chars.toLocaleString()}자`,
-      score:
-        chars >= 800 && chars <= 1200
-          ? 20
-          : chars >= 600 && chars <= 1500
-            ? 10
-            : 0,
+      passed: c >= 800 && c <= 1200,
+      detail: `${c.toLocaleString()}자`,
+      score: charScore,
       maxScore: 20,
     },
     {
@@ -226,19 +271,27 @@ function scoreDiary(
   const kwCount = countKeyword(text, keyword);
   const headings = countHeadings(text);
   const images = countImageMarkers(text);
-  const chars = charCount(text);
+  const c = chars(text);
   const tags = countTags(text);
 
-  // CTA 없음 확인 (CTA 키워드 감지되면 실패)
   const ctaFound = DIARY_CTA_KEYWORDS.filter((kw) => text.includes(kw));
   const noCta = ctaFound.length === 0;
+
+  // 다이어리 제목은 15~30자 허용 (더 유연)
+  const titleScore =
+    titleLen >= 15 && titleLen <= 30 ? 15
+    : (titleLen >= 10 && titleLen < 15) || (titleLen > 30 && titleLen <= 35) ? Math.round(15 * 0.7)
+    : titleLen >= 5 ? Math.round(15 * 0.3)
+    : 0;
+
+  const charScore = scoreChars800_1500(c, 25);
 
   return [
     {
       label: "제목 길이 15~30자",
       passed: titleLen >= 15 && titleLen <= 30,
       detail: `${titleLen}자`,
-      score: titleLen >= 15 && titleLen <= 30 ? 15 : 0,
+      score: titleScore,
       maxScore: 15,
     },
     {
@@ -264,14 +317,9 @@ function scoreDiary(
     },
     {
       label: "본문 800~1,500자",
-      passed: chars >= 800 && chars <= 1500,
-      detail: `${chars.toLocaleString()}자`,
-      score:
-        chars >= 800 && chars <= 1500
-          ? 25
-          : chars >= 500 && chars <= 2000
-            ? 12
-            : 0,
+      passed: c >= 800 && c <= 1500,
+      detail: `${c.toLocaleString()}자`,
+      score: charScore,
       maxScore: 25,
     },
     {

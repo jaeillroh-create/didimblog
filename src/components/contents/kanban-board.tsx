@@ -84,13 +84,23 @@ export function KanbanBoard({
 
   // 필터 적용
   const filteredContents = useMemo(() => {
+    // 선택된 1차 카테고리의 하위 카테고리 ID 집합 구성
+    const allowedCategoryIds = new Set<string>();
+    if (filterCategoryId) {
+      allowedCategoryIds.add(filterCategoryId);
+      // 하위 카테고리(secondary)도 포함
+      categories
+        .filter((c) => c.parent_id === filterCategoryId)
+        .forEach((c) => allowedCategoryIds.add(c.id));
+    }
+
     return contents.filter((c) => {
-      if (filterCategoryId && c.category_id !== filterCategoryId) return false;
+      if (filterCategoryId && !allowedCategoryIds.has(c.category_id ?? "")) return false;
       if (filterStatus && c.status !== filterStatus) return false;
       if (filterAuthorId && c.author_id !== filterAuthorId) return false;
       return true;
     });
-  }, [contents, filterCategoryId, filterStatus, filterAuthorId]);
+  }, [contents, filterCategoryId, filterStatus, filterAuthorId, categories]);
 
   // 상태별로 콘텐츠 그룹핑
   const columnData = useMemo(() => {
@@ -282,6 +292,7 @@ export function KanbanBoard({
               status={status}
               contents={columnData[status]}
               profiles={profiles}
+              onContentDeleted={handleContentCreated}
             />
           ))}
         </div>
