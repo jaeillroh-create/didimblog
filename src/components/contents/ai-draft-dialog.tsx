@@ -25,7 +25,8 @@ import {
 import { generateDraft, getPublishedWeeks } from "@/actions/ai";
 import { searchNews, expandKeywords, summarizeSearchResults } from "@/actions/news-search";
 import type { SearchSortOption } from "@/actions/news-search";
-import type { Category, LLMConfig, NewsArticle } from "@/lib/types/database";
+import type { Category, LLMConfig, LLMProvider, NewsArticle } from "@/lib/types/database";
+import { PROVIDER_INFO, PROVIDERS, DEFAULT_MODEL_ID, DEFAULT_PROVIDER } from "@/lib/constants/llm-models";
 import {
   SCHEDULE_DATA,
   CATEGORY_COLORS,
@@ -46,6 +47,7 @@ import {
   FileText,
   CheckCircle2,
   Calendar,
+  AlertCircle,
 } from "lucide-react";
 
 interface AiDraftDialogProps {
@@ -103,6 +105,25 @@ export function AiDraftDialog({
     (c) => c.tier === "secondary" && c.parent_id === categoryId
   );
   const activeConfigs = llmConfigs.filter((c) => c.is_active);
+
+  // 전체 모델 목록 구성 (DB config 있으면 매핑, 없으면 미설정 표시)
+  const allModels = PROVIDERS.flatMap((provider) =>
+    PROVIDER_INFO[provider].models.map((model) => {
+      const dbConfig = activeConfigs.find(
+        (c) => c.provider === provider && c.model_id === model.id
+      );
+      // provider 수준 매칭 (모델이 다르더라도 같은 provider의 config 사용 가능)
+      const providerConfig = activeConfigs.find((c) => c.provider === provider);
+      return {
+        ...model,
+        provider,
+        providerLabel: PROVIDER_INFO[provider].label,
+        configId: dbConfig?.id ?? providerConfig?.id ?? null,
+        hasApiKey: !!(dbConfig?.api_key_encrypted ?? providerConfig?.api_key_encrypted),
+        isDefault: dbConfig?.is_default ?? providerConfig?.is_default ?? false,
+      };
+    })
+  );
 
   // 현재 주차 계산
   const currentWeek = getCurrentWeek(blogStartDate);
@@ -286,13 +307,19 @@ export function AiDraftDialog({
 
     setError(null);
     startTransition(async () => {
+      // 모델 ID → DB config ID 매핑
+      const selectedModel = selectedLlmId
+        ? allModels.find((m) => m.id === selectedLlmId)
+        : null;
+      const llmConfigId = selectedModel?.configId ?? undefined;
+
       const result = await generateDraft({
         topic: topic.trim(),
         categoryId: secondaryCategory || categoryId,
         keyword: keyword.trim(),
         targetAudience: targetAudience || undefined,
         additionalContext: additionalContext.trim() || undefined,
-        llmConfigId: selectedLlmId ? parseInt(selectedLlmId) : undefined,
+        llmConfigId,
       });
 
       if (!result.success) {
@@ -831,24 +858,52 @@ export function AiDraftDialog({
               </div>
 
               {/* LLM 모델 선택 */}
-              {activeConfigs.length > 0 && (
-                <div className="space-y-2">
-                  <Label>LLM 모델</Label>
-                  <Select value={selectedLlmId} onValueChange={setSelectedLlmId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="기본 LLM 사용" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {activeConfigs.map((config) => (
-                        <SelectItem key={config.id} value={String(config.id)}>
-                          {config.display_name}
-                          {config.is_default && " (기본)"}
+              <div className="space-y-2">
+                <Label>LLM 모델</Label>
+                <Select
+                  value={selectedLlmId}
+                  onValueChange={(v) => {
+                    const model = allModels.find((m) => m.id === v);
+                    if (model && !model.hasApiKey) {
+                      setError(`${model.providerLabel}의 API 키가 설정되지 않았습니다. 설정 > AI 설정에서 API 키를 먼저 등록해주세요.`);
+                      return;
+                    }
+                    setError(null);
+                    setSelectedLlmId(v);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="기본 LLM 사용" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROVIDERS.map((provider) => {
+                      const models = allModels.filter((m) => m.provider === provider);
+                      return models.map((model) => (
+                        <SelectItem
+                          key={model.id}
+                          value={model.id}
+                          className={!model.hasApiKey ? "opacity-60" : ""}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            {model.name}
+                            {model.isDefault && (
+                              <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                                기본
+                              </Badge>
+                            )}
+                            {!model.hasApiKey && (
+                              <AlertCircle className="h-3 w-3 text-[var(--semantic-warning)]" />
+                            )}
+                          </span>
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+                      ));
+                    })}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-[var(--neutral-text-muted)]">
+                  비워두면 기본 LLM을 사용합니다. API 키 미설정 모델은 선택 시 안내됩니다.
+                </p>
+              </div>
 
               {error && (
                 <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">

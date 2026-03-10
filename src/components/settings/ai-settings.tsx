@@ -24,6 +24,7 @@ import {
 import { saveLLMConfig, testLLMConnection } from "@/actions/ai";
 import { saveSearchApiConfig } from "@/actions/news-search";
 import type { LLMConfig, LLMProvider, PromptTemplate, SearchApiConfig } from "@/lib/types/database";
+import { PROVIDER_INFO, PROVIDERS } from "@/lib/constants/llm-models";
 import {
   CheckCircle2,
   XCircle,
@@ -41,38 +42,6 @@ interface AiSettingsProps {
   initialTemplates: PromptTemplate[];
   initialSearchConfigs?: SearchApiConfig[];
 }
-
-const PROVIDER_INFO: Record<
-  LLMProvider,
-  { label: string; models: { id: string; name: string }[] }
-> = {
-  claude: {
-    label: "Claude (Anthropic)",
-    models: [
-      { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
-      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-    ],
-  },
-  openai: {
-    label: "OpenAI (GPT)",
-    models: [
-      { id: "gpt-5.4", name: "GPT-5.4" },
-      { id: "gpt-5.4-pro", name: "GPT-5.4 Pro" },
-      { id: "gpt-5.3-instant", name: "GPT-5.3 Instant" },
-      { id: "gpt-5-mini", name: "GPT-5 mini" },
-    ],
-  },
-  gemini: {
-    label: "Google (Gemini)",
-    models: [
-      { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" },
-      { id: "gemini-3-flash-preview", name: "Gemini 3 Flash" },
-      { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite" },
-    ],
-  },
-};
-
-const PROVIDERS: LLMProvider[] = ["claude", "openai", "gemini"];
 
 export function AiSettings({ initialConfigs, initialTemplates, initialSearchConfigs = [] }: AiSettingsProps) {
   const [configs, setConfigs] = useState<LLMConfig[]>(initialConfigs);
