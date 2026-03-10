@@ -141,17 +141,23 @@ export function AiDraftDialog({
     setTopic(schedule.title);
     setKeyword(schedule.keywords[0] || "");
 
-    // 카테고리 매핑
-    const matched = categories.find((c) =>
-      c.name.includes(schedule.category) || schedule.category.includes(c.name)
+    // 1차: primary 카테고리 매핑
+    const primaryMatch = categories.find(
+      (c) =>
+        c.tier === "primary" &&
+        (c.name.includes(schedule.category) || schedule.category.includes(c.name))
     );
-    if (matched) {
-      if (matched.tier === "secondary" && matched.parent_id) {
-        setCategoryId(matched.parent_id);
-        setSecondaryCategory(matched.id);
-      } else {
-        setCategoryId(matched.id);
-      }
+    if (primaryMatch) {
+      setCategoryId(primaryMatch.id);
+
+      // 2차: subCategory → secondary 카테고리 매핑
+      const secondaryMatch = categories.find(
+        (c) =>
+          c.tier === "secondary" &&
+          c.parent_id === primaryMatch.id &&
+          (c.name.includes(schedule.subCategory) || schedule.subCategory.includes(c.name))
+      );
+      setSecondaryCategory(secondaryMatch?.id || "");
     }
 
     setActiveTab("manual");
@@ -282,7 +288,7 @@ export function AiDraftDialog({
     startTransition(async () => {
       const result = await generateDraft({
         topic: topic.trim(),
-        categoryId,
+        categoryId: secondaryCategory || categoryId,
         keyword: keyword.trim(),
         targetAudience: targetAudience || undefined,
         additionalContext: additionalContext.trim() || undefined,

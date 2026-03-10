@@ -31,6 +31,66 @@ export const CATEGORY_COLORS: Record<string, { bg: string; text: string; border:
   "디딤 다이어리": { bg: "bg-gray-50", text: "text-gray-600", border: "border-gray-200" },
 };
 
+// ── 프롬프트 키 상수 ──
+export const PROMPT_KEYS = {
+  PROMPT_DIARY: "PROMPT_DIARY",
+  PROMPT_LOUNGE_BITE: "PROMPT_LOUNGE_BITE",
+  PROMPT_LOUNGE_GENERAL: "PROMPT_LOUNGE_GENERAL",
+  PROMPT_FIELD: "PROMPT_FIELD",
+} as const;
+
+export type PromptKey = (typeof PROMPT_KEYS)[keyof typeof PROMPT_KEYS];
+
+// ── CTA 키 상수 ──
+export const CTA_KEYS = {
+  현장수첩_절세: "현장수첩_절세",
+  현장수첩_인증: "현장수첩_인증",
+  현장수첩_연구소: "현장수첩_연구소",
+  IP라운지: "IP라운지",
+  디딤다이어리: "디딤다이어리",
+} as const;
+
+export type CtaKey = (typeof CTA_KEYS)[keyof typeof CTA_KEYS];
+
+/**
+ * 카테고리/서브카테고리 → 프롬프트 템플릿 키 매핑
+ * - 디딤 다이어리: 브랜딩 톤 (CTA 없음)
+ * - IP 라운지 > IP 뉴스 한 입: 뉴스 큐레이션 톤
+ * - IP 라운지 (기타): IP 전략/교양 톤
+ * - 변리사의 현장 수첩: 실무 사례 톤 (subCategory별 CTA만 다름)
+ */
+export function getPromptKey(category: string, subCategory: string): PromptKey {
+  if (category === "디딤 다이어리") return PROMPT_KEYS.PROMPT_DIARY;
+  if (category === "IP 라운지" && subCategory === "IP 뉴스 한 입")
+    return PROMPT_KEYS.PROMPT_LOUNGE_BITE;
+  if (category === "IP 라운지") return PROMPT_KEYS.PROMPT_LOUNGE_GENERAL;
+  return PROMPT_KEYS.PROMPT_FIELD;
+}
+
+/**
+ * 카테고리/서브카테고리 → CTA 템플릿 키 매핑
+ * cta_templates.json 키와 일치
+ */
+export function getCtaKey(category: string, subCategory: string): CtaKey | null {
+  if (category === "디딤 다이어리") return null; // CTA 없음
+  if (category === "IP 라운지") return CTA_KEYS.IP라운지;
+  // 현장 수첩: subCategory별 CTA 분기
+  if (subCategory === "절세 시뮬레이션") return CTA_KEYS.현장수첩_절세;
+  if (subCategory === "인증 가이드") return CTA_KEYS.현장수첩_인증;
+  if (subCategory === "연구소 운영" || subCategory === "연구소 운영 실무")
+    return CTA_KEYS.현장수첩_연구소;
+  // 기타 현장 수첩 → 절세 CTA를 기본으로 사용
+  return CTA_KEYS.현장수첩_절세;
+}
+
+// ── 프롬프트 키 → DB prompt_templates.name 매핑 ──
+export const PROMPT_KEY_TO_TEMPLATE_NAME: Record<PromptKey, string> = {
+  PROMPT_DIARY: "디딤다이어리_일반",
+  PROMPT_LOUNGE_BITE: "IP라운지_뉴스",
+  PROMPT_LOUNGE_GENERAL: "IP라운지_일반",
+  PROMPT_FIELD: "현장수첩_절세",
+};
+
 /** 기본 블로그 시작일 */
 export const DEFAULT_BLOG_START_DATE = "2026-01-06";
 
