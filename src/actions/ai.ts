@@ -99,6 +99,13 @@ interface TopicRecommendation {
   target: string;
 }
 
+interface PublishedWeeksResult {
+  success: boolean;
+  publishedWeeks?: number[];
+  blogStartDate?: string;
+  error?: string;
+}
+
 // ── 헬퍼 함수 ──
 
 function replaceTemplateVariables(
@@ -999,6 +1006,104 @@ export async function getTopicRecommendations(): Promise<{
     return { success: true, topics: [] };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류";
+    return { success: false, error: errorMessage };
+  }
+}
+
+/**
+ * 발행 완료된 주차 목록 조회 + 블로그 시작일
+ * 12주 스케줄 기반으로 어떤 주의 글이 이미 발행됐는지 확인
+ */
+export async function getPublishedWeeks(): Promise<PublishedWeeksResult> {
+  try {
+    const supabase = await createClient();
+
+    // 블로그 시작일 조회 (site_settings 테이블)
+    let blogStartDate = "2026-01-06";
+    const { data: setting } = await supabase
+      .from("site_settings")
+      .select("value")
+      .eq("key", "blog_start_date")
+      .maybeSingle();
+
+    if (setting?.value) {
+      blogStartDate = setting.value;
+    }
+
+    // 발행된 콘텐츠 조회 (S3 이상)
+    const { data: published } = await supabase
+      .from("contents")
+      .select("title, category_id, publish_date, categories:category_id(name)")
+      .in("status", ["S3", "S4", "S5"]);
+
+    if (!published || published.length === 0) {
+      return { success: true, publishedWeeks: [], blogStartDate };
+    }
+
+    // 12주 스케줄의 각 주차별 발행 여부를 제목+카테고리 매칭으로 확인
+    const { SCHEDULE_DATA } = await import("@/lib/constants/schedule-data");
+    const publishedWeeks: number[] = [];
+
+    for (const schedule of SCHEDULE_DATA) {
+      const isPublished = published.some((content) => {
+        const cats = content.categories as unknown as { name: string } | null;
+        const catName = cats?.name || "";
+        // 카테고리 일치 + 제목 유사 매칭
+        const categoryMatch = catName.includes(schedule.category) || schedule.category.includes(catName);
+        const titleMatch = content.title?.includes(schedule.title.substring(0, 10)) || false;
+        return categoryMatch && titleMatch;
+      });
+
+      if (isPublished) {
+        publishedWeeks.push(schedule.week);
+      }
+    }
+
+    return { success: true, publishedWeeks, blogStartDate };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류";
+    // site_settings 테이블이 없을 수 있음 — 조용히 기본값 반환
+    if (errorMessage.includes("schema cache") || errorMessage.includes("site_settings")) {
+      return { success: true, publishedWeeks: [], blogStartDate: "2026-01-06" };
+    }
+    return { success: false, error: errorMessage };
+  }
+}
+
+/**
+ * 블로그 시작일 저장
+ */
+export async function saveBlogStartDate(dateStr: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: "로그인이 필요합니다." };
+
+    // site_settings upsert
+    const { data: existing } = await supabase
+      .from("site_settings")
+      .select("id")
+      .eq("key", "blog_start_date")
+      .maybeSingle();
+
+    if (existing) {
+      await supabase
+        .from("site_settings")
+        .update({ value: dateStr, updated_at: new Date().toISOString() })
+        .eq("id", existing.id);
+    } else {
+      await supabase
+        .from("site_settings")
+        .insert({ key: "blog_start_date", value: dateStr, created_by: user.id });
+    }
+
+    return { success: true };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류";
+    if (errorMessage.includes("schema cache") || errorMessage.includes("site_settings")) {
+      return { success: false, error: "site_settings 테이블이 없습니다. 마이그레이션을 실행해주세요." };
+    }
     return { success: false, error: errorMessage };
   }
 }

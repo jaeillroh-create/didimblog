@@ -5,6 +5,7 @@ import { CtaTemplateEditor } from "@/components/settings/cta-template-editor";
 import { SeoCriteriaEditor } from "@/components/settings/seo-criteria-editor";
 import { StateTransitionEditor } from "@/components/settings/state-transition-editor";
 import { AiSettings } from "@/components/settings/ai-settings";
+import { BlogSettings } from "@/components/settings/blog-settings";
 import {
   getTeamMembers,
   getPendingMembers,
@@ -12,7 +13,7 @@ import {
   getSeoSettings,
   getAllStateTransitions,
 } from "@/actions/settings";
-import { getLLMConfigs, getPromptTemplates } from "@/actions/ai";
+import { getLLMConfigs, getPromptTemplates, getPublishedWeeks } from "@/actions/ai";
 import { getSearchApiConfigs } from "@/actions/news-search";
 
 export default async function SettingsPage() {
@@ -25,6 +26,7 @@ export default async function SettingsPage() {
     { data: llmConfigs },
     { data: promptTemplates },
     { data: searchConfigs },
+    publishedWeeksResult,
   ] = await Promise.all([
     getTeamMembers(),
     getPendingMembers(),
@@ -34,7 +36,10 @@ export default async function SettingsPage() {
     getLLMConfigs(),
     getPromptTemplates(),
     getSearchApiConfigs(),
+    getPublishedWeeks(),
   ]);
+
+  const blogStartDate = publishedWeeksResult.blogStartDate || "2026-01-06";
 
   return (
     <div className="space-y-6">
@@ -47,6 +52,7 @@ export default async function SettingsPage() {
           <TabsTrigger value="seo">SEO 기준</TabsTrigger>
           <TabsTrigger value="transitions">상태 규칙</TabsTrigger>
           <TabsTrigger value="ai">AI 설정</TabsTrigger>
+          <TabsTrigger value="blog">블로그</TabsTrigger>
         </TabsList>
 
         <TabsContent value="team">
@@ -67,6 +73,10 @@ export default async function SettingsPage() {
 
         <TabsContent value="ai">
           <AiSettings initialConfigs={llmConfigs} initialTemplates={promptTemplates} initialSearchConfigs={searchConfigs} />
+        </TabsContent>
+
+        <TabsContent value="blog">
+          <BlogSettings initialStartDate={blogStartDate} />
         </TabsContent>
       </Tabs>
     </div>
