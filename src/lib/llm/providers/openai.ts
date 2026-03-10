@@ -29,7 +29,7 @@ export async function* generateStream(
 export async function testConnection(apiKey: string): Promise<boolean> {
   const client = new OpenAI({ apiKey });
   const response = await client.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-5.4",
     max_tokens: 10,
     messages: [{ role: "user", content: "Hi" }],
   });

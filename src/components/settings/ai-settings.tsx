@@ -51,22 +51,23 @@ const PROVIDER_INFO: Record<
     models: [
       { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
       { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-      { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
     ],
   },
   openai: {
     label: "OpenAI (GPT)",
     models: [
-      { id: "gpt-4o", name: "GPT-4o" },
-      { id: "gpt-4o-mini", name: "GPT-4o Mini" },
-      { id: "gpt-4.1", name: "GPT-4.1" },
+      { id: "gpt-5.4", name: "GPT-5.4" },
+      { id: "gpt-5.4-pro", name: "GPT-5.4 Pro" },
+      { id: "gpt-5.3-instant", name: "GPT-5.3 Instant" },
+      { id: "gpt-5-mini", name: "GPT-5 mini" },
     ],
   },
   gemini: {
     label: "Google (Gemini)",
     models: [
-      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+      { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" },
+      { id: "gemini-3-flash-preview", name: "Gemini 3 Flash" },
+      { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite" },
     ],
   },
 };
