@@ -47,6 +47,7 @@ interface GenerationStatusResult {
   generatedText?: string | null;
   generatedTitle?: string | null;
   generatedTags?: string[] | null;
+  categoryId?: string | null;
   validationWarnings?: DraftValidationWarning[];
   error?: string;
 }
@@ -471,6 +472,7 @@ export async function getGenerationStatus(
       generatedText: data.generated_text,
       generatedTitle: data.generated_title,
       generatedTags: data.generated_tags,
+      categoryId: data.category_id,
       validationWarnings: validationWarnings?.length ? validationWarnings : undefined,
       error: data.error_message || undefined,
     };

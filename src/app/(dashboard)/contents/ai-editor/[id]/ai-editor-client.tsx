@@ -11,6 +11,7 @@ import { CrossValidationPanel } from "@/components/contents/cross-validation-pan
 import { getGenerationStatus } from "@/actions/ai";
 import { createContent } from "@/actions/contents";
 import type { GenerationStatus } from "@/lib/types/database";
+import { calculateCategorySeoScore } from "@/lib/utils/seo-scoring";
 import {
   ArrowLeft,
   Save,
@@ -31,81 +32,6 @@ interface AiEditorClientProps {
   generationId: number;
 }
 
-// 간이 SEO 체크
-function calculateSeoScore(title: string, text: string, keyword: string) {
-  const checks: { label: string; passed: boolean; detail: string }[] = [];
-
-  // 제목 길이
-  const titleLen = title.length;
-  checks.push({
-    label: "제목 길이 25~30자",
-    passed: titleLen >= 25 && titleLen <= 30,
-    detail: `${titleLen}자`,
-  });
-
-  // 제목 키워드 앞 15자
-  const keywordInFirst15 = title.substring(0, 15).includes(keyword);
-  checks.push({
-    label: "키워드 앞 15자",
-    passed: keywordInFirst15 || keyword.length === 0,
-    detail: keywordInFirst15 ? "포함됨" : "미포함",
-  });
-
-  // 본문 키워드 횟수
-  const keywordCount = keyword
-    ? (text.match(new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length
-    : 0;
-  checks.push({
-    label: "본문 키워드 3~5회",
-    passed: keywordCount >= 3 && keywordCount <= 5,
-    detail: `${keywordCount}회`,
-  });
-
-  // 소제목 개수
-  const headingCount = (text.match(/^##\s/gm) || []).length;
-  checks.push({
-    label: "소제목(##) 2개 이상",
-    passed: headingCount >= 2,
-    detail: `${headingCount}개`,
-  });
-
-  // 이미지 마커
-  const imageMarkers = (text.match(/\[IMAGE:\s*.+?\]/g) || []).length;
-  checks.push({
-    label: "이미지 마커 3개 이상",
-    passed: imageMarkers >= 3,
-    detail: `${imageMarkers}개`,
-  });
-
-  // 본문 분량
-  const charCount = text.replace(/\s/g, "").length;
-  checks.push({
-    label: "본문 1,500~2,500자",
-    passed: charCount >= 1500 && charCount <= 2500,
-    detail: `${charCount.toLocaleString()}자`,
-  });
-
-  // 태그 확인 (#태그)
-  const tagCount = (text.match(/#[^\s#]+/g) || []).length;
-  checks.push({
-    label: "태그 10개",
-    passed: tagCount >= 8,
-    detail: `${tagCount}개`,
-  });
-
-  // CTA 존재 여부
-  const hasCta = text.includes("절세 시뮬레이션") || text.includes("연락") || text.includes("상담") || text.includes("이웃");
-  checks.push({
-    label: "CTA 배치",
-    passed: hasCta,
-    detail: hasCta ? "있음" : "없음",
-  });
-
-  const passedCount = checks.filter((c) => c.passed).length;
-  const score = Math.round((passedCount / checks.length) * 100);
-
-  return { checks, score, passedCount, totalCount: checks.length };
-}
 
 export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const router = useRouter();
@@ -130,6 +56,9 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [tokensUsed, setTokensUsed] = useState<number | null>(null);
   const [genTimeMs, setGenTimeMs] = useState<number | null>(null);
 
+  // 카테고리 (SEO 채점 기준 분기용)
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+
   // 교차검증
   const [showValidation, setShowValidation] = useState(false);
   const [currentGenerationId, setCurrentGenerationId] = useState(generationId);
@@ -148,6 +77,10 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       }
 
       setStatus(result.status!);
+
+      if (result.categoryId) {
+        setCategoryId(result.categoryId);
+      }
 
       if (result.status === "completed") {
         const text = result.generatedText || "";
@@ -179,8 +112,8 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     return () => { cancelled = true; };
   }, [status, currentGenerationId]);
 
-  // SEO 점수 계산
-  const seoResult = calculateSeoScore(editTitle, editText, keyword);
+  // SEO 점수 계산 (카테고리별 채점 기준 적용)
+  const seoResult = calculateCategorySeoScore(editTitle, editText, keyword, categoryId);
 
   // [IMAGE: ...] 마커 하이라이트된 텍스트
   const highlightedText = editText.replace(
@@ -193,7 +126,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     startTransition(async () => {
       const { error } = await createContent({
         title: editTitle,
-        category_id: "CAT-A", // TODO: 생성 시 카테고리 정보 연동
+        category_id: categoryId || "CAT-A",
         target_keyword: keyword || undefined,
       });
 
@@ -419,14 +352,14 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                   className="text-lg font-bold"
                   style={{
                     color:
-                      seoResult.score >= 80
+                      seoResult.score >= seoResult.totalMax * 0.8
                         ? "var(--quality-excellent)"
-                        : seoResult.score >= 60
+                        : seoResult.score >= seoResult.totalMax * 0.6
                           ? "var(--quality-good)"
                           : "var(--quality-average)",
                   }}
                 >
-                  {seoResult.score}/100
+                  {seoResult.score}/{seoResult.totalMax}
                 </span>
               </CardTitle>
             </CardHeader>
@@ -448,7 +381,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                     <span>{check.label}</span>
                   </div>
                   <span className="text-xs text-[var(--neutral-text-muted)]">
-                    {check.detail}
+                    {check.detail} ({check.score}/{check.maxScore})
                   </span>
                 </div>
               ))}

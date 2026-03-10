@@ -301,6 +301,7 @@ export function KanbanBoard({
         onOpenChange={setAiDialogOpen}
         categories={categories}
         llmConfigs={llmConfigs}
+        defaultCategoryId={filterCategoryId ?? undefined}
       />
 
       {/* 에러 다이얼로그 */}

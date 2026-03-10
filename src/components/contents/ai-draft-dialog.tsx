@@ -55,6 +55,8 @@ interface AiDraftDialogProps {
   onOpenChange: (open: boolean) => void;
   categories: Category[];
   llmConfigs?: LLMConfig[];
+  /** 칸반 카테고리 필터에서 전달된 기본 카테고리 */
+  defaultCategoryId?: string;
 }
 
 export function AiDraftDialog({
@@ -62,6 +64,7 @@ export function AiDraftDialog({
   onOpenChange,
   categories,
   llmConfigs = [],
+  defaultCategoryId,
 }: AiDraftDialogProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -74,7 +77,7 @@ export function AiDraftDialog({
 
   // 폼 상태
   const [topic, setTopic] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+  const [categoryId, setCategoryId] = useState(defaultCategoryId || "");
   const [secondaryCategory, setSecondaryCategory] = useState("");
   const [keyword, setKeyword] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
@@ -130,11 +133,21 @@ export function AiDraftDialog({
   const monthWeeks = getMonthWeeks(currentWeek);
   const isPhase1Complete = currentWeek > 12;
 
+  // 카테고리 필터 적용된 스케줄 데이터
+  const filteredSchedule = defaultCategoryId
+    ? SCHEDULE_DATA.filter((s) => {
+        // defaultCategoryId(CAT-A, CAT-B 등)와 스케줄의 category 매칭
+        const matchCat = categories.find((c) => c.id === defaultCategoryId);
+        if (!matchCat) return true;
+        return s.category.includes(matchCat.name) || matchCat.name.includes(s.category);
+      })
+    : SCHEDULE_DATA;
+
   // 이번 주 스케줄
-  const thisWeekSchedule = SCHEDULE_DATA.find((s) => s.week === currentWeek) || null;
+  const thisWeekSchedule = filteredSchedule.find((s) => s.week === currentWeek) || null;
 
   // 이번 달(4주 묶음) 중 이번 주 제외 + 미발행
-  const monthRemainingSchedules = SCHEDULE_DATA.filter(
+  const monthRemainingSchedules = filteredSchedule.filter(
     (s) => monthWeeks.includes(s.week) && s.week !== currentWeek
   );
 
@@ -285,7 +298,7 @@ export function AiDraftDialog({
 
   function resetForm() {
     setTopic("");
-    setCategoryId("");
+    setCategoryId(defaultCategoryId || "");
     setSecondaryCategory("");
     setKeyword("");
     setTargetAudience("");
