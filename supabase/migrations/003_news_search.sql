@@ -19,17 +19,37 @@ CREATE TABLE IF NOT EXISTS public.search_api_configs (
 -- RLS
 ALTER TABLE public.search_api_configs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "search_api_configs_read" ON public.search_api_configs
-  FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "search_api_configs_write" ON public.search_api_configs
-  FOR ALL TO authenticated
-  USING (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  )
-  WITH CHECK (
-    EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-  );
+-- 기존 정책이 있으면 무시
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'search_api_configs' AND policyname = 'search_api_configs_read') THEN
+    CREATE POLICY "search_api_configs_read" ON public.search_api_configs
+      FOR SELECT TO authenticated USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'search_api_configs' AND policyname = 'search_api_configs_insert') THEN
+    CREATE POLICY "search_api_configs_insert" ON public.search_api_configs
+      FOR INSERT TO authenticated
+      WITH CHECK (
+        EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+      );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'search_api_configs' AND policyname = 'search_api_configs_update') THEN
+    CREATE POLICY "search_api_configs_update" ON public.search_api_configs
+      FOR UPDATE TO authenticated
+      USING (
+        EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+      )
+      WITH CHECK (
+        EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+      );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'search_api_configs' AND policyname = 'search_api_configs_delete') THEN
+    CREATE POLICY "search_api_configs_delete" ON public.search_api_configs
+      FOR DELETE TO authenticated
+      USING (
+        EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+      );
+  END IF;
+END $$;
 
 -- 2. prompt_templates: name 유니크 인덱스 추가 (없을 때만)
 CREATE UNIQUE INDEX IF NOT EXISTS prompt_templates_name_unique ON public.prompt_templates (name);
@@ -135,3 +155,6 @@ JSON 형식으로 응답:
 '{"format":"json","fields":["verdict","overall_score","issues","strengths","improvement_suggestions"]}'
 )
 ON CONFLICT (name) DO NOTHING;
+
+-- PostgREST 스키마 캐시 갱신 (새 테이블 즉시 인식)
+NOTIFY pgrst, 'reload schema';
