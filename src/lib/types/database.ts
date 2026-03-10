@@ -201,6 +201,27 @@ export interface LLMStreamConfig {
 
 export type SeoVerdict = "pass" | "fix_required" | "blocked";
 
+export type SearchApiProvider = "naver" | "google";
+
+export interface SearchApiConfig {
+  id: number;
+  provider: SearchApiProvider;
+  display_name: string;
+  client_id: string;
+  client_secret_encrypted: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+export interface NewsArticle {
+  title: string;
+  description: string;
+  link: string;
+  pubDate: string;
+}
+
 export interface SeoCheck {
   id: number;
   content_id: string;

@@ -890,30 +890,27 @@ export async function testLLMConnection(
 }
 
 /**
- * 스케줄 기반 주제 추천
+ * 스케줄 기반 주제 추천 (현재 날짜 ±2주 범위)
  */
-export async function getTopicRecommendations(
-  weekNumber?: number
-): Promise<{ success: boolean; topics?: TopicRecommendation[]; error?: string }> {
+export async function getTopicRecommendations(): Promise<{
+  success: boolean;
+  topics?: TopicRecommendation[];
+  error?: string;
+}> {
   try {
     const supabase = await createClient();
-
-    // 현재 주차 계산
     const now = new Date();
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const currentWeek =
-      weekNumber ??
-      Math.ceil(
-        ((now.getTime() - startOfYear.getTime()) / 86400000 +
-          startOfYear.getDay() +
-          1) /
-          7
-      );
 
-    // 12주 스케줄 범위에 매핑 (순환)
-    const scheduleWeek = ((currentWeek - 1) % 12) + 1;
+    // ±2주 범위 계산
+    const twoWeeksAgo = new Date(now);
+    twoWeeksAgo.setDate(now.getDate() - 14);
+    const twoWeeksLater = new Date(now);
+    twoWeeksLater.setDate(now.getDate() + 14);
 
-    // schedules 테이블에서 조회
+    const fromDate = twoWeeksAgo.toISOString().split("T")[0];
+    const toDate = twoWeeksLater.toISOString().split("T")[0];
+
+    // 1차: schedules 테이블에서 planned_date 기준 ±2주 조회
     const { data: schedules } = await supabase
       .from("schedules")
       .select(
@@ -922,10 +919,10 @@ export async function getTopicRecommendations(
         categories:category_id (name)
       `
       )
-      .gte("week_number", scheduleWeek)
-      .lte("week_number", scheduleWeek + 2)
-      .eq("status", "planned")
-      .order("week_number", { ascending: true });
+      .gte("planned_date", fromDate)
+      .lte("planned_date", toDate)
+      .in("status", ["planned", "in_progress"])
+      .order("planned_date", { ascending: true });
 
     if (schedules && schedules.length > 0) {
       const topics: TopicRecommendation[] = schedules.map((s) => ({
@@ -940,21 +937,66 @@ export async function getTopicRecommendations(
       return { success: true, topics };
     }
 
-    // schedules에 데이터가 없으면 시드 데이터에서 추천
-    return {
-      success: true,
-      topics: [
-        {
-          week: scheduleWeek,
-          category: "변리사의 현장 수첩",
-          sub: "절세 시뮬레이션",
-          title: "이번 주 추천 주제를 확인해주세요",
+    // 2차: 이번 달 미발행 카테고리 기반 추천
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      .toISOString()
+      .split("T")[0];
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+      .toISOString()
+      .split("T")[0];
+
+    // 이번 달 발행된 콘텐츠의 카테고리 조회
+    const { data: publishedThisMonth } = await supabase
+      .from("contents")
+      .select("category_id")
+      .gte("publish_date", monthStart)
+      .lte("publish_date", monthEnd)
+      .in("status", ["S3", "S4", "S5"]);
+
+    const publishedCategoryIds = new Set(
+      (publishedThisMonth || []).map((c) => c.category_id).filter(Boolean)
+    );
+
+    // 월간 발행 목표가 있는 카테고리 조회
+    const { data: allCategories } = await supabase
+      .from("categories")
+      .select("id, name, monthly_target, role_type")
+      .eq("tier", "primary")
+      .gt("monthly_target", 0)
+      .order("monthly_target", { ascending: false });
+
+    if (allCategories && allCategories.length > 0) {
+      // 미발행 카테고리 필터
+      const unpublished = allCategories.filter(
+        (cat) => !publishedCategoryIds.has(cat.id)
+      );
+
+      if (unpublished.length > 0) {
+        // 현재 주차 계산
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+        const currentWeek = Math.ceil(
+          ((now.getTime() - startOfYear.getTime()) / 86400000 +
+            startOfYear.getDay() +
+            1) /
+            7
+        );
+
+        // 12주 스케줄 시드 데이터에서 해당 카테고리의 주제 매칭
+        const topics: TopicRecommendation[] = unpublished.map((cat) => ({
+          week: currentWeek,
+          category: cat.name,
+          sub: "",
+          title: `${cat.name} — 이번 달 미발행 (목표: 월 ${cat.monthly_target}건)`,
           keyword: "",
           cta: "",
           target: "",
-        },
-      ],
-    };
+        }));
+        return { success: true, topics };
+      }
+    }
+
+    // 3차: 추천 없음
+    return { success: true, topics: [] };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류";
     return { success: false, error: errorMessage };
