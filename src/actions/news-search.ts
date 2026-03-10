@@ -55,6 +55,10 @@ export async function getSearchApiConfigs(): Promise<{
       .order("created_at", { ascending: true });
 
     if (error) {
+      // 테이블이 없는 경우 빈 배열 반환 (마이그레이션 미실행)
+      if (error.message.includes("schema cache") || error.code === "PGRST204") {
+        return { data: [] };
+      }
       return { data: [], error: error.message };
     }
     return { data: (data as SearchApiConfig[]) || [] };
@@ -111,7 +115,14 @@ export async function saveSearchApiConfig(
       .single();
 
     if (error || !data) {
-      return { success: false, error: `저장 실패: ${error?.message}` };
+      const msg = error?.message || "";
+      if (msg.includes("schema cache") || msg.includes("relation") || msg.includes("does not exist")) {
+        return {
+          success: false,
+          error: "search_api_configs 테이블이 없습니다. Supabase SQL Editor에서 003_news_search.sql 마이그레이션을 실행해주세요.",
+        };
+      }
+      return { success: false, error: `저장 실패: ${msg}` };
     }
 
     return { success: true, configId: data.id };
@@ -136,17 +147,33 @@ export async function searchNews(
     const supabase = await createClient();
 
     // 네이버 API 설정 조회
-    const { data: config } = await supabase
+    const { data: config, error: configError } = await supabase
       .from("search_api_configs")
       .select("*")
       .eq("provider", "naver")
       .eq("is_active", true)
       .single();
 
-    if (!config || !config.client_id || !config.client_secret_encrypted) {
+    if (configError) {
+      if (configError.message.includes("schema cache") || configError.message.includes("does not exist")) {
+        return {
+          success: false,
+          error: "search_api_configs 테이블이 없습니다. Supabase SQL Editor에서 003_news_search.sql 마이그레이션을 실행해주세요.",
+        };
+      }
+    }
+
+    if (!config) {
       return {
         success: false,
         error: "네이버 검색 API가 설정되지 않았습니다. 설정 > AI 설정에서 네이버 검색 API를 등록해주세요.",
+      };
+    }
+
+    if (!config.client_id || !config.client_secret_encrypted) {
+      return {
+        success: false,
+        error: "네이버 검색 API Client ID 또는 Secret이 비어 있습니다. 설정을 확인해주세요.",
       };
     }
 
