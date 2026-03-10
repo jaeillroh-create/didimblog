@@ -13,6 +13,7 @@ import {
   getAllStateTransitions,
 } from "@/actions/settings";
 import { getLLMConfigs, getPromptTemplates } from "@/actions/ai";
+import { getSearchApiConfigs } from "@/actions/news-search";
 
 export default async function SettingsPage() {
   const [
@@ -23,6 +24,7 @@ export default async function SettingsPage() {
     { data: transitions },
     { data: llmConfigs },
     { data: promptTemplates },
+    { data: searchConfigs },
   ] = await Promise.all([
     getTeamMembers(),
     getPendingMembers(),
@@ -31,6 +33,7 @@ export default async function SettingsPage() {
     getAllStateTransitions(),
     getLLMConfigs(),
     getPromptTemplates(),
+    getSearchApiConfigs(),
   ]);
 
   return (
@@ -63,7 +66,7 @@ export default async function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="ai">
-          <AiSettings initialConfigs={llmConfigs} initialTemplates={promptTemplates} />
+          <AiSettings initialConfigs={llmConfigs} initialTemplates={promptTemplates} initialSearchConfigs={searchConfigs} />
         </TabsContent>
       </Tabs>
     </div>

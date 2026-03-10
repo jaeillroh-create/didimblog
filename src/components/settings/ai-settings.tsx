@@ -22,7 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { saveLLMConfig, testLLMConnection } from "@/actions/ai";
-import type { LLMConfig, LLMProvider, PromptTemplate } from "@/lib/types/database";
+import { saveSearchApiConfig } from "@/actions/news-search";
+import type { LLMConfig, LLMProvider, PromptTemplate, SearchApiConfig } from "@/lib/types/database";
 import {
   CheckCircle2,
   XCircle,
@@ -32,11 +33,13 @@ import {
   EyeOff,
   Pencil,
   Zap,
+  Newspaper,
 } from "lucide-react";
 
 interface AiSettingsProps {
   initialConfigs: LLMConfig[];
   initialTemplates: PromptTemplate[];
+  initialSearchConfigs?: SearchApiConfig[];
 }
 
 const PROVIDER_INFO: Record<
@@ -70,12 +73,13 @@ const PROVIDER_INFO: Record<
 
 const PROVIDERS: LLMProvider[] = ["claude", "openai", "gemini"];
 
-export function AiSettings({ initialConfigs, initialTemplates }: AiSettingsProps) {
+export function AiSettings({ initialConfigs, initialTemplates, initialSearchConfigs = [] }: AiSettingsProps) {
   const [configs, setConfigs] = useState<LLMConfig[]>(initialConfigs);
   const [templates] = useState<PromptTemplate[]>(initialTemplates);
+  const [searchConfigs, setSearchConfigs] = useState<SearchApiConfig[]>(initialSearchConfigs);
   const [isPending, startTransition] = useTransition();
 
-  // 편집 다이얼로그
+  // LLM 편집 다이얼로그
   const [editProvider, setEditProvider] = useState<LLMProvider | null>(null);
   const [editModelId, setEditModelId] = useState("");
   const [editApiKey, setEditApiKey] = useState("");
@@ -86,6 +90,13 @@ export function AiSettings({ initialConfigs, initialTemplates }: AiSettingsProps
   const [testResult, setTestResult] = useState<"success" | "failed" | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // 뉴스 API 편집 다이얼로그
+  const [editSearchOpen, setEditSearchOpen] = useState(false);
+  const [searchClientId, setSearchClientId] = useState("");
+  const [searchClientSecret, setSearchClientSecret] = useState("");
+  const [showSearchSecret, setShowSearchSecret] = useState(false);
+  const [searchSaveError, setSearchSaveError] = useState<string | null>(null);
 
   // 템플릿 편집 다이얼로그
   const [editTemplate, setEditTemplate] = useState<PromptTemplate | null>(null);
@@ -181,6 +192,62 @@ export function AiSettings({ initialConfigs, initialTemplates }: AiSettingsProps
       setTestingId(null);
     });
   }
+
+  // 네이버 검색 API 설정 저장
+  function handleSaveSearchConfig() {
+    if (!searchClientId.trim() || !searchClientSecret.trim()) return;
+
+    startTransition(async () => {
+      const result = await saveSearchApiConfig({
+        provider: "naver",
+        displayName: "네이버 검색 API",
+        clientId: searchClientId.trim(),
+        clientSecret: searchClientSecret.trim(),
+      });
+
+      if (!result.success) {
+        setSearchSaveError(result.error || "저장에 실패했습니다.");
+        return;
+      }
+
+      // 로컬 상태 업데이트
+      if (result.configId) {
+        const updated: SearchApiConfig = {
+          id: result.configId,
+          provider: "naver",
+          display_name: "네이버 검색 API",
+          client_id: searchClientId,
+          client_secret_encrypted: "***",
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          created_by: null,
+        };
+        setSearchConfigs((prev) => {
+          const idx = prev.findIndex((c) => c.provider === "naver");
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = updated;
+            return next;
+          }
+          return [...prev, updated];
+        });
+      }
+
+      setTimeout(() => setEditSearchOpen(false), 500);
+    });
+  }
+
+  function openSearchEditDialog() {
+    const existing = searchConfigs.find((c) => c.provider === "naver");
+    setSearchClientId(existing?.client_id || "");
+    setSearchClientSecret("");
+    setShowSearchSecret(false);
+    setSearchSaveError(null);
+    setEditSearchOpen(true);
+  }
+
+  const naverConfig = searchConfigs.find((c) => c.provider === "naver");
 
   return (
     <div className="space-y-6">
@@ -291,6 +358,56 @@ export function AiSettings({ initialConfigs, initialTemplates }: AiSettingsProps
               </div>
             );
           })}
+        </CardContent>
+      </Card>
+
+      {/* 뉴스 검색 API */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Newspaper className="h-5 w-5" />
+            뉴스 검색 API
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between py-2">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm">네이버 검색 API</span>
+                {naverConfig?.is_active ? (
+                  <Badge
+                    variant="outline"
+                    className="text-xs"
+                    style={{
+                      borderColor: "var(--quality-excellent)",
+                      color: "var(--quality-excellent)",
+                    }}
+                  >
+                    활성
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs text-[var(--neutral-text-muted)]">
+                    미설정
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-[var(--neutral-text-muted)]">
+                {naverConfig?.client_id
+                  ? `Client ID: ${naverConfig.client_id.substring(0, 8)}...`
+                  : "AI 초안 생성 시 최신 뉴스를 검색하여 참고자료로 활용합니다."}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openSearchEditDialog}
+            >
+              {naverConfig ? "수정" : "설정"}
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-[var(--neutral-text-muted)]">
+            네이버 개발자 센터(developers.naver.com)에서 검색 API 애플리케이션을 등록하세요.
+          </p>
         </CardContent>
       </Card>
 
@@ -517,6 +634,79 @@ export function AiSettings({ initialConfigs, initialTemplates }: AiSettingsProps
                 </>
               ) : (
                 "저장 + 연결 테스트"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 네이버 검색 API 설정 Dialog */}
+      <Dialog open={editSearchOpen} onOpenChange={setEditSearchOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>네이버 검색 API 설정</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-md bg-blue-50 p-3 text-xs text-blue-700">
+              네이버 개발자 센터(developers.naver.com) → 애플리케이션 등록 → 검색 API를 선택하면 Client ID와 Client Secret을 받을 수 있습니다.
+            </div>
+
+            <div className="space-y-2">
+              <Label>Client ID</Label>
+              <Input
+                placeholder="네이버 API Client ID"
+                value={searchClientId}
+                onChange={(e) => setSearchClientId(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Client Secret</Label>
+              <div className="relative">
+                <Input
+                  type={showSearchSecret ? "text" : "password"}
+                  placeholder="네이버 API Client Secret"
+                  value={searchClientSecret}
+                  onChange={(e) => setSearchClientSecret(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--neutral-text-muted)]"
+                  onClick={() => setShowSearchSecret(!showSearchSecret)}
+                >
+                  {showSearchSecret ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {searchSaveError && (
+              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+                {searchSaveError}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditSearchOpen(false)}>
+              취소
+            </Button>
+            <Button
+              onClick={handleSaveSearchConfig}
+              disabled={isPending || !searchClientId.trim() || !searchClientSecret.trim()}
+              style={{ backgroundColor: "var(--brand-accent)" }}
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  저장 중...
+                </>
+              ) : (
+                "저장"
               )}
             </Button>
           </DialogFooter>

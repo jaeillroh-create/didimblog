@@ -22,8 +22,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateDraft, getTopicRecommendations } from "@/actions/ai";
-import type { Category, LLMConfig } from "@/lib/types/database";
-import { Sparkles, Lightbulb } from "lucide-react";
+import { searchNews } from "@/actions/news-search";
+import type { Category, LLMConfig, NewsArticle } from "@/lib/types/database";
+import { Sparkles, Lightbulb, Newspaper, Loader2, ExternalLink, Check } from "lucide-react";
 
 interface TopicRecommendation {
   week: number;
@@ -64,6 +65,13 @@ export function AiDraftDialog({
   const [targetAudience, setTargetAudience] = useState("");
   const [additionalContext, setAdditionalContext] = useState("");
   const [selectedLlmId, setSelectedLlmId] = useState<string>("");
+
+  // 뉴스 검색
+  const [newsQuery, setNewsQuery] = useState("");
+  const [newsResults, setNewsResults] = useState<NewsArticle[]>([]);
+  const [selectedNews, setSelectedNews] = useState<Set<number>>(new Set());
+  const [searchingNews, setSearchingNews] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
 
   // 에러
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +118,58 @@ export function AiDraftDialog({
     }
   }
 
+  // 뉴스 검색
+  async function handleSearchNews() {
+    const q = newsQuery.trim() || keyword.trim();
+    if (!q) {
+      setNewsError("키워드를 입력하거나 핵심 키워드를 먼저 입력해주세요.");
+      return;
+    }
+
+    setSearchingNews(true);
+    setNewsError(null);
+
+    const result = await searchNews(q, 10);
+
+    if (!result.success) {
+      setNewsError(result.error || "뉴스 검색에 실패했습니다.");
+      setSearchingNews(false);
+      return;
+    }
+
+    setNewsResults(result.articles || []);
+    setSelectedNews(new Set());
+    setSearchingNews(false);
+  }
+
+  // 선택된 뉴스를 참고사항에 첨부
+  function applySelectedNews() {
+    if (selectedNews.size === 0) return;
+
+    const selected = newsResults.filter((_, i) => selectedNews.has(i));
+    const newsText = selected
+      .map((a, i) => `[참고 뉴스 ${i + 1}] ${a.title}\n${a.description}\n출처: ${a.link}`)
+      .join("\n\n");
+
+    setAdditionalContext((prev) =>
+      prev ? `${prev}\n\n--- 참고 뉴스 ---\n${newsText}` : `--- 참고 뉴스 ---\n${newsText}`
+    );
+    setNewsResults([]);
+    setSelectedNews(new Set());
+  }
+
+  function toggleNewsSelection(index: number) {
+    setSelectedNews((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }
+
   function resetForm() {
     setTopic("");
     setCategoryId("");
@@ -119,6 +179,10 @@ export function AiDraftDialog({
     setAdditionalContext("");
     setSelectedLlmId("");
     setError(null);
+    setNewsQuery("");
+    setNewsResults([]);
+    setSelectedNews(new Set());
+    setNewsError(null);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -150,7 +214,7 @@ export function AiDraftDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[640px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" style={{ color: "var(--brand-accent)" }} />
@@ -181,8 +245,17 @@ export function AiDraftDialog({
                 추천 주제를 불러오는 중...
               </div>
             ) : recommendations.length === 0 ? (
-              <div className="py-8 text-center text-sm text-[var(--neutral-text-muted)]">
-                이번 주 추천 주제가 없습니다. 직접 입력해 주세요.
+              <div className="py-8 text-center space-y-2">
+                <p className="text-sm text-[var(--neutral-text-muted)]">
+                  추천 주제 없음 — 직접 입력해주세요
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setActiveTab("manual")}
+                >
+                  직접 입력으로 이동
+                </Button>
               </div>
             ) : (
               recommendations.map((rec, i) => (
@@ -294,6 +367,103 @@ export function AiDraftDialog({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              {/* 관련 뉴스 검색 */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  <Newspaper className="h-3.5 w-3.5" />
+                  관련 뉴스 검색
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder={keyword ? `"${keyword}" 로 검색 (또는 다른 키워드 입력)` : "검색 키워드 입력"}
+                    value={newsQuery}
+                    onChange={(e) => setNewsQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleSearchNews();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSearchNews}
+                    disabled={searchingNews}
+                    className="shrink-0"
+                  >
+                    {searchingNews ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "검색"
+                    )}
+                  </Button>
+                </div>
+                {newsError && (
+                  <p className="text-xs text-red-600">{newsError}</p>
+                )}
+
+                {/* 뉴스 결과 */}
+                {newsResults.length > 0 && (
+                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto rounded-md border p-2">
+                    {newsResults.map((article, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => toggleNewsSelection(i)}
+                        className={`w-full rounded-md p-2 text-left text-xs transition-colors ${
+                          selectedNews.has(i)
+                            ? "bg-[var(--brand-accent)]/10 border border-[var(--brand-accent)]/30"
+                            : "hover:bg-gray-50 border border-transparent"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div
+                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                              selectedNews.has(i)
+                                ? "border-[var(--brand-accent)] bg-[var(--brand-accent)] text-white"
+                                : "border-gray-300"
+                            }`}
+                          >
+                            {selectedNews.has(i) && <Check className="h-3 w-3" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium leading-snug line-clamp-1">
+                              {article.title}
+                            </p>
+                            <p className="mt-0.5 text-[var(--neutral-text-muted)] line-clamp-2">
+                              {article.description}
+                            </p>
+                          </div>
+                          <a
+                            href={article.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="shrink-0 text-[var(--neutral-text-muted)] hover:text-[var(--brand-accent)]"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      </button>
+                    ))}
+                    <div className="flex justify-end pt-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={applySelectedNews}
+                        disabled={selectedNews.size === 0}
+                        className="text-xs h-7"
+                      >
+                        선택한 뉴스 {selectedNews.size}건 참고사항에 첨부
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 참고사항 */}
