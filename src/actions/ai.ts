@@ -147,6 +147,7 @@ async function getPromptTemplate(
   categoryId: string,
   templateType: string
 ): Promise<PromptTemplate | null> {
+  // 1. 정확한 카테고리 매칭
   const { data } = await supabase
     .from("prompt_templates")
     .select("*")
@@ -159,7 +160,28 @@ async function getPromptTemplate(
 
   if (data) return data as PromptTemplate;
 
-  // 카테고리에 매칭되는 템플릿이 없으면 상위 카테고리 또는 null 카테고리 시도
+  // 2. 상위 카테고리 폴백 (secondary → primary)
+  const { data: category } = await supabase
+    .from("categories")
+    .select("parent_id")
+    .eq("id", categoryId)
+    .single();
+
+  if (category?.parent_id) {
+    const { data: parentTemplate } = await supabase
+      .from("prompt_templates")
+      .select("*")
+      .eq("category_id", category.parent_id)
+      .eq("template_type", templateType)
+      .eq("is_active", true)
+      .order("version", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (parentTemplate) return parentTemplate as PromptTemplate;
+  }
+
+  // 3. 범용 (null 카테고리) 폴백
   const { data: fallback } = await supabase
     .from("prompt_templates")
     .select("*")
