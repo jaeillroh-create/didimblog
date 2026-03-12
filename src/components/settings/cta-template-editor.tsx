@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Megaphone, Pencil, ChevronDown, ChevronRight, Info } from "lucide-react";
+import { Pencil, ChevronDown, ChevronRight, Info } from "lucide-react";
 
 interface CtaTemplateEditorProps {
   initialTemplates: CtaTemplate[];
@@ -74,7 +74,7 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
       <div className="scard">
         <div className="scard-head">
           <div className="scard-head-left">
-            <Megaphone className="h-5 w-5" style={{ color: "var(--g500)" }} />
+            <span className="tf tf-14">📢</span>
             <span className="scard-head-title">CTA 템플릿 관리</span>
           </div>
         </div>
@@ -84,10 +84,14 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
             const isNoCta = !template.text && template.note;
 
             return (
-              <div key={template.key} className="card-default card-hover !p-0 overflow-hidden">
+              <div
+                key={template.key}
+                className="card-default"
+                style={{ border: "1px solid var(--g200)", borderRadius: "var(--r-md)" }}
+              >
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-[var(--g50)]"
+                  className="flex w-full items-center justify-between p-4 text-left transition-colors"
                   onClick={() => toggleExpand(template.key)}
                 >
                   <div className="flex items-center gap-3">
@@ -96,7 +100,7 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
                     ) : (
                       <ChevronRight className="h-4 w-4" style={{ color: "var(--g400)" }} />
                     )}
-                    <span className="t-md" style={{ fontWeight: 700, color: "var(--g900)" }}>{template.categoryName}</span>
+                    <span className="t-md">{template.categoryName}</span>
                     {isNoCta && (
                       <span className="ucl-badge ucl-badge-sm badge-neutral">
                         CTA 없음
@@ -115,9 +119,12 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
                     <div className="divider" />
 
                     {isNoCta ? (
-                      <div className="ucl-alert alert-info">
-                        <Info className="mt-0.5 h-4 w-4 shrink-0" />
-                        <span className="t-sm">{template.note}</span>
+                      <div
+                        className="flex items-start gap-2 p-3"
+                        style={{ background: "var(--g50)", borderRadius: "var(--r-sm)" }}
+                      >
+                        <Info className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--g400)" }} />
+                        <p className="t-sm" style={{ color: "var(--g500)" }}>{template.note}</p>
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -125,11 +132,7 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
                           <label className="input-label">CTA 문구</label>
                           <pre
                             className="mt-1 whitespace-pre-wrap p-3 t-sm font-mono"
-                            style={{
-                              background: "var(--g50)",
-                              borderRadius: "var(--r-md)",
-                              color: "var(--g700)",
-                            }}
+                            style={{ background: "var(--g50)", borderRadius: "var(--r-sm)" }}
                           >
                             {template.text}
                           </pre>
@@ -176,7 +179,7 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <label className="input-label" htmlFor="cta-text">CTA 문구</label>
+              <label className="input-label">CTA 문구</label>
               <textarea
                 id="cta-text"
                 className="textarea font-mono"
@@ -187,7 +190,7 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
               />
             </div>
             <div>
-              <label className="input-label" htmlFor="conversion-method">전환 방법</label>
+              <label className="input-label">전환 방법</label>
               <div className="input-wrap">
                 <input
                   id="conversion-method"
@@ -199,7 +202,7 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
               </div>
             </div>
             <div>
-              <label className="input-label" htmlFor="email-tag">이메일 제목 태그 (선택)</label>
+              <label className="input-label">이메일 제목 태그 (선택)</label>
               <div className="input-wrap">
                 <input
                   id="email-tag"

@@ -8,6 +8,7 @@ import {
   approveMember,
   rejectMember,
 } from "@/actions/settings";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Select,
   SelectContent,
@@ -25,7 +26,7 @@ import {
 } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { toast } from "sonner";
-import { Check, Trash2, Users, UserPlus, X } from "lucide-react";
+import { Check, Trash2, X } from "lucide-react";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "관리자",
@@ -34,10 +35,10 @@ const ROLE_LABELS: Record<string, string> = {
   pending: "승인 대기",
 };
 
-const ROLE_BADGE_MAP: Record<string, string> = {
+const ROLE_BADGE_CLASS: Record<string, string> = {
   admin: "badge-brand",
   editor: "badge-info",
-  designer: "badge-brand",
+  designer: "badge-neutral",
   pending: "badge-warning",
 };
 
@@ -143,13 +144,13 @@ export function TeamManagement({
         <div className="scard mb-6" style={{ borderColor: "var(--warning)" }}>
           <div className="scard-head">
             <div className="scard-head-left">
-              <UserPlus className="h-5 w-5" style={{ color: "var(--warning)" }} />
+              <span className="tf tf-14">⏳</span>
               <span className="scard-head-title" style={{ color: "var(--warning)" }}>
                 승인 대기 ({pendingMembers.length}명)
               </span>
             </div>
           </div>
-          <div className="scard-body !p-0">
+          <div className="scard-body">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -165,26 +166,26 @@ export function TeamManagement({
                   <TableRow key={member.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <div
-                          className="ucl-avatar"
-                          style={{
-                            width: 32,
-                            height: 32,
-                            fontSize: 12,
-                            background: "var(--warning-light)",
-                            color: "var(--warning)",
-                          }}
-                        >
-                          {member.name.charAt(0)}
-                        </div>
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback
+                            className="t-xs"
+                            style={{
+                              fontWeight: 600,
+                              background: "var(--warning-light)",
+                              color: "var(--warning)",
+                            }}
+                          >
+                            {member.name.charAt(0)}
+                          </AvatarFallback>
+                        </Avatar>
                         <span className="t-sm" style={{ fontWeight: 600, color: "var(--g900)" }}>{member.name}</span>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <span className="t-sm" style={{ color: "var(--g500)" }}>{member.email}</span>
+                    <TableCell className="t-sm" style={{ color: "var(--g500)" }}>
+                      {member.email}
                     </TableCell>
-                    <TableCell>
-                      <span className="t-sm" style={{ color: "var(--g500)" }}>{formatDate(member.created_at)}</span>
+                    <TableCell className="t-sm" style={{ color: "var(--g500)" }}>
+                      {formatDate(member.created_at)}
                     </TableCell>
                     <TableCell>
                       <Select
@@ -210,8 +211,8 @@ export function TeamManagement({
                     <TableCell>
                       <div className="flex gap-1">
                         <button
-                          className="icon-btn"
-                          style={{ width: 32, height: 32, color: "var(--success)" }}
+                          className="btn btn-ghost btn-sm"
+                          style={{ width: 32, height: 32, padding: 0, color: "var(--success)" }}
                           onClick={() => handleApprove(member.id)}
                           disabled={isPending || !approveRoles[member.id]}
                           title="승인"
@@ -219,8 +220,8 @@ export function TeamManagement({
                           <Check className="h-4 w-4" />
                         </button>
                         <button
-                          className="icon-btn"
-                          style={{ width: 32, height: 32, color: "var(--danger)" }}
+                          className="btn btn-ghost btn-sm"
+                          style={{ width: 32, height: 32, padding: 0, color: "var(--danger)" }}
                           onClick={() => setRejectTarget(member)}
                           disabled={isPending}
                           title="거부"
@@ -241,11 +242,11 @@ export function TeamManagement({
       <div className="scard">
         <div className="scard-head">
           <div className="scard-head-left">
-            <Users className="h-5 w-5" style={{ color: "var(--g500)" }} />
+            <span className="tf tf-14">👥</span>
             <span className="scard-head-title">팀 멤버 관리</span>
           </div>
         </div>
-        <div className="scard-body !p-0">
+        <div className="scard-body">
           <Table>
             <TableHeader>
               <TableRow>
@@ -261,17 +262,16 @@ export function TeamManagement({
                 <TableRow key={member.id}>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <div
-                        className="ucl-avatar"
-                        style={{ width: 32, height: 32, fontSize: 12 }}
-                      >
-                        {member.name.charAt(0)}
-                      </div>
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback className="t-xs" style={{ fontWeight: 600 }}>
+                          {member.name.charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
                       <span className="t-sm" style={{ fontWeight: 600, color: "var(--g900)" }}>{member.name}</span>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <span className="t-sm" style={{ color: "var(--g500)" }}>{member.email}</span>
+                  <TableCell className="t-sm" style={{ color: "var(--g500)" }}>
+                    {member.email}
                   </TableCell>
                   <TableCell>
                     <Select
@@ -283,7 +283,7 @@ export function TeamManagement({
                     >
                       <SelectTrigger className="w-[120px]">
                         <SelectValue>
-                          <span className={`ucl-badge ucl-badge-sm ${ROLE_BADGE_MAP[member.role] ?? "badge-neutral"}`}>
+                          <span className={`ucl-badge ucl-badge-sm ${ROLE_BADGE_CLASS[member.role] ?? "badge-neutral"}`}>
                             {ROLE_LABELS[member.role] ?? member.role}
                           </span>
                         </SelectValue>
@@ -295,13 +295,13 @@ export function TeamManagement({
                       </SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell>
-                    <span className="t-sm" style={{ color: "var(--g500)" }}>{formatDate(member.created_at)}</span>
+                  <TableCell className="t-sm" style={{ color: "var(--g500)" }}>
+                    {formatDate(member.created_at)}
                   </TableCell>
                   <TableCell>
                     <button
-                      className="icon-btn"
-                      style={{ width: 32, height: 32, color: "var(--g400)" }}
+                      className="btn btn-ghost btn-sm"
+                      style={{ width: 32, height: 32, padding: 0, color: "var(--g400)" }}
                       onClick={() => setDeleteTarget(member)}
                       disabled={isPending}
                     >
@@ -314,7 +314,7 @@ export function TeamManagement({
                 <TableRow>
                   <TableCell
                     colSpan={5}
-                    className="text-center py-8"
+                    className="text-center py-8 t-sm"
                     style={{ color: "var(--g400)" }}
                   >
                     등록된 팀 멤버가 없습니다.
