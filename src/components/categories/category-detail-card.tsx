@@ -45,7 +45,9 @@ export function CategoryDetailCard({
   const [ctaType, setCtaType] = useState(category.cta_type);
   const [saving, setSaving] = useState(false);
 
-  const statusInfo = CATEGORY_STATUSES[category.status];
+  const statusInfo = CATEGORY_STATUSES[category.status] ?? { label: category.status, color: "#6B7280" };
+  const connectedServices = category.connected_services ?? [];
+  const targetKeywords = category.target_keywords ?? [];
 
   const statusBadgeClass = (): string => {
     if (statusInfo.color.includes("0F9D58") || statusInfo.color.includes("success")) return "badge-success";
@@ -103,14 +105,14 @@ export function CategoryDetailCard({
               퍼널 단계
             </label>
             <p className="t-sm mt-0.5" style={{ color: "var(--g900)" }}>
-              {FUNNEL_STAGES[category.funnel_stage]}
+              {FUNNEL_STAGES[category.funnel_stage] ?? category.funnel_stage}
             </p>
           </div>
           <div>
             <label className="t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>
               CTA 유형
             </label>
-            <p className="t-sm mt-0.5" style={{ color: "var(--g900)" }}>{CTA_TYPES[category.cta_type]}</p>
+            <p className="t-sm mt-0.5" style={{ color: "var(--g900)" }}>{CTA_TYPES[category.cta_type] ?? category.cta_type}</p>
           </div>
           {category.prologue_position && (
             <div>
@@ -127,13 +129,13 @@ export function CategoryDetailCard({
         <div className="divider" />
 
         {/* 연결 서비스 */}
-        {category.connected_services.length > 0 && (
+        {connectedServices.length > 0 && (
           <div>
             <label className="t-xs block mb-2" style={{ fontWeight: 600, color: "var(--g500)" }}>
               연결 서비스
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {category.connected_services.map((service) => (
+              {connectedServices.map((service) => (
                 <span key={service} className="ucl-badge ucl-badge-sm badge-brand">
                   {service}
                 </span>
@@ -143,13 +145,13 @@ export function CategoryDetailCard({
         )}
 
         {/* 타겟 키워드 */}
-        {category.target_keywords.length > 0 && (
+        {targetKeywords.length > 0 && (
           <div>
             <label className="t-xs block mb-2" style={{ fontWeight: 600, color: "var(--g500)" }}>
               타겟 키워드
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {category.target_keywords.map((keyword) => (
+              {targetKeywords.map((keyword) => (
                 <span key={keyword} className="ucl-badge ucl-badge-sm badge-neutral">
                   {keyword}
                 </span>

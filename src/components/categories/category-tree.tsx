@@ -62,7 +62,7 @@ export function CategoryTree({
         const children = getChildren(primary.id);
         const isExpanded = expanded[primary.id] ?? true;
         const color = getCategoryColor(primary, categories);
-        const statusInfo = CATEGORY_STATUSES[primary.status];
+        const statusInfo = CATEGORY_STATUSES[primary.status] ?? { label: primary.status, color: "#6B7280" };
 
         return (
           <div key={primary.id}>
@@ -113,7 +113,7 @@ export function CategoryTree({
                   {statusInfo.label}
                 </span>
                 <span className="t-micro hidden lg:inline" style={{ color: "var(--g400)" }}>
-                  {CATEGORY_ROLE_TYPES[primary.role_type]}
+                  {CATEGORY_ROLE_TYPES[primary.role_type] ?? primary.role_type}
                 </span>
               </div>
             </div>
@@ -122,7 +122,7 @@ export function CategoryTree({
             {isExpanded &&
               children.map((child) => {
                 const childColor = getCategoryColor(child, categories);
-                const childStatus = CATEGORY_STATUSES[child.status];
+                const childStatus = CATEGORY_STATUSES[child.status] ?? { label: child.status, color: "#6B7280" };
 
                 return (
                   <div
@@ -158,7 +158,7 @@ export function CategoryTree({
                         {childStatus.label}
                       </span>
                       <span className="t-micro hidden lg:inline" style={{ color: "var(--g400)" }}>
-                        {CATEGORY_ROLE_TYPES[child.role_type]}
+                        {CATEGORY_ROLE_TYPES[child.role_type] ?? child.role_type}
                       </span>
                     </div>
                   </div>

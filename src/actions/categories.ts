@@ -258,7 +258,11 @@ export async function getCategories(): Promise<Category[]> {
     if (error) throw error;
 
     if (data && data.length > 0) {
-      return data as Category[];
+      return (data as Category[]).map((c) => ({
+        ...c,
+        connected_services: c.connected_services ?? [],
+        target_keywords: c.target_keywords ?? [],
+      }));
     }
 
     return DEMO_CATEGORIES.sort((a, b) => a.sort_order - b.sort_order);
