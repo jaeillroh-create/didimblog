@@ -35,7 +35,7 @@ interface SidebarProps {
   userRole?: string;
 }
 
-/** 사이드바 컴포넌트 - 네이비 배경, 접기/펼치기 지원 */
+/** 사이드바 컴포넌트 — UCL 디자인 토큰 적용 */
 export function Sidebar({ userName = "사용자", userRole = "관리자" }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const pathname = usePathname();
@@ -51,24 +51,23 @@ export function Sidebar({ userName = "사용자", userRole = "관리자" }: Side
     router.push("/login");
   };
 
-  // 이름 첫 글자
   const initial = userName.charAt(0);
 
   return (
     <aside
       className={cn(
-        "flex flex-col bg-[var(--neutral-sidebar)] text-[var(--neutral-text-on-dark)]",
-        "min-h-screen transition-all duration-300 relative",
+        "flex flex-col min-h-screen transition-all duration-300 relative",
         isCollapsed ? "w-16" : "w-60"
       )}
+      style={{ background: "var(--g900)", color: "var(--white)" }}
     >
       {/* 상단: 로고 영역 */}
       <div className="flex items-center gap-2 px-4 py-5">
-        <span className="text-xl font-bold text-white whitespace-nowrap">
+        <span className="t-xl text-white whitespace-nowrap">
           D!DiM
         </span>
         {!isCollapsed && (
-          <span className="text-xs text-[var(--neutral-text-on-dark)] opacity-70">
+          <span className="t-xs" style={{ color: "var(--g400)" }}>
             블로그 운영
           </span>
         )}
@@ -77,7 +76,6 @@ export function Sidebar({ userName = "사용자", userRole = "관리자" }: Side
       {/* 중간: 네비게이션 메뉴 */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {NAVIGATION_ITEMS.map((item) => {
-          /** 현재 경로가 메뉴 경로와 일치하는지 확인 */
           const isActive =
             pathname === item.href || pathname.startsWith(item.href + "/");
 
@@ -95,30 +93,31 @@ export function Sidebar({ userName = "사용자", userRole = "관리자" }: Side
       </nav>
 
       {/* 하단: 사용자 프로필 영역 + 로그아웃 */}
-      <div className="border-t border-white/10 px-3 py-4">
+      <div className="px-3 py-4" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <div className="flex items-center gap-3">
-          {/* 아바타 */}
-          <div className="h-8 w-8 flex-shrink-0 rounded-full bg-[var(--brand-cta)] flex items-center justify-center">
-            <span className="text-xs font-medium text-white">{initial}</span>
+          <div
+            className="ucl-avatar shrink-0"
+            style={{ width: "32px", height: "32px", fontSize: "12px" }}
+          >
+            {initial}
           </div>
 
-          {/* 이름 + 역할 - 접힌 상태에서는 숨김 */}
           {!isCollapsed && (
             <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium text-[var(--neutral-text-on-dark)]">
+              <p className="t-sm font-semibold text-white truncate">
                 {userName}
               </p>
-              <p className="truncate text-xs text-[var(--neutral-text-on-dark)] opacity-60">
+              <p className="t-xs truncate" style={{ color: "var(--g400)" }}>
                 {userRole}
               </p>
             </div>
           )}
 
-          {/* 로그아웃 버튼 */}
           {!isCollapsed && (
             <button
               onClick={handleLogout}
-              className="shrink-0 rounded p-1 text-[var(--neutral-text-on-dark)] opacity-60 hover:opacity-100 transition-opacity"
+              className="icon-btn shrink-0"
+              style={{ color: "var(--g400)", width: "28px", height: "28px" }}
               aria-label="로그아웃"
               title="로그아웃"
             >
@@ -134,10 +133,9 @@ export function Sidebar({ userName = "사용자", userRole = "관리자" }: Side
         className={cn(
           "absolute -right-3 top-7 z-10",
           "flex h-6 w-6 items-center justify-center rounded-full",
-          "bg-white border border-[var(--neutral-border)] shadow-sm",
-          "text-[var(--neutral-text-secondary)] hover:text-[var(--neutral-text)]",
-          "transition-colors duration-150"
+          "bg-white shadow-sm transition-colors duration-150"
         )}
+        style={{ border: "1px solid var(--g200)", color: "var(--g600)" }}
         aria-label={isCollapsed ? "사이드바 펼치기" : "사이드바 접기"}
       >
         {isCollapsed ? (

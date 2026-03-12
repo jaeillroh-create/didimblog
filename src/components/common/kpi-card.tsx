@@ -1,8 +1,6 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { TrendingUp, TrendingDown } from "lucide-react";
 
 interface KPICardProps {
   /** 지표 제목 */
@@ -13,45 +11,47 @@ interface KPICardProps {
   change?: number;
   /** 변동 기간 라벨 (예: "전월 대비") */
   changeLabel?: string;
-  /** 좌측 상단 아이콘 */
+  /** 이모지 아이콘 */
   icon?: React.ReactNode;
+  /** 값 색상 (CSS var) */
+  valueColor?: string;
 }
 
 /**
- * KPI 수치를 카드 형태로 표시하는 컴포넌트
+ * KPI 수치를 StatCard 패턴으로 표시하는 컴포넌트
+ * Universal Component Library StatCard 패턴 적용
  */
-export function KPICard({ title, value, change, changeLabel, icon }: KPICardProps) {
+export function KPICard({ title, value, change, changeLabel, icon, valueColor }: KPICardProps) {
   const isPositive = change !== undefined && change >= 0;
   const isNegative = change !== undefined && change < 0;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        {icon && <div className="text-muted-foreground">{icon}</div>}
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {change !== undefined && (
-          <div className="mt-1 flex items-center gap-1 text-xs">
-            {isPositive && <TrendingUp className="h-3 w-3 text-semantic-success" />}
-            {isNegative && <TrendingDown className="h-3 w-3 text-semantic-error" />}
-            <span
-              className={cn(
-                "font-medium",
-                isPositive && "text-semantic-success",
-                isNegative && "text-semantic-error"
-              )}
-            >
-              {isPositive ? "+" : ""}
-              {change.toFixed(1)}%
-            </span>
-            {changeLabel && (
-              <span className="text-muted-foreground">{changeLabel}</span>
+    <div className="card-default card-hover">
+      <div className="stat-label">
+        {icon}
+        <span>{title}</span>
+      </div>
+      <div
+        className="stat-value"
+        style={valueColor ? { color: valueColor } : undefined}
+      >
+        {value}
+      </div>
+      {change !== undefined && (
+        <div className="stat-sub flex items-center gap-1">
+          <span
+            className={cn(
+              "font-medium font-num",
+              isPositive && "text-success",
+              isNegative && "text-danger"
             )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          >
+            {isPositive ? "+" : ""}
+            {change.toFixed(1)}%
+          </span>
+          {changeLabel && <span>{changeLabel}</span>}
+        </div>
+      )}
+    </div>
   );
 }

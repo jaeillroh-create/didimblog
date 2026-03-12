@@ -9,7 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -106,10 +105,11 @@ export function ContentForm({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 제목 */}
-          <div className="space-y-2">
-            <Label htmlFor="title">제목 *</Label>
+          <div className="input-wrap">
+            <Label htmlFor="title" className="input-label">제목 *</Label>
             <Input
               id="title"
+              className="input-field"
               placeholder="콘텐츠 제목을 입력하세요"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -118,8 +118,8 @@ export function ContentForm({
           </div>
 
           {/* 카테고리 */}
-          <div className="space-y-2">
-            <Label>카테고리 *</Label>
+          <div className="input-wrap">
+            <Label className="input-label">카테고리 *</Label>
             <Select value={categoryId} onValueChange={setCategoryId}>
               <SelectTrigger>
                 <SelectValue placeholder="카테고리 선택" />
@@ -135,10 +135,11 @@ export function ContentForm({
           </div>
 
           {/* 세부 카테고리 */}
-          <div className="space-y-2">
-            <Label htmlFor="secondary">세부 카테고리</Label>
+          <div className="input-wrap">
+            <Label htmlFor="secondary" className="input-label">세부 카테고리</Label>
             <Input
               id="secondary"
+              className="input-field"
               placeholder="세부 분류 (선택)"
               value={secondaryCategory}
               onChange={(e) => setSecondaryCategory(e.target.value)}
@@ -146,10 +147,11 @@ export function ContentForm({
           </div>
 
           {/* 타겟 키워드 */}
-          <div className="space-y-2">
-            <Label htmlFor="keyword">타겟 키워드</Label>
+          <div className="input-wrap">
+            <Label htmlFor="keyword" className="input-label">타겟 키워드</Label>
             <Input
               id="keyword"
+              className="input-field"
               placeholder="SEO 타겟 키워드"
               value={targetKeyword}
               onChange={(e) => setTargetKeyword(e.target.value)}
@@ -157,8 +159,8 @@ export function ContentForm({
           </div>
 
           {/* 타겟 독자 */}
-          <div className="space-y-2">
-            <Label>타겟 독자</Label>
+          <div className="input-wrap">
+            <Label className="input-label">타겟 독자</Label>
             <Select value={targetAudience} onValueChange={setTargetAudience}>
               <SelectTrigger>
                 <SelectValue placeholder="타겟 독자 선택" />
@@ -172,15 +174,16 @@ export function ContentForm({
           </div>
 
           {/* 발행 예정일 */}
-          <div className="space-y-2">
-            <Label htmlFor="publishDate">발행 예정일</Label>
+          <div className="input-wrap">
+            <Label htmlFor="publishDate" className="input-label">발행 예정일</Label>
             <Input
               id="publishDate"
+              className="input-field"
               type="date"
               value={publishDate}
               onChange={(e) => setPublishDate(e.target.value)}
             />
-            <p className="text-xs text-[var(--neutral-text-muted)]">
+            <p className="t-xs" style={{ color: "var(--g500)" }}>
               SLA: AI 주제선정 D-5 ({formatDate(slaDates.briefingDue)}) / 초안 D-3 (
               {formatDate(slaDates.draftDue)}) / 검토 D-2 (
               {formatDate(slaDates.reviewDue)}) / 이미지 D-1 (
@@ -189,16 +192,21 @@ export function ContentForm({
           </div>
 
           <DialogFooter>
-            <Button
+            <button
               type="button"
-              variant="outline"
+              className="btn btn-ghost btn-md"
               onClick={() => onOpenChange(false)}
             >
               취소
-            </Button>
-            <Button type="submit" disabled={isPending || !title.trim() || !categoryId}>
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary btn-md"
+              disabled={isPending || !title.trim() || !categoryId}
+              style={{ backgroundColor: "var(--brand)" }}
+            >
               {isPending ? "생성 중..." : "생성하기"}
-            </Button>
+            </button>
           </DialogFooter>
         </form>
       </DialogContent>

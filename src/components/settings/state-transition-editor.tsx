@@ -10,11 +10,6 @@ import {
   createStateTransition,
   deleteStateTransition,
 } from "@/actions/settings";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -41,7 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { toast } from "sonner";
-import { GitBranch, Pencil, Trash2, Plus, ArrowRight } from "lucide-react";
+import { Pencil, Trash2, Plus, ArrowRight } from "lucide-react";
 import { CONTENT_STATES } from "@/lib/constants/content-states";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -63,20 +58,19 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function StatusBadgeInline({ status }: { status: string }) {
-  const color = STATUS_COLORS[status] ?? "#6b7280";
+  const color = STATUS_COLORS[status] ?? "var(--g500)";
   const label = STATUS_LABELS[status] ?? status;
 
   return (
-    <Badge
-      variant="outline"
-      className="border-transparent font-medium text-xs px-2 py-0.5"
+    <span
+      className="ucl-badge ucl-badge-sm"
       style={{
         backgroundColor: `${color}20`,
         color: color,
       }}
     >
       {label}
-    </Badge>
+    </span>
   );
 }
 
@@ -217,20 +211,18 @@ export function StateTransitionEditor({
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <GitBranch className="h-5 w-5" />
-              상태 전이 규칙
-            </CardTitle>
-            <Button size="sm" onClick={openCreate} disabled={isPending}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" />
-              규칙 추가
-            </Button>
+      <div className="scard">
+        <div className="scard-head">
+          <div className="scard-head-left">
+            <span className="tf tf-14">🔀</span>
+            <span className="scard-head-title">상태 전이 규칙</span>
           </div>
-        </CardHeader>
-        <CardContent>
+          <button className="btn btn-primary btn-sm" onClick={openCreate} disabled={isPending}>
+            <Plus className="h-3.5 w-3.5" />
+            규칙 추가
+          </button>
+        </div>
+        <div className="scard-body">
           <Tabs
             value={activeTab}
             onValueChange={setActiveTab}
@@ -259,8 +251,8 @@ export function StateTransitionEditor({
               />
             </TabsContent>
           </Tabs>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <Dialog
         open={dialogOpen}
@@ -279,8 +271,8 @@ export function StateTransitionEditor({
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="from-status">이전 상태</Label>
+              <div>
+                <label className="input-label">이전 상태</label>
                 <Select
                   value={formData.from_status}
                   onValueChange={(v) =>
@@ -299,8 +291,8 @@ export function StateTransitionEditor({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="to-status">다음 상태</Label>
+              <div>
+                <label className="input-label">다음 상태</label>
                 <Select
                   value={formData.to_status}
                   onValueChange={(v) =>
@@ -321,11 +313,12 @@ export function StateTransitionEditor({
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="conditions">조건 (JSON)</Label>
+            <div>
+              <label className="input-label">조건 (JSON)</label>
               <textarea
                 id="conditions"
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+                className="textarea font-mono"
+                style={{ minHeight: 80 }}
                 value={formData.conditions}
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, conditions: e.target.value }))
@@ -333,34 +326,40 @@ export function StateTransitionEditor({
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="auto-checks">자동 검사 (쉼표 구분)</Label>
-              <Input
-                id="auto-checks"
-                value={formData.auto_checks}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    auto_checks: e.target.value,
-                  }))
-                }
-                placeholder="예: seo_check, review_exists"
-              />
+            <div>
+              <label className="input-label">자동 검사 (쉼표 구분)</label>
+              <div className="input-wrap">
+                <input
+                  id="auto-checks"
+                  className="input-field"
+                  value={formData.auto_checks}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      auto_checks: e.target.value,
+                    }))
+                  }
+                  placeholder="예: seo_check, review_exists"
+                />
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="description">설명</Label>
-              <Input
-                id="description"
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    description: e.target.value,
-                  }))
-                }
-                placeholder="전이 규칙에 대한 설명"
-              />
+            <div>
+              <label className="input-label">설명</label>
+              <div className="input-wrap">
+                <input
+                  id="description"
+                  className="input-field"
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
+                  placeholder="전이 규칙에 대한 설명"
+                />
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -374,24 +373,24 @@ export function StateTransitionEditor({
                   }))
                 }
               />
-              <Label htmlFor="is-reversible" className="cursor-pointer">
+              <label htmlFor="is-reversible" className="t-sm cursor-pointer" style={{ color: "var(--g700)" }}>
                 역행 가능
-              </Label>
+              </label>
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
+            <button
+              className="btn btn-secondary btn-md"
               onClick={() => {
                 setEditTarget(null);
                 setIsCreating(false);
               }}
             >
               취소
-            </Button>
-            <Button onClick={handleSave} disabled={isPending}>
+            </button>
+            <button className="btn btn-primary btn-md" onClick={handleSave} disabled={isPending}>
               {isCreating ? "추가" : "저장"}
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -442,68 +441,60 @@ function TransitionTable({
               <StatusBadgeInline status={t.from_status} />
             </TableCell>
             <TableCell>
-              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+              <ArrowRight className="h-3.5 w-3.5" style={{ color: "var(--g400)" }} />
             </TableCell>
             <TableCell>
               <StatusBadgeInline status={t.to_status} />
             </TableCell>
             <TableCell>
-              <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+              <code className="t-xs px-1.5 py-0.5" style={{ background: "var(--g100)", borderRadius: "var(--r-xs)", color: "var(--g700)" }}>
                 {JSON.stringify(t.conditions ?? {})}
               </code>
             </TableCell>
             <TableCell>
               <div className="flex flex-wrap gap-1">
                 {t.auto_checks.map((check) => (
-                  <Badge key={check} variant="secondary" className="text-xs">
+                  <span key={check} className="ucl-badge ucl-badge-sm badge-neutral">
                     {check}
-                  </Badge>
+                  </span>
                 ))}
                 {t.auto_checks.length === 0 && (
-                  <span className="text-xs text-muted-foreground">없음</span>
+                  <span className="t-xs" style={{ color: "var(--g400)" }}>없음</span>
                 )}
               </div>
             </TableCell>
             <TableCell>
               {t.is_reversible ? (
-                <Badge
-                  variant="outline"
-                  className="bg-green-50 text-green-700 border-green-200 text-xs"
-                >
+                <span className="ucl-badge ucl-badge-sm badge-success">
                   Y
-                </Badge>
+                </span>
               ) : (
-                <Badge
-                  variant="outline"
-                  className="bg-gray-50 text-gray-500 border-gray-200 text-xs"
-                >
+                <span className="ucl-badge ucl-badge-sm badge-neutral">
                   N
-                </Badge>
+                </span>
               )}
             </TableCell>
-            <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+            <TableCell className="t-sm max-w-[200px] truncate" style={{ color: "var(--g500)" }}>
               {t.description ?? "-"}
             </TableCell>
             <TableCell>
               <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: 28, height: 28, padding: 0 }}
                   onClick={() => onEdit(t)}
                   disabled={isPending}
                 >
                   <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: 28, height: 28, padding: 0, color: "var(--g400)" }}
                   onClick={() => onDelete(t)}
                   disabled={isPending}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                </button>
               </div>
             </TableCell>
           </TableRow>
@@ -512,7 +503,8 @@ function TransitionTable({
           <TableRow>
             <TableCell
               colSpan={8}
-              className="text-center text-muted-foreground py-8"
+              className="text-center py-8 t-sm"
+              style={{ color: "var(--g400)" }}
             >
               등록된 상태 전이 규칙이 없습니다.
             </TableCell>

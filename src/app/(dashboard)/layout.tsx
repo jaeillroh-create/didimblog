@@ -49,7 +49,7 @@ export default async function DashboardLayout({
         userName={userName}
         userRole={ROLE_LABELS[userRole] ?? userRole}
       />
-      <main className="flex-1 bg-[var(--neutral-bg)] overflow-auto min-h-screen">
+      <main className="flex-1 overflow-auto min-h-screen" style={{ background: "var(--g50)" }}>
         <div className="p-6">{children}</div>
       </main>
     </div>

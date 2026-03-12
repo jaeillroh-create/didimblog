@@ -14,7 +14,6 @@ import {
   YAxis,
   Bar,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CategoryMetricData } from "@/actions/analytics";
 
 interface CategoryComparisonProps {
@@ -22,9 +21,9 @@ interface CategoryComparisonProps {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  "CAT-A": "var(--category-a, #D4740A)",
-  "CAT-B": "var(--brand-primary, #1B3A5C)",
-  "CAT-C": "var(--text-tertiary, #6B7280)",
+  "CAT-A": "var(--category-field-note)",
+  "CAT-B": "var(--category-ip-lounge)",
+  "CAT-C": "var(--category-diary)",
 };
 
 const MONTH_LABELS: Record<string, string> = {
@@ -48,15 +47,23 @@ function CustomRadarTooltip({
   if (!active || !payload || payload.length === 0) return null;
 
   return (
-    <div className="rounded-lg border bg-background p-3 shadow-md">
+    <div
+      className="p-3"
+      style={{
+        borderRadius: "var(--r-lg)",
+        border: "1px solid var(--g150)",
+        background: "var(--white)",
+        boxShadow: "var(--sh-md)",
+      }}
+    >
       {payload.map((entry) => (
-        <div key={entry.name} className="flex items-center gap-2 text-sm">
+        <div key={entry.name} className="flex items-center gap-2 t-sm">
           <span
-            className="inline-block h-2.5 w-2.5 rounded-full"
-            style={{ backgroundColor: entry.color }}
+            className="inline-block h-2.5 w-2.5"
+            style={{ backgroundColor: entry.color, borderRadius: "var(--r-full)" }}
           />
-          <span className="text-muted-foreground">{entry.name}:</span>
-          <span className="font-medium">{entry.value}</span>
+          <span style={{ color: "var(--g500)" }}>{entry.name}:</span>
+          <span className="font-num" style={{ fontWeight: 600, color: "var(--g900)" }}>{entry.value}</span>
         </div>
       ))}
     </div>
@@ -122,22 +129,25 @@ export function CategoryComparison({ data }: CategoryComparisonProps) {
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>카테고리 비교</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-8">
+    <div className="scard">
+      <div className="scard-head">
+        <div className="scard-head-left">
+          <span className="tf tf-16">🔄</span>
+          <span className="scard-head-title">카테고리 비교</span>
+        </div>
+      </div>
+      <div className="scard-body space-y-8">
         {/* 레이더 차트 */}
         <div className="h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="75%">
-              <PolarGrid className="stroke-muted" />
-              <PolarAngleAxis dataKey="axis" className="text-xs" />
+              <PolarGrid stroke="var(--g200)" />
+              <PolarAngleAxis dataKey="axis" tick={{ fontSize: 11, fill: "var(--g600)" }} />
               <Tooltip content={<CustomRadarTooltip />} />
               <Legend />
               {categoryNames.map((name) => {
                 const catId = categoryIdMap[name] ?? "";
-                const color = CATEGORY_COLORS[catId] ?? "#6B7280";
+                const color = CATEGORY_COLORS[catId] ?? "var(--g500)";
                 return (
                   <Radar
                     key={name}
@@ -156,20 +166,27 @@ export function CategoryComparison({ data }: CategoryComparisonProps) {
 
         {/* 월별 발행 건수 바 차트 */}
         <div>
-          <h4 className="mb-3 text-sm font-medium text-muted-foreground">
+          <h4 className="mb-3 t-sm" style={{ fontWeight: 600, color: "var(--g500)" }}>
             월별 발행 건수
           </h4>
           <div className="h-[200px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={barData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="monthLabel" className="text-xs" />
-                <YAxis className="text-xs" allowDecimals={false} />
-                <Tooltip />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--g150)" />
+                <XAxis dataKey="monthLabel" tick={{ fontSize: 11, fill: "var(--g500)" }} />
+                <YAxis tick={{ fontSize: 11, fill: "var(--g500)" }} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: "var(--r-md)",
+                    border: "1px solid var(--g150)",
+                    boxShadow: "var(--sh-md)",
+                    fontSize: 13,
+                  }}
+                />
                 <Legend />
                 {categoryNames.map((name) => {
                   const catId = categoryIdMap[name] ?? "";
-                  const color = CATEGORY_COLORS[catId] ?? "#6B7280";
+                  const color = CATEGORY_COLORS[catId] ?? "var(--g500)";
                   return (
                     <Bar
                       key={name}
@@ -184,7 +201,7 @@ export function CategoryComparison({ data }: CategoryComparisonProps) {
             </ResponsiveContainer>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -2,11 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { type CtaTemplate, updateCtaTemplate } from "@/actions/settings";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { Megaphone, Pencil, ChevronDown, ChevronRight, Info } from "lucide-react";
 
@@ -77,59 +71,66 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Megaphone className="h-5 w-5" />
-            CTA 템플릿 관리
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <div className="scard">
+        <div className="scard-head">
+          <div className="scard-head-left">
+            <Megaphone className="h-5 w-5" style={{ color: "var(--g500)" }} />
+            <span className="scard-head-title">CTA 템플릿 관리</span>
+          </div>
+        </div>
+        <div className="scard-body space-y-3">
           {templates.map((template) => {
             const isExpanded = expandedKey === template.key;
             const isNoCta = !template.text && template.note;
 
             return (
-              <Card key={template.key} className="border">
+              <div key={template.key} className="card-default card-hover !p-0 overflow-hidden">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+                  className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-[var(--g50)]"
                   onClick={() => toggleExpand(template.key)}
                 >
                   <div className="flex items-center gap-3">
                     {isExpanded ? (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      <ChevronDown className="h-4 w-4" style={{ color: "var(--g400)" }} />
                     ) : (
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      <ChevronRight className="h-4 w-4" style={{ color: "var(--g400)" }} />
                     )}
-                    <span className="font-medium">{template.categoryName}</span>
+                    <span className="t-md" style={{ fontWeight: 700, color: "var(--g900)" }}>{template.categoryName}</span>
                     {isNoCta && (
-                      <Badge variant="outline" className="text-xs text-muted-foreground">
+                      <span className="ucl-badge ucl-badge-sm badge-neutral">
                         CTA 없음
-                      </Badge>
+                      </span>
                     )}
                     {template.emailSubjectTag && (
-                      <Badge variant="secondary" className="text-xs">
+                      <span className="ucl-badge ucl-badge-sm badge-brand">
                         {template.emailSubjectTag}
-                      </Badge>
+                      </span>
                     )}
                   </div>
                 </button>
 
                 {isExpanded && (
                   <div className="px-4 pb-4 space-y-4">
-                    <Separator />
+                    <div className="divider" />
 
                     {isNoCta ? (
-                      <div className="flex items-start gap-2 rounded-md bg-muted/50 p-3">
-                        <Info className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
-                        <p className="text-sm text-muted-foreground">{template.note}</p>
+                      <div className="ucl-alert alert-info">
+                        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span className="t-sm">{template.note}</span>
                       </div>
                     ) : (
                       <div className="space-y-3">
                         <div>
-                          <Label className="text-xs text-muted-foreground">CTA 문구</Label>
-                          <pre className="mt-1 whitespace-pre-wrap rounded-md bg-muted/50 p-3 text-sm font-mono">
+                          <label className="input-label">CTA 문구</label>
+                          <pre
+                            className="mt-1 whitespace-pre-wrap p-3 t-sm font-mono"
+                            style={{
+                              background: "var(--g50)",
+                              borderRadius: "var(--r-md)",
+                              color: "var(--g700)",
+                            }}
+                          >
                             {template.text}
                           </pre>
                         </div>
@@ -137,35 +138,34 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
                     )}
 
                     <div>
-                      <Label className="text-xs text-muted-foreground">전환 방법</Label>
-                      <p className="mt-1 text-sm">{template.conversionMethod}</p>
+                      <label className="input-label">전환 방법</label>
+                      <p className="mt-1 t-sm" style={{ color: "var(--g700)" }}>{template.conversionMethod}</p>
                     </div>
 
                     {template.emailSubjectTag && (
                       <div>
-                        <Label className="text-xs text-muted-foreground">이메일 제목 태그</Label>
-                        <p className="mt-1 text-sm">{template.emailSubjectTag}</p>
+                        <label className="input-label">이메일 제목 태그</label>
+                        <p className="mt-1 t-sm" style={{ color: "var(--g700)" }}>{template.emailSubjectTag}</p>
                       </div>
                     )}
 
                     <div className="flex justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
+                      <button
+                        className="btn btn-secondary btn-sm"
                         onClick={() => openEdit(template)}
                         disabled={isPending}
                       >
-                        <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                        <Pencil className="h-3.5 w-3.5" />
                         수정
-                      </Button>
+                      </button>
                     </div>
                   </div>
                 )}
-              </Card>
+              </div>
             );
           })}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
         <DialogContent className="sm:max-w-[520px]">
@@ -175,42 +175,49 @@ export function CtaTemplateEditor({ initialTemplates }: CtaTemplateEditorProps) 
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="cta-text">CTA 문구</Label>
+            <div>
+              <label className="input-label" htmlFor="cta-text">CTA 문구</label>
               <textarea
                 id="cta-text"
-                className="flex min-h-[160px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+                className="textarea font-mono"
+                style={{ minHeight: 160 }}
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
                 placeholder="CTA 문구를 입력하세요..."
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="conversion-method">전환 방법</Label>
-              <Input
-                id="conversion-method"
-                value={editConversionMethod}
-                onChange={(e) => setEditConversionMethod(e.target.value)}
-                placeholder="전환 방법을 입력하세요..."
-              />
+            <div>
+              <label className="input-label" htmlFor="conversion-method">전환 방법</label>
+              <div className="input-wrap">
+                <input
+                  id="conversion-method"
+                  className="input-field"
+                  value={editConversionMethod}
+                  onChange={(e) => setEditConversionMethod(e.target.value)}
+                  placeholder="전환 방법을 입력하세요..."
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email-tag">이메일 제목 태그 (선택)</Label>
-              <Input
-                id="email-tag"
-                value={editEmailTag}
-                onChange={(e) => setEditEmailTag(e.target.value)}
-                placeholder="이메일 제목 태그를 입력하세요..."
-              />
+            <div>
+              <label className="input-label" htmlFor="email-tag">이메일 제목 태그 (선택)</label>
+              <div className="input-wrap">
+                <input
+                  id="email-tag"
+                  className="input-field"
+                  value={editEmailTag}
+                  onChange={(e) => setEditEmailTag(e.target.value)}
+                  placeholder="이메일 제목 태그를 입력하세요..."
+                />
+              </div>
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setEditTarget(null)}>
+            <button className="btn btn-secondary btn-md" onClick={() => setEditTarget(null)}>
               취소
-            </Button>
-            <Button onClick={handleSave} disabled={isPending}>
+            </button>
+            <button className="btn btn-primary btn-md" onClick={handleSave} disabled={isPending}>
               저장
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

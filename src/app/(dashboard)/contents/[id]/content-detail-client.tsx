@@ -179,11 +179,8 @@ export function ContentDetailClient({
           <span className="flex items-center gap-2">
             {content.title ?? "제목 없음"}
             {content.is_ai_generated && (
-              <span
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
-                style={{ backgroundColor: "#ede9fe", color: "#7c3aed" }}
-              >
-                <Sparkles className="h-3 w-3" />
+              <span className="ucl-badge ucl-badge-sm" style={{ backgroundColor: "#ede9fe", color: "#7c3aed" }}>
+                <span className="tf tf-12">✨</span>
                 AI 생성
               </span>
             )}
@@ -524,12 +521,12 @@ function InfoRow({
   value: string;
 }) {
   return (
-    <div className="flex items-center justify-between text-sm">
-      <div className="flex items-center gap-1.5 text-muted-foreground">
+    <div className="flex items-center justify-between t-md">
+      <div className="flex items-center gap-1.5 text-g-400">
         {Icon && <Icon className="h-3.5 w-3.5" />}
         <span>{label}</span>
       </div>
-      <span className="font-medium">{value}</span>
+      <span className="font-semibold text-g-900">{value}</span>
     </div>
   );
 }

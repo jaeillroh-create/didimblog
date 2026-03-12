@@ -3,33 +3,31 @@
 import { useState, useTransition } from "react";
 import { type SeoSettingItem, updateSeoSettings } from "@/actions/settings";
 import { type SeoGrade } from "@/lib/constants/seo-items";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { Search, RotateCcw } from "lucide-react";
 
 const GRADE_CONFIG: Record<
   SeoGrade,
-  { label: string; color: string; rule: string }
+  { label: string; badgeClass: string; rule: string; borderColor: string }
 > = {
   required: {
     label: "필수",
-    color: "bg-red-100 text-red-700 border-red-200",
+    badgeClass: "badge-danger",
     rule: "모두 통과해야 발행 가능",
+    borderColor: "var(--danger)",
   },
   recommended: {
     label: "권장",
-    color: "bg-orange-100 text-orange-700 border-orange-200",
+    badgeClass: "badge-warning",
     rule: "2개까지 미충족 허용",
+    borderColor: "var(--warning)",
   },
   optional: {
     label: "선택",
-    color: "bg-gray-100 text-gray-600 border-gray-200",
+    badgeClass: "badge-neutral",
     rule: "미충족 허용",
+    borderColor: "var(--g300)",
   },
 };
 
@@ -76,40 +74,34 @@ export function SeoCriteriaEditor({ initialItems }: SeoCriteriaEditorProps) {
   }));
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Search className="h-5 w-5" />
-            SEO 기준 설정
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleReset}
-              disabled={isPending}
-            >
-              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-              기본값 복원
-            </Button>
-            <Button size="sm" onClick={handleSave} disabled={isPending}>
-              저장
-            </Button>
-          </div>
+    <div className="scard">
+      <div className="scard-head">
+        <div className="scard-head-left">
+          <Search className="h-5 w-5" style={{ color: "var(--g500)" }} />
+          <span className="scard-head-title">SEO 기준 설정</span>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        <div className="flex items-center gap-2">
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleReset}
+            disabled={isPending}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            기본값 복원
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={isPending}>
+            저장
+          </button>
+        </div>
+      </div>
+      <div className="scard-body space-y-6">
         {groupedItems.map(({ grade, config, items: gradeItems }) => (
           <div key={grade} className="space-y-3">
             <div className="flex items-center gap-3">
-              <Badge
-                variant="outline"
-                className={`font-medium ${config.color}`}
-              >
+              <span className={`ucl-badge ${config.badgeClass}`}>
                 {config.label}
-              </Badge>
-              <span className="text-xs text-muted-foreground">
+              </span>
+              <span className="t-xs" style={{ color: "var(--g400)" }}>
                 {config.rule}
               </span>
             </div>
@@ -118,7 +110,10 @@ export function SeoCriteriaEditor({ initialItems }: SeoCriteriaEditorProps) {
               {gradeItems.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center gap-3 rounded-md px-3 py-2.5 hover:bg-muted/50 transition-colors"
+                  className={`doc-row ${item.enabled ? "doc-row-done" : "doc-row-empty"}`}
+                  style={{
+                    borderLeftColor: item.enabled ? config.borderColor : "var(--g200)",
+                  }}
                 >
                   <Checkbox
                     id={`seo-${item.id}`}
@@ -126,25 +121,25 @@ export function SeoCriteriaEditor({ initialItems }: SeoCriteriaEditorProps) {
                     onCheckedChange={() => toggleItem(item.id)}
                     disabled={isPending}
                   />
-                  <Label
+                  <label
                     htmlFor={`seo-${item.id}`}
                     className="flex flex-1 cursor-pointer items-center gap-3"
                   >
-                    <span className="font-medium text-sm min-w-[120px]">
+                    <span className="t-sm min-w-[120px]" style={{ fontWeight: 600, color: "var(--g900)" }}>
                       {item.label}
                     </span>
-                    <span className="text-sm text-muted-foreground">
+                    <span className="t-sm" style={{ color: "var(--g500)" }}>
                       {item.description}
                     </span>
-                  </Label>
+                  </label>
                 </div>
               ))}
             </div>
 
-            {grade !== "optional" && <Separator />}
+            {grade !== "optional" && <div className="divider" />}
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

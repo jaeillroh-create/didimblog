@@ -14,6 +14,22 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
+      <head>
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+        <link rel="preconnect" href="https://static.toss.im" />
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/gh/toss/tossface/dist/tossface.css"
+        />
+        <link
+          rel="stylesheet"
+          href="https://static.toss.im/dist/font/tossproductsans/TossProductSans.css"
+        />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap"
+        />
+      </head>
       <body className="antialiased">
         {children}
         <Toaster position="top-right" richColors />

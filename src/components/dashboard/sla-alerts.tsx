@@ -1,46 +1,51 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { EmptyState } from "@/components/common/empty-state";
 import { getDashboardSlaAlerts } from "@/actions/dashboard";
-import { Clock } from "lucide-react";
-import { cn } from "@/lib/utils";
 
-/** 상태별 스타일 매핑 */
+/** 상태별 스타일 매핑 — UCL 시맨틱 토큰 사용 */
 const statusStyles = {
   overdue: {
-    dot: "bg-sla-overdue",
-    text: "text-sla-overdue",
-    badge: "bg-red-50 text-sla-overdue",
+    dotColor: "var(--danger)",
+    badgeBg: "var(--danger-light)",
+    badgeColor: "var(--danger)",
+    textColor: "var(--danger)",
   },
   warning: {
-    dot: "bg-sla-warning",
-    text: "text-sla-warning",
-    badge: "bg-amber-50 text-sla-warning",
+    dotColor: "var(--warning)",
+    badgeBg: "var(--warning-light)",
+    badgeColor: "var(--warning)",
+    textColor: "var(--warning)",
   },
   "on-track": {
-    dot: "bg-sla-on-track",
-    text: "text-sla-on-track",
-    badge: "bg-emerald-50 text-sla-on-track",
+    dotColor: "var(--success)",
+    badgeBg: "var(--success-light)",
+    badgeColor: "var(--success)",
+    textColor: "var(--success)",
   },
 } as const;
 
-/** SLA 알림 카드 — Supabase 데이터 */
+/** SLA 알림 카드 — Supabase 데이터, SectionCard 패턴 */
 export async function SlaAlerts() {
   const alerts = await getDashboardSlaAlerts();
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base font-semibold">SLA 알림</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <div className="scard">
+      <div className="scard-head">
+        <div className="scard-head-left">
+          <div className="scard-head-icon" style={{ background: "var(--danger-light)" }}>
+            <span className="tf tf-14">⏰</span>
+          </div>
+          <span className="scard-head-title">SLA 알림</span>
+        </div>
+        {alerts.length > 0 && (
+          <span className="t-xs" style={{ color: "var(--g400)" }}>
+            {alerts.length}건
+          </span>
+        )}
+      </div>
+      <div className="scard-body">
         {alerts.length === 0 ? (
           <EmptyState
-            icon={<Clock className="h-6 w-6" />}
+            icon={<span className="tf tf-14">⏰</span>}
             title="SLA 알림이 없습니다"
             description="진행 중인 콘텐츠의 SLA 현황이 여기에 표시됩니다."
             className="py-8"
@@ -52,28 +57,33 @@ export async function SlaAlerts() {
               return (
                 <div
                   key={alert.id}
-                  className="flex items-center gap-3 rounded-md border p-3"
+                  className="flex items-center gap-3 rounded-md p-3"
+                  style={{
+                    border: "1px solid var(--g150)",
+                  }}
                 >
                   <span
-                    className={cn(
-                      "h-2.5 w-2.5 shrink-0 rounded-full",
-                      style.dot
-                    )}
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ background: style.dotColor }}
                   />
                   <span
-                    className={cn(
-                      "shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold",
-                      style.badge
-                    )}
+                    className="ucl-badge ucl-badge-sm"
+                    style={{
+                      background: style.badgeBg,
+                      color: style.badgeColor,
+                    }}
                   >
                     {alert.statusLabel}
                   </span>
-                  <span className="font-medium truncate flex-1">{alert.content}</span>
                   <span
-                    className={cn(
-                      "ml-auto shrink-0 text-xs font-medium",
-                      style.text
-                    )}
+                    className="t-sm font-medium truncate flex-1"
+                    style={{ color: "var(--g900)" }}
+                  >
+                    {alert.content}
+                  </span>
+                  <span
+                    className="ml-auto shrink-0 t-xs font-medium"
+                    style={{ color: style.textColor }}
                   >
                     {alert.timeInfo}
                   </span>
@@ -82,7 +92,7 @@ export async function SlaAlerts() {
             })}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

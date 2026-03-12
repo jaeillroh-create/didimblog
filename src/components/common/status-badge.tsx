@@ -1,6 +1,5 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { CONTENT_STATES, type ContentStatus } from "@/lib/constants/content-states";
 
@@ -13,24 +12,23 @@ interface StatusBadgeProps {
 
 /**
  * 콘텐츠 상태를 색상 배지로 표시하는 컴포넌트
+ * UCL Badge 패턴 적용 (badge-dot 스타일)
  */
 export function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
   const state = CONTENT_STATES[status];
 
   return (
-    <Badge
-      variant="outline"
+    <span
       className={cn(
-        "border-transparent font-medium",
-        size === "sm" && "text-xs px-1.5 py-0",
-        size === "md" && "text-sm px-2.5 py-0.5"
+        "ucl-badge badge-dot",
+        size === "sm" && "ucl-badge-sm"
       )}
       style={{
-        backgroundColor: `${state.color}20`,
+        backgroundColor: `${state.color}18`,
         color: state.color,
       }}
     >
       {state.label}
-    </Badge>
+    </span>
   );
 }

@@ -17,7 +17,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -27,7 +26,6 @@ import {
 } from "@/components/ui/select";
 import { EmptyState } from "@/components/common/empty-state";
 import { SearchInput } from "@/components/common/search-input";
-import { colors } from "@/lib/constants/design-tokens";
 import { updateLeadStatus } from "@/actions/leads";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -37,9 +35,9 @@ import type { Lead, Profile, Content } from "@/lib/types/database";
 // ── 라벨 매핑 ──
 
 const LEAD_STATUS_CONFIG = {
-  S3: { label: "리드", color: colors.status.s3 },
-  S4: { label: "상담", color: colors.status.s4 },
-  S5: { label: "계약", color: colors.status.s5 },
+  S3: { label: "리드", badgeClass: "badge-warning" },
+  S4: { label: "상담", badgeClass: "badge-info" },
+  S5: { label: "계약", badgeClass: "badge-success" },
 } as const;
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -133,7 +131,8 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
         accessorKey: "contact_date",
         header: ({ column }) => (
           <button
-            className="flex items-center gap-1 font-medium"
+            className="flex items-center gap-1 t-sm"
+            style={{ fontWeight: 600, color: "var(--g700)" }}
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
             문의일
@@ -143,7 +142,7 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
         cell: ({ row }) => {
           const date = row.original.contact_date;
           try {
-            return format(new Date(date), "yyyy-MM-dd");
+            return <span className="t-sm font-num" style={{ color: "var(--g700)" }}>{format(new Date(date), "yyyy-MM-dd")}</span>;
           } catch {
             return date;
           }
@@ -153,7 +152,8 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
         accessorKey: "company_name",
         header: ({ column }) => (
           <button
-            className="flex items-center gap-1 font-medium"
+            className="flex items-center gap-1 t-sm"
+            style={{ fontWeight: 600, color: "var(--g700)" }}
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
             회사명
@@ -161,13 +161,13 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
           </button>
         ),
         cell: ({ row }) => (
-          <span className="font-medium">{row.original.company_name}</span>
+          <span className="t-sm" style={{ fontWeight: 700, color: "var(--g900)" }}>{row.original.company_name}</span>
         ),
       },
       {
         accessorKey: "contact_name",
         header: "담당자",
-        cell: ({ row }) => row.original.contact_name ?? "-",
+        cell: ({ row }) => <span className="t-sm" style={{ color: "var(--g700)" }}>{row.original.contact_name ?? "-"}</span>,
       },
       {
         accessorKey: "source",
@@ -177,11 +177,11 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
           const sourceContent = row.original.source_content_id;
           return (
             <div className="space-y-1">
-              <Badge variant="secondary" className="text-xs">
+              <span className="ucl-badge ucl-badge-sm badge-neutral">
                 {SOURCE_LABELS[source] ?? source}
-              </Badge>
+              </span>
               {source === "blog" && sourceContent && (
-                <p className="text-xs text-muted-foreground truncate max-w-[120px]">
+                <p className="t-xs truncate max-w-[120px]" style={{ color: "var(--g400)" }}>
                   {contentMap.get(sourceContent) ?? sourceContent}
                 </p>
               )}
@@ -196,7 +196,7 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
           const service = row.original.interested_service;
           if (!service) return "-";
           return (
-            <span className="text-sm">
+            <span className="t-sm" style={{ color: "var(--g700)" }}>
               {SERVICE_LABELS[service] ?? service}
             </span>
           );
@@ -216,30 +216,16 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
               }
             >
               <SelectTrigger className="h-7 w-[90px] text-xs border-transparent px-2">
-                <Badge
-                  variant="outline"
-                  className="border-transparent font-medium text-xs px-1.5 py-0"
-                  style={{
-                    backgroundColor: `${config.color}20`,
-                    color: config.color,
-                  }}
-                >
+                <span className={`ucl-badge ucl-badge-sm badge-dot ${config.badgeClass}`}>
                   {config.label}
-                </Badge>
+                </span>
               </SelectTrigger>
               <SelectContent>
                 {(["S3", "S4", "S5"] as const).map((s) => (
                   <SelectItem key={s} value={s}>
-                    <Badge
-                      variant="outline"
-                      className="border-transparent font-medium text-xs px-1.5 py-0"
-                      style={{
-                        backgroundColor: `${LEAD_STATUS_CONFIG[s].color}20`,
-                        color: LEAD_STATUS_CONFIG[s].color,
-                      }}
-                    >
+                    <span className={`ucl-badge ucl-badge-sm badge-dot ${LEAD_STATUS_CONFIG[s].badgeClass}`}>
                       {LEAD_STATUS_CONFIG[s].label}
-                    </Badge>
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -254,7 +240,7 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
           const result = row.original.consultation_result;
           if (!result) return "-";
           return (
-            <span className="text-sm">
+            <span className="t-sm" style={{ color: "var(--g700)" }}>
               {CONSULTATION_LABELS[result] ?? result}
             </span>
           );
@@ -265,11 +251,11 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
         header: "계약여부",
         cell: ({ row }) => (
           <span
-            className={
-              row.original.contract_yn
-                ? "font-semibold text-semantic-success"
-                : "text-muted-foreground"
-            }
+            className={row.original.contract_yn ? "t-sm" : "t-sm"}
+            style={{
+              fontWeight: row.original.contract_yn ? 700 : 400,
+              color: row.original.contract_yn ? "var(--success)" : "var(--g400)",
+            }}
           >
             {row.original.contract_yn ? "계약" : "-"}
           </span>
@@ -279,7 +265,8 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
         accessorKey: "contract_amount",
         header: ({ column }) => (
           <button
-            className="flex items-center gap-1 font-medium"
+            className="flex items-center gap-1 t-sm"
+            style={{ fontWeight: 600, color: "var(--g700)" }}
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
           >
             계약금액
@@ -287,7 +274,7 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
           </button>
         ),
         cell: ({ row }) => (
-          <span className="text-sm tabular-nums">
+          <span className="t-sm font-num" style={{ color: "var(--g700)" }}>
             {formatAmount(row.original.contract_amount)}
           </span>
         ),
@@ -297,9 +284,9 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
         header: "담당자",
         cell: ({ row }) => {
           const assignedTo = row.original.assigned_to;
-          if (!assignedTo) return <span className="text-muted-foreground">-</span>;
+          if (!assignedTo) return <span className="t-sm" style={{ color: "var(--g400)" }}>-</span>;
           return (
-            <span className="text-sm">
+            <span className="t-sm" style={{ color: "var(--g700)" }}>
               {profileMap.get(assignedTo) ?? assignedTo}
             </span>
           );
@@ -343,7 +330,7 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
       </div>
 
       {/* 테이블 */}
-      <div className="rounded-md border">
+      <div className="card-default !p-0 overflow-hidden">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (

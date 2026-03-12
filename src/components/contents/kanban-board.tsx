@@ -4,7 +4,6 @@ import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
 import { Plus, RotateCcw, Sparkles, ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -240,25 +239,29 @@ export function KanbanBoard({
 
         {/* 필터 초기화 */}
         {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={resetFilters}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={resetFilters}
+          >
             <RotateCcw className="mr-1 h-4 w-4" />
             초기화
-          </Button>
+          </button>
         )}
 
         {/* 새 글 만들기 드롭다운 */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              className="ml-auto"
+            <button
+              className="btn btn-primary btn-md ml-auto"
               style={{
-                backgroundColor: "var(--brand-cta)",
+                backgroundColor: "var(--brand)",
               }}
             >
+              <span className="tf tf-14">📝</span>
               <Plus className="mr-1 h-4 w-4" />
               새 글 만들기
               <ChevronDown className="ml-1 h-4 w-4" />
-            </Button>
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => setFormOpen(true)}>

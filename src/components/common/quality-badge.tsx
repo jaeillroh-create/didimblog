@@ -1,15 +1,14 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-/** 품질 등급 정의 */
+/** 품질 등급 정의 — UCL Badge 패턴 적용 */
 const QUALITY_GRADES = [
-  { min: 80, label: "우수", className: "bg-quality-excellent/20 text-quality-excellent" },
-  { min: 60, label: "양호", className: "bg-quality-good/20 text-quality-good" },
-  { min: 40, label: "보통", className: "bg-quality-average/20 text-quality-average" },
-  { min: 20, label: "부진", className: "bg-quality-poor/20 text-quality-poor" },
-  { min: 0, label: "위험", className: "bg-quality-critical/20 text-quality-critical" },
+  { min: 80, label: "우수", bg: "var(--success-light)", color: "var(--success)" },
+  { min: 60, label: "양호", bg: "var(--info-light)", color: "var(--info)" },
+  { min: 40, label: "보통", bg: "var(--warning-light)", color: "var(--warning)" },
+  { min: 20, label: "부진", bg: "var(--danger-light)", color: "var(--danger)" },
+  { min: 0, label: "위험", bg: "var(--danger-light)", color: "#7F1D1D" },
 ] as const;
 
 function getGrade(score: number) {
@@ -28,11 +27,11 @@ export function QualityBadge({ score }: QualityBadgeProps) {
   const grade = getGrade(score);
 
   return (
-    <Badge
-      variant="outline"
-      className={cn("border-transparent font-medium text-sm px-2.5 py-0.5", grade.className)}
+    <span
+      className="ucl-badge font-num"
+      style={{ backgroundColor: grade.bg, color: grade.color }}
     >
       {score}점 · {grade.label}
-    </Badge>
+    </span>
   );
 }

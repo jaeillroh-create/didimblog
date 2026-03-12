@@ -11,32 +11,65 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: [
-          '"Pretendard Variable"',
+          "'Toss Product Sans'",
+          "'Pretendard Variable'",
           "Pretendard",
           "-apple-system",
-          "BlinkMacSystemFont",
-          '"Segoe UI"',
+          "system-ui",
           "sans-serif",
         ],
-        mono: ['"JetBrains Mono"', '"Fira Code"', "Consolas", "monospace"],
+        mono: ["'DM Mono'", "'JetBrains Mono'", "monospace"],
+        emoji: ["'Tossface'", "sans-serif"],
       },
       fontSize: {
-        xs: "0.75rem",
-        sm: "0.8125rem",
-        base: "0.875rem",
-        md: "1rem",
-        lg: "1.125rem",
-        xl: "1.25rem",
-        "2xl": "1.5rem",
-        "3xl": "1.875rem",
+        micro: "10px",
+        xs: "11px",
+        sm: "12px",
+        md: "13.5px",
+        lg: "15px",
+        xl: "17px",
+        "2xl": "22px",
+        "3xl": "28px",
       },
       colors: {
-        // 브랜드
+        // 브랜드 (TDS)
         brand: {
-          primary: "var(--brand-primary)",
-          accent: "var(--brand-accent)",
-          cta: "var(--brand-cta)",
-          "cta-hover": "var(--brand-cta-hover)",
+          DEFAULT: "var(--brand)",
+          hover: "var(--brand-hover)",
+          light: "var(--brand-light)",
+          mid: "var(--brand-mid)",
+          pale: "var(--brand-pale)",
+        },
+        // 시맨틱
+        success: {
+          DEFAULT: "var(--success)",
+          light: "var(--success-light)",
+        },
+        warning: {
+          DEFAULT: "var(--warning)",
+          light: "var(--warning-light)",
+        },
+        danger: {
+          DEFAULT: "var(--danger)",
+          light: "var(--danger-light)",
+        },
+        info: {
+          DEFAULT: "var(--info)",
+          light: "var(--info-light)",
+        },
+        // 그레이스케일 (12단계)
+        g: {
+          900: "var(--g900)",
+          800: "var(--g800)",
+          700: "var(--g700)",
+          600: "var(--g600)",
+          500: "var(--g500)",
+          400: "var(--g400)",
+          300: "var(--g300)",
+          200: "var(--g200)",
+          150: "var(--g150)",
+          100: "var(--g100)",
+          50: "var(--g50)",
         },
         // 카테고리
         category: {
@@ -76,18 +109,6 @@ const config: Config = {
           overdue: "var(--sla-overdue)",
           future: "var(--sla-future)",
         },
-        // 시맨틱
-        semantic: {
-          success: "var(--semantic-success)",
-          warning: "var(--semantic-warning)",
-          error: "var(--semantic-error)",
-          info: "var(--semantic-info)",
-        },
-        // 뉴트럴
-        sidebar: {
-          DEFAULT: "var(--neutral-sidebar)",
-          hover: "var(--neutral-sidebar-hover)",
-        },
         // shadcn/ui 호환
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -124,15 +145,21 @@ const config: Config = {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        xs: "var(--r-xs)",
+        sm: "var(--r-sm)",
+        md: "var(--r-md)",
+        lg: "var(--r-lg)",
+        xl: "var(--r-xl)",
+        full: "var(--r-full)",
       },
       boxShadow: {
-        card: "var(--shadow-card)",
-        "card-hover": "var(--shadow-card-hover)",
-        dropdown: "var(--shadow-dropdown)",
-        modal: "var(--shadow-modal)",
+        sm: "var(--sh-sm)",
+        md: "var(--sh-md)",
+        lg: "var(--sh-lg)",
+        card: "var(--sh-sm)",
+        "card-hover": "var(--sh-md)",
+        dropdown: "var(--sh-md)",
+        modal: "var(--sh-lg)",
       },
       spacing: {
         sidebar: "var(--sidebar-width)",
@@ -147,6 +174,14 @@ const config: Config = {
       width: {
         sidebar: "var(--sidebar-width)",
         "sidebar-collapsed": "var(--sidebar-collapsed-width)",
+      },
+      zIndex: {
+        base: "1",
+        dropdown: "100",
+        sticky: "200",
+        overlay: "300",
+        modal: "400",
+        toast: "500",
       },
     },
   },

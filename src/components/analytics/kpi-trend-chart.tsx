@@ -10,7 +10,6 @@ import {
   Legend,
   Line,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { MonthlyKPI } from "@/actions/analytics";
 
 interface KpiTrendChartProps {
@@ -27,9 +26,9 @@ const MONTH_LABELS: Record<string, string> = {
 };
 
 const LINE_COLORS = {
-  views: "var(--brand-accent)",
+  views: "var(--brand)",
   duration: "var(--status-s2)",
-  conversions: "var(--semantic-success)",
+  conversions: "var(--success)",
   published: "var(--status-s3)",
 } as const;
 
@@ -54,18 +53,26 @@ function CustomTooltip({
   const monthLabel = MONTH_LABELS[label as string] ?? label;
 
   return (
-    <div className="rounded-lg border bg-background p-3 shadow-md">
-      <p className="mb-2 text-sm font-semibold">{monthLabel}</p>
+    <div
+      className="p-3"
+      style={{
+        borderRadius: "var(--r-lg)",
+        border: "1px solid var(--g150)",
+        background: "var(--white)",
+        boxShadow: "var(--sh-md)",
+      }}
+    >
+      <p className="mb-2 t-sm" style={{ fontWeight: 700, color: "var(--g900)" }}>{monthLabel}</p>
       {payload.map((entry) => (
-        <div key={entry.dataKey} className="flex items-center gap-2 text-sm">
+        <div key={entry.dataKey} className="flex items-center gap-2 t-sm">
           <span
-            className="inline-block h-2.5 w-2.5 rounded-full"
-            style={{ backgroundColor: entry.color }}
+            className="inline-block h-2.5 w-2.5"
+            style={{ backgroundColor: entry.color, borderRadius: "var(--r-full)" }}
           />
-          <span className="text-muted-foreground">
+          <span style={{ color: "var(--g500)" }}>
             {LABEL_MAP[entry.dataKey] ?? entry.dataKey}:
           </span>
-          <span className="font-medium">
+          <span className="font-num" style={{ fontWeight: 600, color: "var(--g900)" }}>
             {entry.dataKey === "avgDuration"
               ? `${Math.floor(entry.value / 60)}분 ${entry.value % 60}초`
               : entry.value.toLocaleString()}
@@ -83,22 +90,25 @@ export function KpiTrendChart({ data }: KpiTrendChartProps) {
   }));
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>KPI 트렌드</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <div className="scard">
+      <div className="scard-head">
+        <div className="scard-head-left">
+          <span className="tf tf-16">📈</span>
+          <span className="scard-head-title">KPI 트렌드</span>
+        </div>
+      </div>
+      <div className="scard-body">
         <div className="h-[350px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--g150)" />
               <XAxis
                 dataKey="month"
                 tickFormatter={(v: string) => MONTH_LABELS[v] ?? v}
-                className="text-xs"
+                tick={{ fontSize: 11, fill: "var(--g500)" }}
               />
-              <YAxis yAxisId="left" className="text-xs" />
-              <YAxis yAxisId="right" orientation="right" className="text-xs" />
+              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: "var(--g500)" }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: "var(--g500)" }} />
               <Tooltip content={<CustomTooltip />} />
               <Legend
                 formatter={(value: string) => LABEL_MAP[value] ?? value}
@@ -142,7 +152,7 @@ export function KpiTrendChart({ data }: KpiTrendChartProps) {
             </LineChart>
           </ResponsiveContainer>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

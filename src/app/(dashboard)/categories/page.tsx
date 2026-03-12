@@ -84,7 +84,7 @@ export default function CategoriesPage() {
           title="카테고리 관리"
           description="블로그 카테고리 구조 및 성과 관리"
         />
-        <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
+        <div className="flex items-center justify-center py-20 t-md text-g-400">
           로딩 중...
         </div>
       </div>
@@ -103,8 +103,8 @@ export default function CategoriesPage() {
         <div className="lg:col-span-1">
           <Card>
             <CardContent className="p-4">
-              <h3 className="text-sm font-medium text-muted-foreground mb-3">
-                카테고리 구조
+              <h3 className="t-sm font-semibold text-g-500 mb-3">
+                <span className="tf tf-14">📂</span> 카테고리 구조
               </h3>
               <CategoryTree
                 categories={categories}
@@ -133,7 +133,7 @@ export default function CategoriesPage() {
             <Card>
               <CardContent className="p-0">
                 <EmptyState
-                  icon={<FolderTree className="h-6 w-6" />}
+                  emoji="📂"
                   title="카테고리를 선택하세요"
                   description="왼쪽 트리에서 카테고리를 선택하면 상세 정보와 성과 데이터를 확인할 수 있습니다."
                 />

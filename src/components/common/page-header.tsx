@@ -1,4 +1,3 @@
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 interface PageHeaderProps {
@@ -15,6 +14,7 @@ interface PageHeaderProps {
 
 /**
  * 페이지 상단 헤더 — 좌측에 제목·설명, 우측에 액션 버튼 배치
+ * UCL 타이포그래피 t-2xl 적용
  */
 export function PageHeader({ title, description, actions, children, className }: PageHeaderProps) {
   const rightContent = actions || children;
@@ -22,16 +22,16 @@ export function PageHeader({ title, description, actions, children, className }:
     <div className={cn("space-y-4", className)}>
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+          <h1 className="t-2xl text-g-900">{title}</h1>
           {description && (
-            <p className="text-sm text-muted-foreground">{description}</p>
+            <p className="t-md text-g-400">{description}</p>
           )}
         </div>
         {rightContent && (
           <div className="flex shrink-0 items-center gap-2">{rightContent}</div>
         )}
       </div>
-      <Separator />
+      <div className="divider" />
     </div>
   );
 }

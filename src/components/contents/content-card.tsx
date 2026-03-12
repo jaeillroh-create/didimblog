@@ -79,17 +79,19 @@ export function ContentCard({ content, index, profiles }: ContentCardProps) {
           {...provided.dragHandleProps}
           onClick={handleClick}
           className={cn(
-            "rounded-lg border bg-white p-3 shadow-sm cursor-pointer",
-            "transition-shadow hover:shadow-md",
-            snapshot.isDragging && "shadow-lg ring-2 ring-[var(--brand-accent)]/30 rotate-[2deg]"
+            "card-compact card-hover cursor-pointer",
+            snapshot.isDragging && "rotate-[2deg]"
           )}
           style={{
             ...provided.draggableProps.style,
             minHeight: "88px",
+            borderRadius: "var(--r-lg)",
+            boxShadow: snapshot.isDragging ? "var(--sh-lg)" : "var(--sh-sm)",
+            ...(snapshot.isDragging ? { outline: "2px solid var(--brand-light)" } : {}),
           }}
         >
           {/* 제목 */}
-          <p className="text-sm font-medium leading-snug text-[var(--neutral-text)] line-clamp-2 mb-2">
+          <p className="t-md font-medium leading-snug line-clamp-2 mb-2" style={{ color: "var(--g900)" }}>
             {content.title ?? "제목 없음"}
           </p>
 
@@ -101,10 +103,7 @@ export function ContentCard({ content, index, profiles }: ContentCardProps) {
               color={categoryColor}
             />
             {content.is_ai_generated && (
-              <span
-                className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                style={{ backgroundColor: "#ede9fe", color: "#7c3aed" }}
-              >
+              <span className="ucl-badge ucl-badge-sm badge-info">
                 <Sparkles className="h-2.5 w-2.5" />
                 AI
               </span>
@@ -115,7 +114,7 @@ export function ContentCard({ content, index, profiles }: ContentCardProps) {
           <div className="flex items-center justify-between gap-2">
             {/* 발행일 */}
             {content.publish_date && (
-              <div className="flex items-center gap-1 text-xs text-[var(--neutral-text-secondary)]">
+              <div className="flex items-center gap-1 t-xs" style={{ color: "var(--g500)" }}>
                 <Calendar className="h-3 w-3" />
                 <span>{content.publish_date}</span>
               </div>
@@ -129,8 +128,8 @@ export function ContentCard({ content, index, profiles }: ContentCardProps) {
 
               {/* 작성자 아바타 */}
               <div
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white"
-                style={{ backgroundColor: "var(--brand-primary)" }}
+                className="ucl-avatar flex h-6 w-6 shrink-0 items-center justify-center text-xs font-medium text-white"
+                style={{ backgroundColor: "var(--brand)" }}
                 title={authorName}
               >
                 {authorInitial}
