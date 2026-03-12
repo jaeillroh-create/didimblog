@@ -4,30 +4,28 @@ import { useState, useTransition } from "react";
 import { type SeoSettingItem, updateSeoSettings } from "@/actions/settings";
 import { type SeoGrade } from "@/lib/constants/seo-items";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Search, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 
 const GRADE_CONFIG: Record<
   SeoGrade,
-  { label: string; badgeClass: string; rule: string; borderColor: string }
+  { label: string; badgeClass: string; rule: string }
 > = {
   required: {
     label: "필수",
     badgeClass: "badge-danger",
     rule: "모두 통과해야 발행 가능",
-    borderColor: "var(--danger)",
   },
   recommended: {
     label: "권장",
     badgeClass: "badge-warning",
     rule: "2개까지 미충족 허용",
-    borderColor: "var(--warning)",
   },
   optional: {
     label: "선택",
     badgeClass: "badge-neutral",
     rule: "미충족 허용",
-    borderColor: "var(--g300)",
   },
 };
 
@@ -77,7 +75,7 @@ export function SeoCriteriaEditor({ initialItems }: SeoCriteriaEditorProps) {
     <div className="scard">
       <div className="scard-head">
         <div className="scard-head-left">
-          <Search className="h-5 w-5" style={{ color: "var(--g500)" }} />
+          <span className="tf tf-14">🔍</span>
           <span className="scard-head-title">SEO 기준 설정</span>
         </div>
         <div className="flex items-center gap-2">
@@ -98,7 +96,7 @@ export function SeoCriteriaEditor({ initialItems }: SeoCriteriaEditorProps) {
         {groupedItems.map(({ grade, config, items: gradeItems }) => (
           <div key={grade} className="space-y-3">
             <div className="flex items-center gap-3">
-              <span className={`ucl-badge ${config.badgeClass}`}>
+              <span className={`ucl-badge ucl-badge-sm ${config.badgeClass}`}>
                 {config.label}
               </span>
               <span className="t-xs" style={{ color: "var(--g400)" }}>
@@ -110,10 +108,8 @@ export function SeoCriteriaEditor({ initialItems }: SeoCriteriaEditorProps) {
               {gradeItems.map((item) => (
                 <div
                   key={item.id}
-                  className={`doc-row ${item.enabled ? "doc-row-done" : "doc-row-empty"}`}
-                  style={{
-                    borderLeftColor: item.enabled ? config.borderColor : "var(--g200)",
-                  }}
+                  className="flex items-center gap-3 px-3 py-2.5 transition-colors"
+                  style={{ borderRadius: "var(--r-sm)" }}
                 >
                   <Checkbox
                     id={`seo-${item.id}`}
@@ -136,7 +132,7 @@ export function SeoCriteriaEditor({ initialItems }: SeoCriteriaEditorProps) {
               ))}
             </div>
 
-            {grade !== "optional" && <div className="divider" />}
+            {grade !== "optional" && <Separator />}
           </div>
         ))}
       </div>
