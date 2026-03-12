@@ -68,7 +68,7 @@ export function ContentDetailClient({
   const [title, setTitle] = useState(content.title ?? "");
   const [categoryId, setCategoryId] = useState(content.category_id ?? "");
   const [secondaryCategory, setSecondaryCategory] = useState(
-    content.secondary_category ?? ""
+    content.secondary_category ?? "none"
   );
   const [targetKeyword, setTargetKeyword] = useState(
     content.target_keyword ?? ""
@@ -127,7 +127,7 @@ export function ContentDetailClient({
         ...prev,
         title,
         category_id: categoryId || null,
-        secondary_category: secondaryCategory || null,
+        secondary_category: secondaryCategory === "none" ? null : secondaryCategory || null,
         target_keyword: targetKeyword || null,
         target_audience: (targetAudience as TargetAudience) || null,
         updated_at: new Date().toISOString(),
@@ -189,7 +189,7 @@ export function ContentDetailClient({
             )}
           </span>
         }
-        description={`${CONTENT_STATES[content.status].label} | ${getCategoryName(content.category_id)}`}
+        description={`${CONTENT_STATES[content.status]?.label ?? content.status} | ${getCategoryName(content.category_id)}`}
       >
         <Button
           variant="outline"
@@ -251,7 +251,7 @@ export function ContentDetailClient({
                       <SelectValue placeholder="보조 카테고리 선택" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">없음</SelectItem>
+                      <SelectItem value="none">없음</SelectItem>
                       {categories.map((cat) => (
                         <SelectItem key={cat.id} value={cat.id}>
                           {cat.name}
@@ -438,23 +438,23 @@ export function ContentDetailClient({
               <Separator />
               <InfoRow
                 label="수정 횟수"
-                value={`${content.revision_count}회`}
+                value={`${content.revision_count ?? 0}회`}
               />
               <InfoRow
                 label="생성일"
-                value={format(
-                  new Date(content.created_at),
-                  "yyyy.MM.dd HH:mm",
-                  { locale: ko }
-                )}
+                value={
+                  content.created_at
+                    ? format(new Date(content.created_at), "yyyy.MM.dd HH:mm", { locale: ko })
+                    : "-"
+                }
               />
               <InfoRow
                 label="수정일"
-                value={format(
-                  new Date(content.updated_at),
-                  "yyyy.MM.dd HH:mm",
-                  { locale: ko }
-                )}
+                value={
+                  content.updated_at
+                    ? format(new Date(content.updated_at), "yyyy.MM.dd HH:mm", { locale: ko })
+                    : "-"
+                }
               />
             </CardContent>
           </Card>
