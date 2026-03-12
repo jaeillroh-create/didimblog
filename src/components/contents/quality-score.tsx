@@ -23,31 +23,30 @@ function CircularScore({ score }: { score: number }) {
   const progress = (score / 100) * circumference;
   const strokeDashoffset = circumference - progress;
 
-  // 점수에 따른 색상
+  // 점수에 따른 색상 (UCL semantic tokens)
   const color =
     score >= 80
-      ? "var(--quality-excellent)"
+      ? "var(--success)"
       : score >= 60
-        ? "var(--quality-good)"
+        ? "var(--info)"
         : score >= 40
-          ? "var(--quality-average)"
-          : score >= 20
-            ? "var(--quality-poor)"
-            : "var(--quality-critical)";
+          ? "var(--warning)"
+          : "var(--danger)";
 
   return (
     <div className="relative flex items-center justify-center">
       <svg width="100" height="100" className="-rotate-90">
-        {/* 배경 원 */}
+        {/* 배경 원 — progress-track */}
         <circle
           cx="50"
           cy="50"
           r={radius}
           fill="none"
-          stroke="var(--neutral-border)"
+          stroke="var(--g200)"
           strokeWidth="8"
+          className="progress-track"
         />
-        {/* 진행률 원 */}
+        {/* 진행률 원 — progress-fill */}
         <circle
           cx="50"
           cy="50"
@@ -58,11 +57,11 @@ function CircularScore({ score }: { score: number }) {
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
-          className="transition-all duration-500"
+          className="progress-fill transition-all duration-500"
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-2xl font-bold" style={{ color }}>
+        <span className="stat-value font-num t-2xl font-bold" style={{ color }}>
           {Math.round(score)}
         </span>
       </div>
@@ -81,12 +80,14 @@ function MetricRow({
   value: string;
 }) {
   return (
-    <div className="flex items-center justify-between py-1.5">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+    <div className="doc-row flex items-center justify-between py-1.5">
+      <div className="flex items-center gap-2 t-sm" style={{ color: "var(--g500)" }}>
         <Icon className="h-4 w-4" />
         <span>{label}</span>
       </div>
-      <span className="text-sm font-medium">{value}</span>
+      <span className="stat-value font-num t-sm font-medium" style={{ color: "var(--g900)" }}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -103,12 +104,12 @@ export function QualityScore({ content }: QualityScoreProps) {
     return (
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">품질 점수</CardTitle>
+          <CardTitle className="t-lg">품질 점수</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center py-6 text-center">
-            <BarChart3 className="h-8 w-8 text-muted-foreground/40 mb-2" />
-            <p className="text-sm text-muted-foreground">
+            <BarChart3 className="h-8 w-8 mb-2" style={{ color: "var(--g300)" }} />
+            <p className="t-sm" style={{ color: "var(--g500)" }}>
               발행 후 측정됩니다
             </p>
           </div>
@@ -122,7 +123,7 @@ export function QualityScore({ content }: QualityScoreProps) {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">품질 점수</CardTitle>
+        <CardTitle className="t-lg">품질 점수</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* 원형 점수 + 등급 뱃지 */}
@@ -132,7 +133,7 @@ export function QualityScore({ content }: QualityScoreProps) {
           {content.quality_score_1st != null &&
             content.quality_score_final != null &&
             content.quality_score_1st !== content.quality_score_final && (
-              <p className="text-xs text-muted-foreground">
+              <p className="t-xs" style={{ color: "var(--g500)" }}>
                 초기 {Math.round(content.quality_score_1st)}점 →{" "}
                 최종 {Math.round(content.quality_score_final)}점
               </p>
@@ -140,7 +141,7 @@ export function QualityScore({ content }: QualityScoreProps) {
         </div>
 
         {/* 성과 지표 */}
-        <div className={cn("border-t pt-3 space-y-0.5")}>
+        <div className={cn("pt-3 space-y-0.5")} style={{ borderTop: "1px solid var(--g200)" }}>
           <MetricRow
             icon={Eye}
             label="주간 조회수"

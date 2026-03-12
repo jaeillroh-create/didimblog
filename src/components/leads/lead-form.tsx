@@ -10,9 +10,6 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -88,10 +85,10 @@ export function LeadForm({ profiles, contents }: LeadFormProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm">
-          <Plus className="mr-1.5 h-4 w-4" />
+        <button className="btn btn-primary btn-sm">
+          <Plus className="h-4 w-4" />
           리드 추가
-        </Button>
+        </button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -103,44 +100,53 @@ export function LeadForm({ profiles, contents }: LeadFormProps) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 회사명 */}
-          <div className="space-y-2">
-            <Label htmlFor="company_name">
-              회사명 <span className="text-semantic-error">*</span>
-            </Label>
-            <Input
-              id="company_name"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              placeholder="주식회사 OOO"
-              required
-            />
+          <div>
+            <label className="input-label" htmlFor="company_name">
+              회사명 <span style={{ color: "var(--danger)" }}>*</span>
+            </label>
+            <div className="input-wrap">
+              <input
+                id="company_name"
+                className="input-field"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="주식회사 OOO"
+                required
+              />
+            </div>
           </div>
 
           {/* 담당자명 */}
-          <div className="space-y-2">
-            <Label htmlFor="contact_name">담당자명</Label>
-            <Input
-              id="contact_name"
-              value={contactName}
-              onChange={(e) => setContactName(e.target.value)}
-              placeholder="홍길동"
-            />
+          <div>
+            <label className="input-label" htmlFor="contact_name">담당자명</label>
+            <div className="input-wrap">
+              <input
+                id="contact_name"
+                className="input-field"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                placeholder="홍길동"
+              />
+            </div>
           </div>
 
           {/* 연락처 */}
-          <div className="space-y-2">
-            <Label htmlFor="contact_info">연락처</Label>
-            <Input
-              id="contact_info"
-              value={contactInfo}
-              onChange={(e) => setContactInfo(e.target.value)}
-              placeholder="010-1234-5678"
-            />
+          <div>
+            <label className="input-label" htmlFor="contact_info">연락처</label>
+            <div className="input-wrap">
+              <input
+                id="contact_info"
+                className="input-field"
+                value={contactInfo}
+                onChange={(e) => setContactInfo(e.target.value)}
+                placeholder="010-1234-5678"
+              />
+            </div>
           </div>
 
           {/* 유입경로 */}
-          <div className="space-y-2">
-            <Label>유입경로</Label>
+          <div>
+            <label className="input-label">유입경로</label>
             <Select
               value={source}
               onValueChange={(val) => setSource(val as "blog" | "referral" | "other")}
@@ -158,8 +164,8 @@ export function LeadForm({ profiles, contents }: LeadFormProps) {
 
           {/* 경유글 (블로그일 때만) */}
           {source === "blog" && (
-            <div className="space-y-2">
-              <Label>경유글</Label>
+            <div>
+              <label className="input-label">경유글</label>
               <Select
                 value={sourceContentId}
                 onValueChange={setSourceContentId}
@@ -181,8 +187,8 @@ export function LeadForm({ profiles, contents }: LeadFormProps) {
           )}
 
           {/* 관심서비스 */}
-          <div className="space-y-2">
-            <Label>관심서비스</Label>
+          <div>
+            <label className="input-label">관심서비스</label>
             <Select
               value={interestedService}
               onValueChange={setInterestedService}
@@ -202,8 +208,8 @@ export function LeadForm({ profiles, contents }: LeadFormProps) {
           </div>
 
           {/* 담당자 */}
-          <div className="space-y-2">
-            <Label>담당자</Label>
+          <div>
+            <label className="input-label">담당자</label>
             <Select value={assignedTo} onValueChange={setAssignedTo}>
               <SelectTrigger>
                 <SelectValue placeholder="담당자 선택" />
@@ -219,30 +225,30 @@ export function LeadForm({ profiles, contents }: LeadFormProps) {
           </div>
 
           {/* 메모 */}
-          <div className="space-y-2">
-            <Label htmlFor="notes">메모</Label>
+          <div>
+            <label className="input-label" htmlFor="notes">메모</label>
             <textarea
               id="notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="추가 메모사항..."
               rows={3}
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              className="textarea"
             />
           </div>
 
           <DialogFooter>
-            <Button
+            <button
               type="button"
-              variant="outline"
+              className="btn btn-secondary btn-md"
               onClick={() => setOpen(false)}
               disabled={isPending}
             >
               취소
-            </Button>
-            <Button type="submit" disabled={isPending}>
+            </button>
+            <button type="submit" className="btn btn-primary btn-md" disabled={isPending}>
               {isPending ? "저장 중..." : "추가"}
-            </Button>
+            </button>
           </DialogFooter>
         </form>
       </DialogContent>

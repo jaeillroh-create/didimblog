@@ -8,7 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 
 interface ConfirmDialogProps {
   /** 다이얼로그 열림 상태 */
@@ -31,6 +30,7 @@ interface ConfirmDialogProps {
 
 /**
  * 사용자 확인을 요청하는 대화 상자 컴포넌트
+ * UCL Modal + Button 패턴 적용
  */
 export function ConfirmDialog({
   open,
@@ -49,21 +49,21 @@ export function ConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px]" style={{ borderRadius: "var(--r-xl)" }}>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogTitle className="t-xl">{title}</DialogTitle>
+          <DialogDescription className="t-md text-g-500">{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <button className="btn btn-ghost btn-md" onClick={() => onOpenChange(false)}>
             {cancelLabel}
-          </Button>
-          <Button
-            variant={variant === "destructive" ? "destructive" : "default"}
+          </button>
+          <button
+            className={`btn btn-md ${variant === "destructive" ? "btn-danger" : "btn-primary"}`}
             onClick={handleConfirm}
           >
             {confirmLabel}
-          </Button>
+          </button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

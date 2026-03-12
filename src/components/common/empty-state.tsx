@@ -1,8 +1,9 @@
 import { cn } from "@/lib/utils";
-import { Inbox } from "lucide-react";
 
 interface EmptyStateProps {
-  /** 중앙 아이콘 — 미지정 시 기본 아이콘 */
+  /** Tossface 이모지 (예: "🔍") */
+  emoji?: string;
+  /** 기존 방식 아이콘 (lucide 등) — emoji보다 우선 */
   icon?: React.ReactNode;
   /** 제목 */
   title: string;
@@ -16,24 +17,22 @@ interface EmptyStateProps {
 
 /**
  * 데이터가 없을 때 표시하는 빈 상태 컴포넌트
+ * UCL EmptyState 패턴 적용
  */
-export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
+export function EmptyState({ emoji, icon, title, description, action, className }: EmptyStateProps) {
   return (
-    <div
-      className={cn(
-        "flex flex-col items-center justify-center gap-3 py-12 text-center",
-        className
+    <div className={cn("empty-state", className)}>
+      {icon ? (
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-g-100 text-g-400">
+          {icon}
+        </div>
+      ) : (
+        <span className="tf tf-48">{emoji ?? "📋"}</span>
       )}
-    >
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        {icon ?? <Inbox className="h-6 w-6" />}
-      </div>
-      <div className="space-y-1">
-        <h3 className="text-base font-semibold">{title}</h3>
-        {description && (
-          <p className="text-sm text-muted-foreground max-w-sm">{description}</p>
-        )}
-      </div>
+      <div className="empty-state-title">{title}</div>
+      {description && (
+        <div className="empty-state-desc">{description}</div>
+      )}
       {action && <div className="mt-2">{action}</div>}
     </div>
   );

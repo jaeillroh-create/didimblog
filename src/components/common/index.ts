@@ -1,4 +1,5 @@
 // 공통 컴포넌트 배럴 파일
+export { Emoji } from "./emoji";
 export { StatusBadge } from "./status-badge";
 export { QualityBadge } from "./quality-badge";
 export { CategoryBadge } from "./category-badge";

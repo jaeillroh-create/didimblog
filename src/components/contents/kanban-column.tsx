@@ -23,22 +23,29 @@ export function KanbanColumn({ status, contents, profiles }: KanbanColumnProps) 
   const state = CONTENT_STATES[status];
 
   return (
-    <div className="flex w-[280px] shrink-0 flex-col rounded-lg bg-[var(--neutral-bg)] border border-[var(--neutral-border)]">
+    <div
+      className="card-default flex w-[280px] shrink-0 flex-col"
+      style={{ borderRadius: "var(--r-lg)", borderColor: "var(--g200)" }}
+    >
       {/* 칼럼 헤더 */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--neutral-border)]">
+      <div
+        className="flex items-center gap-2 px-3 py-2.5"
+        style={{ borderBottom: "1px solid var(--g200)" }}
+      >
         <span
-          className="h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: state.color }}
+          className="h-2.5 w-2.5 shrink-0"
+          style={{ backgroundColor: state.color, borderRadius: "var(--r-full)" }}
           aria-hidden="true"
         />
-        <span className="text-sm font-semibold text-[var(--neutral-text)]">
+        <span className="t-sm font-semibold" style={{ color: "var(--g900)" }}>
           {state.label}
         </span>
         <span
-          className="ml-auto inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-xs font-medium"
+          className="ml-auto inline-flex h-5 min-w-[20px] items-center justify-center px-1.5 t-xs font-medium"
           style={{
             backgroundColor: `${state.color}20`,
             color: state.color,
+            borderRadius: "var(--r-full)",
           }}
         >
           {contents.length}
@@ -53,7 +60,7 @@ export function KanbanColumn({ status, contents, profiles }: KanbanColumnProps) 
             {...provided.droppableProps}
             className={cn(
               "flex flex-1 flex-col gap-2 overflow-y-auto p-2 min-h-[200px] transition-colors",
-              snapshot.isDraggingOver && "bg-[var(--brand-accent)]/5"
+              snapshot.isDraggingOver && "bg-[var(--brand-light)]"
             )}
           >
             {contents.length === 0 ? (

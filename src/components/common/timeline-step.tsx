@@ -1,5 +1,4 @@
 import { cn } from "@/lib/utils";
-import { Check } from "lucide-react";
 
 interface Step {
   /** 단계 라벨 */
@@ -16,7 +15,7 @@ interface TimelineStepProps {
 }
 
 /**
- * 세로 방향 타임라인 컴포넌트 — 완료·현재·예정 상태를 시각적으로 표시
+ * 세로 방향 타임라인 컴포넌트 — UCL Stepper 패턴 적용
  */
 export function TimelineStep({ steps }: TimelineStepProps) {
   return (
@@ -28,32 +27,32 @@ export function TimelineStep({ steps }: TimelineStepProps) {
           <div key={index} className="flex gap-3" role="listitem">
             {/* 점 + 연결선 */}
             <div className="flex flex-col items-center">
-              {/* 점 */}
               <div
                 className={cn(
                   "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2",
                   step.status === "completed" &&
-                    "border-semantic-success bg-semantic-success text-white",
+                    "border-success bg-success text-white",
                   step.status === "current" &&
-                    "border-semantic-info bg-semantic-info/20 text-semantic-info animate-pulse",
+                    "border-brand bg-brand-light text-brand animate-pulse",
                   step.status === "upcoming" &&
-                    "border-muted-foreground/30 bg-muted text-muted-foreground"
+                    "border-g-200 bg-g-100 text-g-400"
                 )}
               >
-                {step.status === "completed" && <Check className="h-3.5 w-3.5" />}
+                {step.status === "completed" && (
+                  <span className="tf tf-12">✅</span>
+                )}
                 {step.status === "current" && (
-                  <span className="h-2 w-2 rounded-full bg-semantic-info" />
+                  <span className="h-2 w-2 rounded-full bg-brand" />
                 )}
                 {step.status === "upcoming" && (
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+                  <span className="h-2 w-2 rounded-full bg-g-300" />
                 )}
               </div>
-              {/* 연결선 */}
               {!isLast && (
                 <div
                   className={cn(
                     "w-0.5 flex-1 min-h-6",
-                    step.status === "completed" ? "bg-semantic-success" : "bg-muted"
+                    step.status === "completed" ? "bg-success" : "bg-g-150"
                   )}
                 />
               )}
@@ -62,14 +61,14 @@ export function TimelineStep({ steps }: TimelineStepProps) {
             <div className={cn("pb-6", isLast && "pb-0")}>
               <p
                 className={cn(
-                  "text-sm font-medium leading-6",
-                  step.status === "upcoming" && "text-muted-foreground"
+                  "t-md leading-6",
+                  step.status === "upcoming" ? "text-g-400" : "text-g-900 font-semibold"
                 )}
               >
                 {step.label}
               </p>
               {step.date && (
-                <p className="text-xs text-muted-foreground mt-0.5">{step.date}</p>
+                <p className="t-xs text-g-400 mt-0.5">{step.date}</p>
               )}
             </div>
           </div>

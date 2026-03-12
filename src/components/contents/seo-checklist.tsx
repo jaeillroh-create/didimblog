@@ -4,8 +4,6 @@ import { useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   SEO_ITEMS,
@@ -25,46 +23,46 @@ type SeoItemState = Record<string, { passed: boolean; note: string }>;
 
 const GRADE_CONFIG: Record<
   SeoGrade,
-  { label: string; total: number; colorVar: string; bgClass: string }
+  { label: string; total: number; badgeClass: string }
 > = {
   required: {
     label: "필수",
     total: 10,
-    colorVar: "var(--seo-required)",
-    bgClass: "bg-[var(--seo-required)]",
+    badgeClass: "badge-danger",
   },
   recommended: {
     label: "권장",
     total: 5,
-    colorVar: "var(--seo-recommended)",
-    bgClass: "bg-[var(--seo-recommended)]",
+    badgeClass: "badge-warning",
   },
   optional: {
     label: "선택",
     total: 3,
-    colorVar: "var(--seo-optional)",
-    bgClass: "bg-[var(--seo-optional)]",
+    badgeClass: "badge-info",
   },
 };
 
 const VERDICT_CONFIG: Record<
   SeoVerdict,
-  { label: string; icon: React.ElementType; className: string }
+  { label: string; icon: React.ElementType; badgeClass: string; color: string }
 > = {
   pass: {
     label: "통과",
     icon: CheckCircle2,
-    className: "text-[var(--semantic-success)]",
+    badgeClass: "badge-success",
+    color: "var(--success)",
   },
   fix_required: {
     label: "수정 필요",
     icon: AlertTriangle,
-    className: "text-[var(--semantic-warning)]",
+    badgeClass: "badge-warning",
+    color: "var(--warning)",
   },
   blocked: {
     label: "발행 불가",
     icon: XCircle,
-    className: "text-[var(--semantic-error)]",
+    badgeClass: "badge-danger",
+    color: "var(--danger)",
   },
 };
 
@@ -155,22 +153,22 @@ export function SeoChecklist({
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">SEO 체크리스트</CardTitle>
+          <CardTitle className="t-lg">SEO 체크리스트</CardTitle>
           <div className="flex items-center gap-2">
-            <div className={cn("flex items-center gap-1", verdictConfig.className)}>
-              <VerdictIcon className="h-4 w-4" />
-              <span className="text-sm font-medium">{verdictConfig.label}</span>
-            </div>
+            <span className={cn("ucl-badge ucl-badge-sm", verdictConfig.badgeClass)}>
+              <VerdictIcon className="h-3.5 w-3.5" />
+              {verdictConfig.label}
+            </span>
             {onSave && (
-              <Button
-                size="sm"
+              <button
+                className="btn btn-primary btn-sm ml-2"
                 onClick={handleSave}
                 disabled={isSaving}
-                className="ml-2"
+                style={{ backgroundColor: "var(--brand)" }}
               >
                 <Save className="h-4 w-4 mr-1" />
                 {isSaving ? "저장 중..." : "저장"}
-              </Button>
+              </button>
             )}
           </div>
         </div>
@@ -185,15 +183,10 @@ export function SeoChecklist({
               <div key={grade} className="space-y-2">
                 {/* 등급 헤더 */}
                 <div className="flex items-center gap-2">
-                  <Badge
-                    className={cn(
-                      "text-white border-transparent text-xs",
-                      config.bgClass
-                    )}
-                  >
+                  <span className={cn("ucl-badge ucl-badge-sm", config.badgeClass)}>
                     {config.label}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
+                  </span>
+                  <span className="t-xs" style={{ color: "var(--g500)" }}>
                     {passCount}/{config.total} 통과
                   </span>
                 </div>
@@ -205,7 +198,11 @@ export function SeoChecklist({
                     return (
                       <div
                         key={item.id}
-                        className="flex items-center gap-3 rounded-md border px-3 py-2"
+                        className="doc-row flex items-center gap-3 px-3 py-2"
+                        style={{
+                          borderRadius: "var(--r-sm)",
+                          border: "1px solid var(--g200)",
+                        }}
                       >
                         <Checkbox
                           id={`seo-${contentId}-${item.id}`}
@@ -216,11 +213,12 @@ export function SeoChecklist({
                         />
                         <label
                           htmlFor={`seo-${contentId}-${item.id}`}
-                          className="flex-shrink-0 text-sm font-medium cursor-pointer select-none min-w-[100px]"
+                          className="t-sm font-medium cursor-pointer select-none min-w-[100px] flex-shrink-0"
+                          style={{ color: "var(--g900)" }}
                         >
                           {item.label}
                         </label>
-                        <span className="text-xs text-muted-foreground flex-shrink-0">
+                        <span className="t-xs flex-shrink-0" style={{ color: "var(--g500)" }}>
                           {item.description}
                         </span>
                         <Input
@@ -229,7 +227,7 @@ export function SeoChecklist({
                           onChange={(e) =>
                             handleNoteChange(item.id, e.target.value)
                           }
-                          className="h-7 text-xs ml-auto max-w-[200px]"
+                          className="input-field h-7 t-xs ml-auto max-w-[200px]"
                         />
                       </div>
                     );

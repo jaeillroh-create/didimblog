@@ -1,8 +1,5 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-
 interface CategoryBadgeProps {
   /** 카테고리 ID */
   categoryId: string;
@@ -14,16 +11,18 @@ interface CategoryBadgeProps {
 
 /**
  * 색상 점 + 카테고리 이름을 표시하는 배지 컴포넌트
+ * UCL Badge 패턴 적용
  */
 export function CategoryBadge({ categoryId, categoryName, color }: CategoryBadgeProps) {
-  const dotColor = color ?? "hsl(var(--brand-primary))";
+  const dotColor = color ?? "var(--brand)";
 
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        "inline-flex items-center gap-1.5 border-muted font-normal text-sm px-2.5 py-0.5"
-      )}
+    <span
+      className="ucl-badge ucl-badge-sm"
+      style={{
+        backgroundColor: "var(--g100)",
+        color: "var(--g600)",
+      }}
       data-category-id={categoryId}
     >
       <span
@@ -32,6 +31,6 @@ export function CategoryBadge({ categoryId, categoryName, color }: CategoryBadge
         aria-hidden="true"
       />
       {categoryName}
-    </Badge>
+    </span>
   );
 }

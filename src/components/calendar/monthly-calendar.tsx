@@ -16,13 +16,12 @@ import {
 } from "date-fns";
 import { ko } from "date-fns/locale";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const CATEGORY_COLORS: Record<string, string> = {
-  "CAT-A": "#D4740A",
-  "CAT-B": "#1B3A5C",
-  "CAT-C": "#6B7280",
+  "CAT-A": "var(--category-field-note)",
+  "CAT-B": "var(--category-ip-lounge)",
+  "CAT-C": "var(--category-diary)",
 };
 
 const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
@@ -75,47 +74,46 @@ export function MonthlyCalendar({ schedules }: MonthlyCalendarProps) {
     }
   };
 
-  const statusColor = (status: string) => {
+  const statusBadgeClass = (status: string) => {
     switch (status) {
       case "published":
-        return "text-green-600";
+        return "badge-success";
       case "in_progress":
-        return "text-blue-600";
+        return "badge-info";
       case "planned":
-        return "text-gray-500";
+        return "badge-neutral";
       case "delayed":
-        return "text-red-600";
+        return "badge-danger";
       default:
-        return "text-gray-500";
+        return "badge-neutral";
     }
   };
 
   return (
-    <div className="rounded-lg border bg-card shadow-sm">
+    <div className="card-default !p-0 overflow-hidden">
       {/* 헤더: 월 네비게이션 */}
-      <div className="flex items-center justify-between border-b px-6 py-4">
-        <Button variant="outline" size="icon" onClick={handlePrev}>
+      <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid var(--g100)" }}>
+        <button className="icon-btn" onClick={handlePrev}>
           <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <h2 className="text-lg font-semibold">
+        </button>
+        <h2 className="t-xl" style={{ color: "var(--g900)" }}>
           {format(currentMonth, "yyyy년 M월", { locale: ko })}
         </h2>
-        <Button variant="outline" size="icon" onClick={handleNext}>
+        <button className="icon-btn" onClick={handleNext}>
           <ChevronRight className="h-4 w-4" />
-        </Button>
+        </button>
       </div>
 
       {/* 요일 헤더 */}
-      <div className="grid grid-cols-7 border-b">
+      <div className="grid grid-cols-7" style={{ borderBottom: "1px solid var(--g100)" }}>
         {DAY_NAMES.map((day, i) => (
           <div
             key={day}
-            className={cn(
-              "py-2 text-center text-sm font-medium",
-              i === 0 && "text-red-500",
-              i === 6 && "text-blue-500",
-              i !== 0 && i !== 6 && "text-muted-foreground"
-            )}
+            className="py-2 text-center t-sm"
+            style={{
+              color: i === 0 ? "var(--danger)" : i === 6 ? "var(--info)" : "var(--g500)",
+              fontWeight: 600,
+            }}
           >
             {day}
           </div>
@@ -137,10 +135,14 @@ export function MonthlyCalendar({ schedules }: MonthlyCalendarProps) {
             <div
               key={idx}
               className={cn(
-                "relative min-h-[100px] border-b border-r p-1.5",
-                !inMonth && "bg-muted/30",
+                "relative min-h-[100px] p-1.5",
                 idx % 7 === 0 && "border-l"
               )}
+              style={{
+                borderBottom: "1px solid var(--g100)",
+                borderRight: "1px solid var(--g100)",
+                background: !inMonth ? "var(--g50)" : "var(--white)",
+              }}
               onClick={() => {
                 if (schedule) {
                   setSelectedSchedule(isSelected ? null : schedule);
@@ -152,11 +154,15 @@ export function MonthlyCalendar({ schedules }: MonthlyCalendarProps) {
               {/* 날짜 번호 */}
               <span
                 className={cn(
-                  "inline-flex h-7 w-7 items-center justify-center rounded-full text-sm",
-                  !inMonth && "text-muted-foreground/40",
-                  today && "bg-primary font-semibold text-primary-foreground",
-                  inMonth && !today && "text-foreground"
+                  "inline-flex h-7 w-7 items-center justify-center t-sm",
+                  today && "font-num"
                 )}
+                style={{
+                  borderRadius: "var(--r-full)",
+                  color: !inMonth ? "var(--g300)" : today ? "var(--white)" : "var(--g900)",
+                  background: today ? "var(--brand)" : "transparent",
+                  fontWeight: today ? 700 : 400,
+                }}
               >
                 {format(day, "d")}
               </span>
@@ -164,16 +170,14 @@ export function MonthlyCalendar({ schedules }: MonthlyCalendarProps) {
               {/* 스케줄 마커 */}
               {schedule && inMonth && (
                 <div
-                  className={cn(
-                    "mt-1 cursor-pointer rounded px-1.5 py-0.5 text-xs leading-tight text-white transition-opacity hover:opacity-80",
-                    !inMonth && "opacity-40"
-                  )}
+                  className="mt-1 cursor-pointer px-1.5 py-0.5 t-xs leading-tight text-white transition-opacity hover:opacity-80"
                   style={{
+                    borderRadius: "var(--r-xs)",
                     backgroundColor:
-                      CATEGORY_COLORS[schedule.categoryId] ?? "#6B7280",
+                      CATEGORY_COLORS[schedule.categoryId] ?? "var(--g500)",
                   }}
                 >
-                  <span className="line-clamp-2 font-medium">
+                  <span className="line-clamp-2" style={{ fontWeight: 600 }}>
                     {schedule.title}
                   </span>
                 </div>
@@ -181,37 +185,44 @@ export function MonthlyCalendar({ schedules }: MonthlyCalendarProps) {
 
               {/* 선택된 스케줄 상세 팝오버 */}
               {isSelected && inMonth && (
-                <div className="absolute left-0 top-full z-10 mt-1 w-64 rounded-lg border bg-popover p-3 shadow-lg">
+                <div
+                  className="absolute left-0 top-full z-10 mt-1 w-64 p-3"
+                  style={{
+                    borderRadius: "var(--r-lg)",
+                    border: "1px solid var(--g150)",
+                    background: "var(--white)",
+                    boxShadow: "var(--sh-lg)",
+                  }}
+                >
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <span
-                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        className="inline-block h-2.5 w-2.5"
                         style={{
+                          borderRadius: "var(--r-full)",
                           backgroundColor:
-                            CATEGORY_COLORS[schedule.categoryId] ?? "#6B7280",
+                            CATEGORY_COLORS[schedule.categoryId] ?? "var(--g500)",
                         }}
                       />
-                      <span className="text-sm font-medium">
+                      <span className="t-sm" style={{ fontWeight: 600, color: "var(--g900)" }}>
                         {schedule.category}
                       </span>
                       {schedule.sub && (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="t-xs" style={{ color: "var(--g400)" }}>
                           · {schedule.sub}
                         </span>
                       )}
                     </div>
-                    <p className="text-sm font-semibold leading-snug">
+                    <p className="t-md" style={{ fontWeight: 700, color: "var(--g900)", lineHeight: 1.4 }}>
                       {schedule.title}
                     </p>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">
+                      <span className="t-xs" style={{ color: "var(--g400)" }}>
                         {format(new Date(schedule.planned_date), "M월 d일 (E)", {
                           locale: ko,
                         })}
                       </span>
-                      <span
-                        className={cn("text-xs font-medium", statusColor(schedule.status))}
-                      >
+                      <span className={`ucl-badge ucl-badge-sm ${statusBadgeClass(schedule.status)}`}>
                         {statusLabel(schedule.status)}
                       </span>
                     </div>

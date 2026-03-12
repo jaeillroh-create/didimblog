@@ -14,8 +14,6 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { colors } from "@/lib/constants/design-tokens";
 import type { Lead } from "@/lib/types/database";
 
 interface PipelineChartProps {
@@ -23,15 +21,15 @@ interface PipelineChartProps {
 }
 
 const PIPELINE_COLORS = {
-  S3: colors.status.s3,
-  S4: colors.status.s4,
-  S5: colors.status.s5,
+  S3: "var(--status-s3)",
+  S4: "var(--status-s1)",
+  S5: "var(--status-s4)",
 };
 
 const SOURCE_COLORS = {
-  blog: colors.brand.cta,
-  referral: colors.brand.primary,
-  other: colors.neutral.textMuted,
+  blog: "var(--brand)",
+  referral: "var(--info)",
+  other: "var(--g400)",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -78,114 +76,114 @@ export function PipelineChart({ leads }: PipelineChartProps) {
       .map(([source, count]) => ({
         name: SOURCE_LABELS[source] ?? source,
         value: count,
-        fill: SOURCE_COLORS[source as keyof typeof SOURCE_COLORS] ?? colors.neutral.textMuted,
+        fill: SOURCE_COLORS[source as keyof typeof SOURCE_COLORS] ?? "var(--g400)",
       }));
   }, [leads]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {/* 파이프라인 바 차트 */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold">
-            리드 파이프라인
-          </CardTitle>
-          <div className="flex gap-4 text-xs text-muted-foreground">
+      <div className="card-default">
+        <div className="mb-3">
+          <h3 className="t-lg" style={{ color: "var(--g900)" }}>
+            <span className="tf tf-14">📊</span> 리드 파이프라인
+          </h3>
+          <div className="flex gap-4 t-xs mt-1" style={{ color: "var(--g500)" }}>
             <span>
               S3→S4 전환율:{" "}
-              <span className="font-semibold text-foreground">
+              <span className="font-num" style={{ fontWeight: 700, color: "var(--g900)" }}>
                 {pipelineData.s3ToS4Rate}%
               </span>
             </span>
             <span>
               S4→S5 전환율:{" "}
-              <span className="font-semibold text-foreground">
+              <span className="font-num" style={{ fontWeight: 700, color: "var(--g900)" }}>
                 {pipelineData.s4ToS5Rate}%
               </span>
             </span>
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={pipelineData.chartData}
-                layout="vertical"
-                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" allowDecimals={false} />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={80}
-                  tick={{ fontSize: 13 }}
-                />
-                <Tooltip
-                  formatter={(value) => [`${value}건`, "리드 수"]}
-                  contentStyle={{
-                    borderRadius: "8px",
-                    border: `1px solid ${colors.neutral.border}`,
-                  }}
-                />
-                <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={28}>
-                  {pipelineData.chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+        <div className="h-[200px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={pipelineData.chartData}
+              layout="vertical"
+              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--g150)" />
+              <XAxis type="number" allowDecimals={false} tick={{ fill: "var(--g500)", fontSize: 11 }} />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={80}
+                tick={{ fill: "var(--g700)", fontSize: 13 }}
+              />
+              <Tooltip
+                formatter={(value) => [`${value}건`, "리드 수"]}
+                contentStyle={{
+                  borderRadius: "var(--r-md)",
+                  border: "1px solid var(--g150)",
+                  boxShadow: "var(--sh-md)",
+                  fontSize: 13,
+                }}
+              />
+              <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={28}>
+                {pipelineData.chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
       {/* 유입경로 도넛 차트 */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold">
-            유입경로 분포
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={sourceData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={3}
-                  dataKey="value"
-                  label={({ name, percent }) =>
-                    `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
-                  }
-                  labelLine={false}
-                >
-                  {sourceData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value) => [`${value}건`, "리드 수"]}
-                  contentStyle={{
-                    borderRadius: "8px",
-                    border: `1px solid ${colors.neutral.border}`,
-                  }}
-                />
-                <Legend
-                  verticalAlign="bottom"
-                  height={36}
-                  formatter={(value: string) => (
-                    <span className="text-xs">{value}</span>
-                  )}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="card-default">
+        <div className="mb-3">
+          <h3 className="t-lg" style={{ color: "var(--g900)" }}>
+            <span className="tf tf-14">🔄</span> 유입경로 분포
+          </h3>
+        </div>
+        <div className="h-[200px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={sourceData}
+                cx="50%"
+                cy="50%"
+                innerRadius={50}
+                outerRadius={80}
+                paddingAngle={3}
+                dataKey="value"
+                label={({ name, percent }) =>
+                  `${name} ${((percent ?? 0) * 100).toFixed(0)}%`
+                }
+                labelLine={false}
+              >
+                {sourceData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                ))}
+              </Pie>
+              <Tooltip
+                formatter={(value) => [`${value}건`, "리드 수"]}
+                contentStyle={{
+                  borderRadius: "var(--r-md)",
+                  border: "1px solid var(--g150)",
+                  boxShadow: "var(--sh-md)",
+                  fontSize: 13,
+                }}
+              />
+              <Legend
+                verticalAlign="bottom"
+                height={36}
+                formatter={(value: string) => (
+                  <span className="t-xs">{value}</span>
+                )}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
     </div>
   );
 }

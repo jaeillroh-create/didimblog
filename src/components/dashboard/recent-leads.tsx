@@ -1,10 +1,4 @@
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Table,
   TableBody,
   TableCell,
@@ -12,17 +6,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/common/empty-state";
 import { getDashboardRecentLeads } from "@/actions/dashboard";
-import { Users } from "lucide-react";
-import { cn } from "@/lib/utils";
 
-/** 상태별 배지 스타일 */
-const STATUS_CONFIG: Record<string, { label: string; style: string }> = {
-  S3: { label: "상담대기", style: "bg-blue-100 text-blue-700 hover:bg-blue-100" },
-  S4: { label: "제안발송", style: "bg-amber-100 text-amber-700 hover:bg-amber-100" },
-  S5: { label: "계약완료", style: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100" },
+/** 상태별 UCL 배지 클래스 매핑 */
+const STATUS_CONFIG: Record<string, { label: string; badgeClass: string }> = {
+  S3: { label: "상담대기", badgeClass: "ucl-badge ucl-badge-sm badge-info" },
+  S4: { label: "제안발송", badgeClass: "ucl-badge ucl-badge-sm badge-warning" },
+  S5: { label: "계약완료", badgeClass: "ucl-badge ucl-badge-sm badge-success" },
 };
 
 const SERVICE_LABELS: Record<string, string> = {
@@ -34,19 +25,29 @@ const SERVICE_LABELS: Record<string, string> = {
   other: "기타",
 };
 
-/** 최근 리드 테이블 카드 — Supabase 데이터 */
+/** 최근 리드 테이블 카드 — Supabase 데이터, SectionCard 패턴 */
 export async function RecentLeads() {
   const leads = await getDashboardRecentLeads();
 
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base font-semibold">최근 리드</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <div className="scard h-full">
+      <div className="scard-head">
+        <div className="scard-head-left">
+          <div className="scard-head-icon" style={{ background: "var(--brand-light)" }}>
+            <span className="tf tf-14">👥</span>
+          </div>
+          <span className="scard-head-title">최근 리드</span>
+        </div>
+        {leads.length > 0 && (
+          <span className="t-xs" style={{ color: "var(--g400)" }}>
+            {leads.length}건
+          </span>
+        )}
+      </div>
+      <div className="scard-body">
         {leads.length === 0 ? (
           <EmptyState
-            icon={<Users className="h-6 w-6" />}
+            icon={<span className="tf tf-14">👥</span>}
             title="아직 리드가 없습니다"
             description="블로그를 통해 유입된 리드가 여기에 표시됩니다."
             className="py-8"
@@ -55,38 +56,38 @@ export async function RecentLeads() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>회사명</TableHead>
-                <TableHead>관심 서비스</TableHead>
-                <TableHead>연락일</TableHead>
-                <TableHead>상태</TableHead>
+                <TableHead style={{ color: "var(--g500)" }}>회사명</TableHead>
+                <TableHead style={{ color: "var(--g500)" }}>관심 서비스</TableHead>
+                <TableHead style={{ color: "var(--g500)" }}>연락일</TableHead>
+                <TableHead style={{ color: "var(--g500)" }}>상태</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {leads.map((lead) => {
                 const config = STATUS_CONFIG[lead.visitor_status] ?? {
                   label: lead.visitor_status,
-                  style: "bg-gray-100 text-gray-700",
+                  badgeClass: "ucl-badge ucl-badge-sm badge-neutral",
                 };
                 return (
                   <TableRow key={lead.id}>
-                    <TableCell className="font-medium">
+                    <TableCell
+                      className="font-medium"
+                      style={{ color: "var(--g900)" }}
+                    >
                       {lead.company_name}
                     </TableCell>
-                    <TableCell>
+                    <TableCell style={{ color: "var(--g700)" }}>
                       {lead.interested_service
                         ? SERVICE_LABELS[lead.interested_service] ?? lead.interested_service
                         : "-"}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell style={{ color: "var(--g400)" }}>
                       {lead.contact_date}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={cn("border-none font-medium", config.style)}
-                      >
+                      <span className={config.badgeClass}>
                         {config.label}
-                      </Badge>
+                      </span>
                     </TableCell>
                   </TableRow>
                 );
@@ -94,7 +95,7 @@ export async function RecentLeads() {
             </TableBody>
           </Table>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -1,43 +1,46 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Clock, AlertTriangle, CheckCircle2, CalendarClock } from "lucide-react";
 
 type SLAStatus = "on-track" | "warning" | "overdue" | "future";
 
 interface SLAConfig {
   label: string;
-  className: string;
-  icon: React.ElementType;
+  emoji: string;
+  color: string;
+  trackColor: string;
 }
 
 const SLA_CONFIG: Record<SLAStatus, SLAConfig> = {
   "on-track": {
     label: "정상",
-    className: "text-sla-on-track",
-    icon: CheckCircle2,
+    emoji: "✅",
+    color: "var(--success)",
+    trackColor: "var(--success)",
   },
   warning: {
     label: "주의",
-    className: "text-sla-warning",
-    icon: AlertTriangle,
+    emoji: "⚠️",
+    color: "var(--warning)",
+    trackColor: "var(--warning)",
   },
   overdue: {
     label: "초과",
-    className: "text-sla-overdue",
-    icon: Clock,
+    emoji: "❌",
+    color: "var(--danger)",
+    trackColor: "var(--danger)",
   },
   future: {
     label: "미래",
-    className: "text-muted-foreground",
-    icon: CalendarClock,
+    emoji: "📅",
+    color: "var(--g400)",
+    trackColor: "var(--g300)",
   },
 };
 
 function calculateSLAStatus(dueDate: string, currentDate: string): { status: SLAStatus; daysRemaining: number } {
   const due = new Date(dueDate);
   const now = new Date(currentDate);
-  // 날짜 차이 계산 (일 단위)
   const diffMs = due.getTime() - now.getTime();
   const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
@@ -55,13 +58,13 @@ interface SLAIndicatorProps {
 }
 
 /**
- * SLA 마감일까지 남은 기간을 아이콘·텍스트·프로그레스 바로 표시하는 컴포넌트
+ * SLA 마감일까지 남은 기간을 Tossface 이모지 + 프로그레스 바로 표시
+ * UCL Progress + Emoji 패턴 적용
  */
 export function SLAIndicator({ dueDate, currentDate }: SLAIndicatorProps) {
   const now = currentDate ?? new Date().toISOString();
   const { status, daysRemaining } = calculateSLAStatus(dueDate, now);
   const config = SLA_CONFIG[status];
-  const Icon = config.icon;
 
   // 프로그레스 바 비율 계산 (최대 14일 기준)
   const progressMax = 14;
@@ -77,22 +80,21 @@ export function SLAIndicator({ dueDate, currentDate }: SLAIndicatorProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <Icon className={cn("h-4 w-4 shrink-0", config.className)} />
+      <span className="tf tf-14">{config.emoji}</span>
       <div className="flex flex-col gap-0.5 min-w-0">
-        <span className={cn("text-xs font-medium whitespace-nowrap", config.className)}>
+        <span
+          className="t-xs font-medium whitespace-nowrap"
+          style={{ color: config.color }}
+        >
           {daysText}
         </span>
-        {/* 진행률 바 */}
-        <div className="h-1 w-16 rounded-full bg-muted overflow-hidden">
+        <div className="progress-track progress-track-sm" style={{ width: "64px" }}>
           <div
-            className={cn(
-              "h-full rounded-full transition-all",
-              status === "on-track" && "bg-sla-on-track",
-              status === "warning" && "bg-sla-warning",
-              status === "overdue" && "bg-sla-overdue",
-              status === "future" && "bg-muted-foreground/40"
-            )}
-            style={{ width: `${progressPercent}%` }}
+            className="progress-fill"
+            style={{
+              width: `${progressPercent}%`,
+              background: config.trackColor,
+            }}
           />
         </div>
       </div>

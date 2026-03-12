@@ -2,22 +2,12 @@
 
 import { useState } from "react";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import type { Category } from "@/lib/types/database";
 import {
   CATEGORY_ROLE_TYPES,
@@ -57,6 +47,13 @@ export function CategoryDetailCard({
 
   const statusInfo = CATEGORY_STATUSES[category.status];
 
+  const statusBadgeClass = (): string => {
+    if (statusInfo.color.includes("0F9D58") || statusInfo.color.includes("success")) return "badge-success";
+    if (statusInfo.color.includes("E88B00") || statusInfo.color.includes("warning")) return "badge-warning";
+    if (statusInfo.color.includes("E5383B") || statusInfo.color.includes("danger")) return "badge-danger";
+    return "badge-neutral";
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -74,77 +71,72 @@ export function CategoryDetailCard({
   };
 
   return (
-    <Card>
-      <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">{category.name}</CardTitle>
-          <Badge
-            variant="outline"
-            className="border-transparent font-medium"
-            style={{
-              backgroundColor: `${statusInfo.color}20`,
-              color: statusInfo.color,
-            }}
-          >
-            {statusInfo.label}
-          </Badge>
+    <div className="scard">
+      {/* 헤더 */}
+      <div className="scard-head">
+        <div className="scard-head-left">
+          <span className="scard-head-title">{category.name}</span>
         </div>
-        <p className="text-sm text-muted-foreground">
+        <span className={`ucl-badge ${statusBadgeClass()}`}>
+          {statusInfo.label}
+        </span>
+      </div>
+
+      <div className="scard-body space-y-5">
+        <p className="t-sm" style={{ color: "var(--g500)" }}>
           {category.tier === "primary" ? "1차 카테고리" : "2차 카테고리"} /{" "}
           {category.id}
         </p>
-      </CardHeader>
 
-      <CardContent className="space-y-5">
         {/* 기본 정보 */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-medium text-muted-foreground">
+            <label className="t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>
               역할 유형
             </label>
-            <p className="text-sm mt-0.5">
+            <p className="t-sm mt-0.5" style={{ color: "var(--g900)" }}>
               {CATEGORY_ROLE_TYPES[category.role_type]}
             </p>
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">
+            <label className="t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>
               퍼널 단계
             </label>
-            <p className="text-sm mt-0.5">
+            <p className="t-sm mt-0.5" style={{ color: "var(--g900)" }}>
               {FUNNEL_STAGES[category.funnel_stage]}
             </p>
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">
+            <label className="t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>
               CTA 유형
             </label>
-            <p className="text-sm mt-0.5">{CTA_TYPES[category.cta_type]}</p>
+            <p className="t-sm mt-0.5" style={{ color: "var(--g900)" }}>{CTA_TYPES[category.cta_type]}</p>
           </div>
           {category.prologue_position && (
             <div>
-              <label className="text-xs font-medium text-muted-foreground">
+              <label className="t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>
                 프롤로그 위치
               </label>
-              <p className="text-sm mt-0.5">
+              <p className="t-sm mt-0.5" style={{ color: "var(--g900)" }}>
                 {PROLOGUE_LABELS[category.prologue_position]}
               </p>
             </div>
           )}
         </div>
 
-        <Separator />
+        <div className="divider" />
 
         {/* 연결 서비스 */}
         {category.connected_services.length > 0 && (
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-2 block">
+            <label className="t-xs block mb-2" style={{ fontWeight: 600, color: "var(--g500)" }}>
               연결 서비스
             </label>
             <div className="flex flex-wrap gap-1.5">
               {category.connected_services.map((service) => (
-                <Badge key={service} variant="secondary" className="text-xs">
+                <span key={service} className="ucl-badge ucl-badge-sm badge-brand">
                   {service}
-                </Badge>
+                </span>
               ))}
             </div>
           </div>
@@ -153,41 +145,43 @@ export function CategoryDetailCard({
         {/* 타겟 키워드 */}
         {category.target_keywords.length > 0 && (
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-2 block">
+            <label className="t-xs block mb-2" style={{ fontWeight: 600, color: "var(--g500)" }}>
               타겟 키워드
             </label>
             <div className="flex flex-wrap gap-1.5">
               {category.target_keywords.map((keyword) => (
-                <Badge key={keyword} variant="outline" className="text-xs">
+                <span key={keyword} className="ucl-badge ucl-badge-sm badge-neutral">
                   {keyword}
-                </Badge>
+                </span>
               ))}
             </div>
           </div>
         )}
 
-        <Separator />
+        <div className="divider" />
 
         {/* 수정 가능 필드 */}
         <div className="space-y-3">
-          <h4 className="text-sm font-medium">설정 변경</h4>
+          <h4 className="t-md" style={{ fontWeight: 700, color: "var(--g900)" }}>설정 변경</h4>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              <label className="input-label">
                 월간 목표 (건)
               </label>
-              <Input
-                type="number"
-                min={0}
-                value={monthlyTarget}
-                onChange={(e) => setMonthlyTarget(e.target.value)}
-                className="h-8 text-sm"
-              />
+              <div className="input-wrap input-wrap-sm">
+                <input
+                  type="number"
+                  min={0}
+                  className="input-field"
+                  value={monthlyTarget}
+                  onChange={(e) => setMonthlyTarget(e.target.value)}
+                />
+              </div>
             </div>
 
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              <label className="input-label">
                 상태
               </label>
               <Select
@@ -210,7 +204,7 @@ export function CategoryDetailCard({
             </div>
 
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              <label className="input-label">
                 CTA 유형
               </label>
               <Select
@@ -233,17 +227,16 @@ export function CategoryDetailCard({
             </div>
           </div>
 
-          <Button
-            size="sm"
+          <button
+            className="btn btn-primary btn-sm btn-full"
             onClick={handleSave}
             disabled={saving}
-            className="w-full"
           >
-            <Save className="h-4 w-4 mr-1.5" />
+            <Save className="h-4 w-4" />
             {saving ? "저장 중..." : "변경사항 저장"}
-          </Button>
+          </button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

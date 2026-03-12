@@ -1,7 +1,6 @@
 "use client";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { QualityBadge } from "@/components/common/quality-badge";
 import { CategoryBadge } from "@/components/common/category-badge";
 import type { ContentRanking } from "@/actions/analytics";
@@ -31,25 +30,29 @@ function RankingTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full t-sm">
         <thead>
-          <tr className="border-b text-left text-muted-foreground">
-            <th className="w-10 pb-3 pr-2 text-center">#</th>
-            <th className="pb-3 pr-4">제목</th>
-            <th className="pb-3 pr-4">카테고리</th>
-            <th className="pb-3 pr-4 text-center">품질 점수</th>
-            <th className="pb-3 pr-4 text-right">조회수</th>
-            <th className="pb-3 text-right">체류시간</th>
+          <tr style={{ borderBottom: "1px solid var(--g150)" }}>
+            <th className="w-10 pb-3 pr-2 text-center t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>#</th>
+            <th className="pb-3 pr-4 text-left t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>제목</th>
+            <th className="pb-3 pr-4 text-left t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>카테고리</th>
+            <th className="pb-3 pr-4 text-center t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>품질 점수</th>
+            <th className="pb-3 pr-4 text-right t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>조회수</th>
+            <th className="pb-3 text-right t-xs" style={{ fontWeight: 600, color: "var(--g500)" }}>체류시간</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item, idx) => (
-            <tr key={item.id} className="border-b last:border-0 hover:bg-muted/50">
-              <td className="py-3 pr-2 text-center font-medium text-muted-foreground">
+            <tr
+              key={item.id}
+              className="hover:bg-[var(--g50)] transition-colors"
+              style={{ borderBottom: idx < items.length - 1 ? "1px solid var(--g100)" : "none" }}
+            >
+              <td className="py-3 pr-2 text-center font-num" style={{ fontWeight: 600, color: "var(--g400)" }}>
                 {startRank + idx}
               </td>
               <td className="py-3 pr-4">
-                <span className="font-medium" title={item.title}>
+                <span className="t-sm" style={{ fontWeight: 600, color: "var(--g900)" }} title={item.title}>
                   {truncateTitle(item.title)}
                 </span>
               </td>
@@ -62,10 +65,10 @@ function RankingTable({
               <td className="py-3 pr-4 text-center">
                 <QualityBadge score={item.quality_score} />
               </td>
-              <td className="py-3 pr-4 text-right tabular-nums">
+              <td className="py-3 pr-4 text-right font-num" style={{ color: "var(--g700)" }}>
                 {item.views.toLocaleString()}
               </td>
-              <td className="py-3 text-right tabular-nums">
+              <td className="py-3 text-right font-num" style={{ color: "var(--g700)" }}>
                 {formatDuration(item.avg_duration_sec)}
               </td>
             </tr>
@@ -82,11 +85,14 @@ export function QualityRanking({ data }: QualityRankingProps) {
   const bottom5 = sorted.slice(-5).reverse();
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>품질 점수 랭킹</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <div className="scard">
+      <div className="scard-head">
+        <div className="scard-head-left">
+          <span className="tf tf-16">🏆</span>
+          <span className="scard-head-title">품질 점수 랭킹</span>
+        </div>
+      </div>
+      <div className="scard-body">
         <Tabs defaultValue="top">
           <TabsList>
             <TabsTrigger value="top">상위 10개</TabsTrigger>
@@ -102,7 +108,7 @@ export function QualityRanking({ data }: QualityRankingProps) {
             />
           </TabsContent>
         </Tabs>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

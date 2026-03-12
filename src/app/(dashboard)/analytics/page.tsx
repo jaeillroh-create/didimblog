@@ -9,7 +9,6 @@ import {
   getCategoryMetrics,
   getAnalyticsSummary,
 } from "@/actions/analytics";
-import { Eye, Clock, FileText, TrendingUp } from "lucide-react";
 
 export default async function AnalyticsPage() {
   const [kpiResult, rankingsResult, categoryResult, summaryResult] =
@@ -36,42 +35,39 @@ export default async function AnalyticsPage() {
         description="콘텐츠 성과 및 KPI 분석"
       />
 
-      {/* KPI 요약 카드 */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KPICard
           title="이번 달 조회수"
           value={summary.totalViews.toLocaleString()}
           change={summary.totalViewsChange}
           changeLabel="전월 대비"
-          icon={<Eye className="h-4 w-4" />}
+          icon={<span className="tf tf-14">👀</span>}
         />
         <KPICard
           title="평균 체류시간"
           value={formatDuration(summary.avgDuration)}
           change={summary.avgDurationChange}
           changeLabel="전월 대비"
-          icon={<Clock className="h-4 w-4" />}
+          icon={<span className="tf tf-14">⏱️</span>}
         />
         <KPICard
           title="발행 건수"
           value={`${summary.publishedCount}건`}
           change={summary.publishedCountChange}
           changeLabel="전월 대비"
-          icon={<FileText className="h-4 w-4" />}
+          icon={<span className="tf tf-14">📝</span>}
         />
         <KPICard
           title="전환율"
           value={`${summary.conversionRate.toFixed(2)}%`}
           change={summary.conversionRateChange}
           changeLabel="전월 대비"
-          icon={<TrendingUp className="h-4 w-4" />}
+          icon={<span className="tf tf-14">📈</span>}
         />
       </div>
 
-      {/* KPI 트렌드 차트 */}
       <KpiTrendChart data={kpiResult.data} />
 
-      {/* 품질 랭킹 + 카테고리 비교 */}
       <div className="grid gap-6 lg:grid-cols-2">
         <QualityRanking data={rankingsResult.data} />
         <CategoryComparison data={categoryResult.data} />
