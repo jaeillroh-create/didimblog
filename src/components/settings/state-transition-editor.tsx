@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { toast } from "sonner";
-import { GitBranch, Pencil, Trash2, Plus, ArrowRight } from "lucide-react";
+import { Pencil, Trash2, Plus, ArrowRight } from "lucide-react";
 import { CONTENT_STATES } from "@/lib/constants/content-states";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -57,21 +57,18 @@ const STATUS_LABELS: Record<string, string> = {
   S5: "성과측정",
 };
 
-const STATUS_BADGE_MAP: Record<string, string> = {
-  S0: "badge-neutral",
-  S1: "badge-info",
-  S2: "badge-brand",
-  S3: "badge-warning",
-  S4: "badge-success",
-  S5: "badge-brand",
-};
-
 function StatusBadgeInline({ status }: { status: string }) {
+  const color = STATUS_COLORS[status] ?? "var(--g500)";
   const label = STATUS_LABELS[status] ?? status;
-  const badgeClass = STATUS_BADGE_MAP[status] ?? "badge-neutral";
 
   return (
-    <span className={`ucl-badge ucl-badge-sm badge-dot ${badgeClass}`}>
+    <span
+      className="ucl-badge ucl-badge-sm"
+      style={{
+        backgroundColor: `${color}20`,
+        color: color,
+      }}
+    >
       {label}
     </span>
   );
@@ -217,7 +214,7 @@ export function StateTransitionEditor({
       <div className="scard">
         <div className="scard-head">
           <div className="scard-head-left">
-            <GitBranch className="h-5 w-5" style={{ color: "var(--g500)" }} />
+            <span className="tf tf-14">🔀</span>
             <span className="scard-head-title">상태 전이 규칙</span>
           </div>
           <button className="btn btn-primary btn-sm" onClick={openCreate} disabled={isPending}>
@@ -317,7 +314,7 @@ export function StateTransitionEditor({
             </div>
 
             <div>
-              <label className="input-label" htmlFor="conditions">조건 (JSON)</label>
+              <label className="input-label">조건 (JSON)</label>
               <textarea
                 id="conditions"
                 className="textarea font-mono"
@@ -330,7 +327,7 @@ export function StateTransitionEditor({
             </div>
 
             <div>
-              <label className="input-label" htmlFor="auto-checks">자동 검사 (쉼표 구분)</label>
+              <label className="input-label">자동 검사 (쉼표 구분)</label>
               <div className="input-wrap">
                 <input
                   id="auto-checks"
@@ -348,7 +345,7 @@ export function StateTransitionEditor({
             </div>
 
             <div>
-              <label className="input-label" htmlFor="description">설명</label>
+              <label className="input-label">설명</label>
               <div className="input-wrap">
                 <input
                   id="description"
@@ -376,7 +373,7 @@ export function StateTransitionEditor({
                   }))
                 }
               />
-              <label htmlFor="is-reversible" className="cursor-pointer t-sm" style={{ color: "var(--g700)" }}>
+              <label htmlFor="is-reversible" className="t-sm cursor-pointer" style={{ color: "var(--g700)" }}>
                 역행 가능
               </label>
             </div>
@@ -450,10 +447,7 @@ function TransitionTable({
               <StatusBadgeInline status={t.to_status} />
             </TableCell>
             <TableCell>
-              <code
-                className="t-xs font-mono px-1.5 py-0.5"
-                style={{ background: "var(--g100)", borderRadius: "var(--r-xs)", color: "var(--g700)" }}
-              >
+              <code className="t-xs px-1.5 py-0.5" style={{ background: "var(--g100)", borderRadius: "var(--r-xs)", color: "var(--g700)" }}>
                 {JSON.stringify(t.conditions ?? {})}
               </code>
             </TableCell>
@@ -471,29 +465,31 @@ function TransitionTable({
             </TableCell>
             <TableCell>
               {t.is_reversible ? (
-                <span className="ucl-badge ucl-badge-sm badge-success">Y</span>
+                <span className="ucl-badge ucl-badge-sm badge-success">
+                  Y
+                </span>
               ) : (
-                <span className="ucl-badge ucl-badge-sm badge-neutral">N</span>
+                <span className="ucl-badge ucl-badge-sm badge-neutral">
+                  N
+                </span>
               )}
             </TableCell>
-            <TableCell>
-              <span className="t-sm max-w-[200px] truncate block" style={{ color: "var(--g500)" }}>
-                {t.description ?? "-"}
-              </span>
+            <TableCell className="t-sm max-w-[200px] truncate" style={{ color: "var(--g500)" }}>
+              {t.description ?? "-"}
             </TableCell>
             <TableCell>
               <div className="flex items-center gap-1">
                 <button
-                  className="icon-btn"
-                  style={{ width: 28, height: 28 }}
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: 28, height: 28, padding: 0 }}
                   onClick={() => onEdit(t)}
                   disabled={isPending}
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
                 <button
-                  className="icon-btn"
-                  style={{ width: 28, height: 28, color: "var(--g400)" }}
+                  className="btn btn-ghost btn-sm"
+                  style={{ width: 28, height: 28, padding: 0, color: "var(--g400)" }}
                   onClick={() => onDelete(t)}
                   disabled={isPending}
                 >
@@ -507,7 +503,7 @@ function TransitionTable({
           <TableRow>
             <TableCell
               colSpan={8}
-              className="text-center py-8"
+              className="text-center py-8 t-sm"
               style={{ color: "var(--g400)" }}
             >
               등록된 상태 전이 규칙이 없습니다.
