@@ -7,14 +7,22 @@ import type {
   StateTransition,
 } from "@/lib/types/database";
 import { ContentDetailClient } from "./content-detail-client";
+import { ContentNotFound } from "./content-not-found";
 
 // 데모 콘텐츠 데이터
-function getDemoContent(id: string): Content {
+function getDemoContent(id: string): Content | null {
+  // 데모 ID 패턴: W01-01, W02-01, ... W10-01
+  const demoIds = [
+    "W01-01", "W02-01", "W03-01", "W04-01", "W05-01",
+    "W06-01", "W07-01", "W08-01", "W09-01", "W10-01",
+  ];
+  if (!demoIds.includes(id)) return null;
+
   return {
     id,
     title: "스타트업 세무 가이드: 법인 설립 후 첫 세금 신고 완벽 정리",
     category_id: "CAT-A",
-    secondary_category: "CAT-B",
+    secondary_category: null,
     target_keyword: "스타트업 세무",
     target_audience: "startup",
     status: "S2",
@@ -41,6 +49,11 @@ function getDemoContent(id: string): Content {
     quality_score_1st: null,
     quality_score_final: null,
     quality_grade: null,
+    body: null,
+    tags: null,
+    seo_keywords: null,
+    scheduled_at: null,
+    is_deleted: false,
     ai_generation_id: null,
     is_ai_generated: false,
     ai_edited_by: null,
@@ -55,7 +68,7 @@ function getDemoCategories(): Category[] {
   return [
     {
       id: "CAT-A",
-      name: "현장 수첩",
+      name: "변리사의 현장 수첩",
       tier: "primary",
       parent_id: null,
       role_type: "conversion",
@@ -67,6 +80,22 @@ function getDemoCategories(): Category[] {
       connected_services: ["tax_consulting"],
       target_keywords: ["세무", "회계"],
       sort_order: 1,
+      created_at: "2026-01-01T00:00:00Z",
+    },
+    {
+      id: "CAT-A-01",
+      name: "절세 시뮬레이션",
+      tier: "secondary",
+      parent_id: "CAT-A",
+      role_type: "conversion",
+      funnel_stage: "CONVERT",
+      prologue_position: null,
+      monthly_target: 2,
+      cta_type: "direct",
+      status: "NEW",
+      connected_services: ["tax_consulting"],
+      target_keywords: ["절세"],
+      sort_order: 2,
       created_at: "2026-01-01T00:00:00Z",
     },
     {
@@ -82,13 +111,13 @@ function getDemoCategories(): Category[] {
       status: "GROW",
       connected_services: ["patent"],
       target_keywords: ["특허", "지식재산"],
-      sort_order: 2,
+      sort_order: 3,
       created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "CAT-C",
       name: "디딤 다이어리",
-      tier: "secondary",
+      tier: "primary",
       parent_id: null,
       role_type: "trust",
       funnel_stage: "TRUST",
@@ -98,7 +127,7 @@ function getDemoCategories(): Category[] {
       status: "MATURE",
       connected_services: [],
       target_keywords: ["디딤", "기업 성장"],
-      sort_order: 3,
+      sort_order: 4,
       created_at: "2026-01-01T00:00:00Z",
     },
   ];
@@ -108,25 +137,9 @@ function getDemoProfiles(): Profile[] {
   return [
     {
       id: "user-1",
-      email: "author@didim.com",
-      name: "김작가",
-      role: "editor",
-      avatar_url: null,
-      created_at: "2026-01-01T00:00:00Z",
-    },
-    {
-      id: "user-2",
-      email: "reviewer@didim.com",
-      name: "박검수",
+      email: "admin@didimip.com",
+      name: "노재일",
       role: "admin",
-      avatar_url: null,
-      created_at: "2026-01-01T00:00:00Z",
-    },
-    {
-      id: "user-3",
-      email: "designer@didim.com",
-      name: "이디자인",
-      role: "designer",
       avatar_url: null,
       created_at: "2026-01-01T00:00:00Z",
     },
@@ -219,6 +232,7 @@ export default async function ContentDetailPage({ params }: PageProps) {
   let categories: Category[] = [];
   let profiles: Profile[] = [];
   let transitions: StateTransition[] = [];
+  let isDbConnected = false;
 
   try {
     const supabase = await createClient();
@@ -235,7 +249,21 @@ export default async function ContentDetailPage({ params }: PageProps) {
           .eq("entity_type", "content"),
       ]);
 
-    if (contentRes.data) content = contentRes.data as Content;
+    if (contentRes.data) {
+      const c = contentRes.data as Content;
+      // soft-deleted 콘텐츠는 찾을 수 없음 처리
+      if (c.is_deleted) {
+        content = null;
+      } else {
+        content = c;
+      }
+      isDbConnected = true;
+    } else if (contentRes.error?.code === "PGRST116") {
+      // 데이터 없음 (single row not found)
+      isDbConnected = true;
+      content = null;
+    }
+
     if (categoriesRes.data) categories = categoriesRes.data as Category[];
     if (profilesRes.data) profiles = profilesRes.data as Profile[];
     if (transitionsRes.data)
@@ -244,8 +272,17 @@ export default async function ContentDetailPage({ params }: PageProps) {
     console.log("Supabase 연결 실패, 데모 데이터 사용");
   }
 
-  // 데모 데이터 폴백
-  if (!content) content = getDemoContent(id);
+  // DB에 연결되었지만 콘텐츠가 없으면 → 찾을 수 없음
+  if (isDbConnected && !content) {
+    return <ContentNotFound />;
+  }
+
+  // DB 미연결 시 데모 데이터 폴백
+  if (!content) {
+    const demo = getDemoContent(id);
+    if (!demo) return <ContentNotFound />;
+    content = demo;
+  }
   if (categories.length === 0) categories = getDemoCategories();
   if (profiles.length === 0) profiles = getDemoProfiles();
   if (transitions.length === 0) transitions = getDemoTransitions();

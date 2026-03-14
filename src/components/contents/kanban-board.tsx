@@ -81,15 +81,28 @@ export function KanbanBoard({
     reset: resetFilters,
   } = useContentFilterStore();
 
-  // 필터 적용
+  // 필터 적용 — 계층적 카테고리 필터링
   const filteredContents = useMemo(() => {
     return contents.filter((c) => {
-      if (filterCategoryId && c.category_id !== filterCategoryId) return false;
+      if (filterCategoryId) {
+        const matchesDirect = c.category_id === filterCategoryId;
+        // 1차 카테고리 선택 시 해당 하위 카테고리도 포함
+        const selectedCat = categories.find((cat) => cat.id === filterCategoryId);
+        const isParentMatch =
+          selectedCat?.tier === "primary" &&
+          c.category_id !== null &&
+          categories.some(
+            (cat) =>
+              cat.id === c.category_id &&
+              cat.parent_id === filterCategoryId
+          );
+        if (!matchesDirect && !isParentMatch) return false;
+      }
       if (filterStatus && c.status !== filterStatus) return false;
       if (filterAuthorId && c.author_id !== filterAuthorId) return false;
       return true;
     });
-  }, [contents, filterCategoryId, filterStatus, filterAuthorId]);
+  }, [contents, filterCategoryId, filterStatus, filterAuthorId, categories]);
 
   // 상태별로 콘텐츠 그룹핑
   const columnData = useMemo(() => {
@@ -174,6 +187,11 @@ export function KanbanBoard({
   // 콘텐츠 생성 후 새로고침
   function handleContentCreated() {
     router.refresh();
+  }
+
+  // 콘텐츠 삭제 후 목록에서 즉시 제거
+  function handleContentDeleted(contentId: string) {
+    setContents((prev) => prev.filter((c) => c.id !== contentId));
   }
 
   const hasActiveFilters = !!(filterCategoryId || filterStatus || filterAuthorId);
@@ -285,6 +303,7 @@ export function KanbanBoard({
               status={status}
               contents={columnData[status]}
               profiles={profiles}
+              onDeleted={handleContentDeleted}
             />
           ))}
         </div>

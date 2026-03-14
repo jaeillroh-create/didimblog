@@ -211,6 +211,11 @@ function makeDemoContent(overrides: Partial<Content> & { id: string; title: stri
     quality_score_1st: null,
     quality_score_final: null,
     quality_grade: null,
+    body: null,
+    tags: null,
+    seo_keywords: null,
+    scheduled_at: null,
+    is_deleted: false,
     ai_generation_id: null,
     is_ai_generated: false,
     ai_edited_by: null,
@@ -347,6 +352,7 @@ export async function getContents(): Promise<{
     const { data, error } = await supabase
       .from("contents")
       .select("*, category:categories(*)")
+      .or("is_deleted.is.null,is_deleted.eq.false")
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -521,6 +527,11 @@ export async function createContent(input: CreateContentInput): Promise<{
       quality_score_1st: null,
       quality_score_final: null,
       quality_grade: null,
+      body: null,
+      tags: null,
+      seo_keywords: null,
+      scheduled_at: null,
+      is_deleted: false,
       ai_generation_id: null,
       is_ai_generated: false,
       ai_edited_by: null,
@@ -670,5 +681,110 @@ export async function updateContentStatus(
   } catch (err) {
     console.error("[updateContentStatus] 에러:", err);
     return { data: null, error: "상태 변경에 실패했습니다." };
+  }
+}
+
+// ── 콘텐츠 수정 (저장) ──
+
+export interface UpdateContentInput {
+  title?: string | null;
+  body?: string | null;
+  category_id?: string | null;
+  secondary_category?: string | null;
+  target_keyword?: string | null;
+  target_audience?: "startup" | "sme" | "cto" | null;
+  status?: ContentStatus;
+  publish_date?: string | null;
+  tags?: string[] | null;
+  seo_keywords?: string | null;
+  scheduled_at?: string | null;
+  notes?: string | null;
+}
+
+export async function updateContent(
+  contentId: string,
+  input: UpdateContentInput
+): Promise<{
+  data: Content | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const updateData: Record<string, unknown> = {
+      ...input,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("contents")
+      .update(updateData)
+      .eq("id", contentId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return { data: data as Content, error: null };
+  } catch (err) {
+    console.error("[updateContent] 에러:", err);
+    return { data: null, error: "저장에 실패했습니다." };
+  }
+}
+
+// ── 콘텐츠 삭제 (soft delete) ──
+
+export async function deleteContent(
+  contentId: string
+): Promise<{
+  success: boolean;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const { error } = await supabase
+      .from("contents")
+      .update({ is_deleted: true, updated_at: new Date().toISOString() })
+      .eq("id", contentId);
+
+    if (error) throw error;
+
+    return { success: true, error: null };
+  } catch (err) {
+    console.error("[deleteContent] 에러:", err);
+    return { success: false, error: "삭제에 실패했습니다." };
+  }
+}
+
+// ── 단일 콘텐츠 조회 ──
+
+export async function getContent(
+  contentId: string
+): Promise<{
+  data: Content | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("contents")
+      .select("*")
+      .eq("id", contentId)
+      .single();
+
+    if (error) throw error;
+
+    const content = data as Content;
+
+    // soft-deleted 콘텐츠는 찾을 수 없음 처리
+    if (content?.is_deleted) {
+      return { data: null, error: null };
+    }
+
+    return { data: content, error: null };
+  } catch (err) {
+    console.error("[getContent] 에러:", err);
+    return { data: null, error: "콘텐츠를 불러오지 못했습니다." };
   }
 }
