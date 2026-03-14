@@ -48,11 +48,19 @@ import {
   Calendar,
 } from "lucide-react";
 
+export interface AiDraftInitialValues {
+  topic?: string;
+  categoryId?: string;
+  secondaryCategory?: string;
+  keyword?: string;
+}
+
 interface AiDraftDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   categories: Category[];
   llmConfigs?: LLMConfig[];
+  initialValues?: AiDraftInitialValues;
 }
 
 export function AiDraftDialog({
@@ -60,10 +68,13 @@ export function AiDraftDialog({
   onOpenChange,
   categories,
   llmConfigs = [],
+  initialValues,
 }: AiDraftDialogProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [activeTab, setActiveTab] = useState<"recommend" | "manual">("recommend");
+  const [activeTab, setActiveTab] = useState<"recommend" | "manual">(
+    initialValues?.topic ? "manual" : "recommend"
+  );
 
   // 스케줄 추천
   const [publishedWeeks, setPublishedWeeks] = useState<Set<number>>(new Set());
@@ -71,10 +82,10 @@ export function AiDraftDialog({
   const [loadingSchedule, setLoadingSchedule] = useState(true);
 
   // 폼 상태
-  const [topic, setTopic] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [secondaryCategory, setSecondaryCategory] = useState("");
-  const [keyword, setKeyword] = useState("");
+  const [topic, setTopic] = useState(initialValues?.topic ?? "");
+  const [categoryId, setCategoryId] = useState(initialValues?.categoryId ?? "");
+  const [secondaryCategory, setSecondaryCategory] = useState(initialValues?.secondaryCategory ?? "");
+  const [keyword, setKeyword] = useState(initialValues?.keyword ?? "");
   const [targetAudience, setTargetAudience] = useState("");
   const [additionalContext, setAdditionalContext] = useState("");
   const activeConfigs = llmConfigs.filter((c) => c.is_active);

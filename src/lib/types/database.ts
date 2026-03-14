@@ -76,6 +76,9 @@ export interface Content {
   is_deleted: boolean;
   // SEO 점수 (자동 계산)
   seo_score: number | null;
+  // 건강 상태
+  health_status: HealthStatus;
+  health_checked_at: string | null;
   // AI 관련 필드
   ai_generation_id: number | null;
   is_ai_generated: boolean;
@@ -317,6 +320,33 @@ export interface Schedule {
   planned_date: string;
   status: ScheduleStatus;
   notes: string | null;
+}
+
+// ── 건강 상태 타입 ──
+export type HealthStatus = "HEALTHY" | "CHECK_NEEDED" | "UPDATE_NEEDED" | "UPDATED";
+
+// ── 키워드 풀 ──
+
+export type KeywordPriority = "HIGH" | "MEDIUM" | "LOW";
+
+export interface KeywordPool {
+  id: string;
+  keyword: string;
+  category_id: string;
+  sub_category_id: string | null;
+  priority: KeywordPriority;
+  covered_content_id: string | null;
+  created_at: string;
+}
+
+// ── 키워드 순위 추적 ──
+
+export interface KeywordRanking {
+  id: string;
+  keyword_id: string;
+  month: string;
+  rank: number | null;
+  created_at: string;
 }
 
 export type EntityType = "content" | "category" | "lead";

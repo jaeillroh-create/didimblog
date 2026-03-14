@@ -3,21 +3,27 @@ import { KPICard } from "@/components/common/kpi-card";
 import { KpiTrendChart } from "@/components/analytics/kpi-trend-chart";
 import { QualityRanking } from "@/components/analytics/quality-ranking";
 import { CategoryComparison } from "@/components/analytics/category-comparison";
+import { KeywordRankingTracker } from "@/components/analytics/keyword-ranking-tracker";
 import {
   getMonthlyKPI,
   getContentRankings,
   getCategoryMetrics,
   getAnalyticsSummary,
 } from "@/actions/analytics";
+import { getHighKeywords, getKeywordRankings } from "@/actions/keywords";
 
 export default async function AnalyticsPage() {
-  const [kpiResult, rankingsResult, categoryResult, summaryResult] =
+  const [kpiResult, rankingsResult, categoryResult, summaryResult, highKeywords] =
     await Promise.all([
       getMonthlyKPI(),
       getContentRankings(),
       getCategoryMetrics(),
       getAnalyticsSummary(),
+      getHighKeywords(),
     ]);
+
+  const keywordIds = highKeywords.map((k) => k.id);
+  const keywordRankings = keywordIds.length > 0 ? await getKeywordRankings(keywordIds) : [];
 
   const summary = summaryResult.data;
 
@@ -72,6 +78,12 @@ export default async function AnalyticsPage() {
         <QualityRanking data={rankingsResult.data} />
         <CategoryComparison data={categoryResult.data} />
       </div>
+
+      {/* 키워드 순위 추적 */}
+      <KeywordRankingTracker
+        keywords={highKeywords}
+        rankings={keywordRankings}
+      />
     </div>
   );
 }

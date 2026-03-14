@@ -20,6 +20,7 @@ import { TimelineStep } from "@/components/common/timeline-step";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { SeoScorePanel } from "@/components/contents/seo-score-panel";
 import { QualityScore } from "@/components/contents/quality-score";
+import { PerformanceInput } from "@/components/contents/performance-input";
 import { calculateSeoScore } from "@/lib/seo-calculator";
 import {
   updateContent,
@@ -645,6 +646,9 @@ export function ContentDetailClient({
               <TimelineStep steps={timelineSteps} />
             </CardContent>
           </Card>
+
+          {/* 성과 입력 (S4 이상) */}
+          {statusIndex >= 4 && <PerformanceInput content={content} />}
 
           {/* 품질 점수 (S4 이상) */}
           {statusIndex >= 4 && <QualityScore content={content} />}
