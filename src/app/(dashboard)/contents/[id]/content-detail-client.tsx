@@ -18,9 +18,9 @@ import { PageHeader } from "@/components/common/page-header";
 import { StatusBadge } from "@/components/common/status-badge";
 import { TimelineStep } from "@/components/common/timeline-step";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
-import { SeoChecklist } from "@/components/contents/seo-checklist";
+import { SeoScorePanel } from "@/components/contents/seo-score-panel";
 import { QualityScore } from "@/components/contents/quality-score";
-import { saveSeoCheck } from "@/actions/seo-checks";
+import { calculateSeoScore } from "@/lib/seo-calculator";
 import {
   updateContent,
   updateContentStatus,
@@ -33,7 +33,6 @@ import type {
   Category,
   Profile,
   StateTransition,
-  SeoCheck,
   ContentStatus,
   TargetAudience,
 } from "@/lib/types/database";
@@ -48,6 +47,7 @@ import {
   Info,
   Sparkles,
   Trash2,
+  ExternalLink,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
@@ -58,7 +58,6 @@ interface ContentDetailClientProps {
   categories: Category[];
   profiles: Profile[];
   transitions: StateTransition[];
-  seoCheck: SeoCheck | null;
 }
 
 export function ContentDetailClient({
@@ -66,7 +65,6 @@ export function ContentDetailClient({
   categories,
   profiles,
   transitions,
-  seoCheck,
 }: ContentDetailClientProps) {
   const router = useRouter();
 
@@ -150,6 +148,20 @@ export function ContentDetailClient({
         .map((t) => t.trim())
         .filter(Boolean);
 
+      // SEO 점수 자동 계산
+      const tempContent = {
+        ...content,
+        title: title || null,
+        body: body || null,
+        category_id: categoryId || null,
+        target_keyword: targetKeyword || null,
+        tags: parsedTags.length > 0 ? parsedTags : null,
+      };
+      const seoResult = calculateSeoScore(
+        tempContent,
+        secondaryCategory === "none" ? categoryId : secondaryCategory || categoryId
+      );
+
       const updateData = {
         title: title || null,
         body: body || null,
@@ -161,6 +173,7 @@ export function ContentDetailClient({
         publish_date: publishDate || null,
         seo_keywords: seoKeywords || null,
         tags: parsedTags.length > 0 ? parsedTags : null,
+        seo_score: seoResult.normalizedScore,
       };
 
       const { data, error } = await updateContent(content.id, updateData);
@@ -256,17 +269,6 @@ export function ContentDetailClient({
     }
   }, [content.id, router]);
 
-  // SEO 체크 저장
-  const handleSaveSeoCheck = useCallback(
-    async (items: Record<string, { passed: boolean; note: string }>) => {
-      const result = await saveSeoCheck(content.id, items);
-      if (!result.success) {
-        console.error("SEO 체크 저장 실패:", result.error);
-      }
-    },
-    [content.id]
-  );
-
   const statusIndex = ["S0", "S1", "S2", "S3", "S4", "S5"].indexOf(
     content.status
   );
@@ -308,6 +310,17 @@ export function ContentDetailClient({
             <ArrowLeft className="h-4 w-4 mr-1" />
             목록
           </Button>
+          {/* S2 이상: 네이버 발행 준비 버튼 */}
+          {statusIndex >= 2 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/contents/${content.id}/publish`)}
+            >
+              <ExternalLink className="h-4 w-4 mr-1" />
+              네이버 발행 준비
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -566,14 +579,11 @@ export function ContentDetailClient({
             </Card>
           )}
 
-          {/* SEO 체크리스트 (S1 이상) */}
-          {statusIndex >= 1 && (
-            <SeoChecklist
-              contentId={content.id}
-              initialItems={seoCheck?.items}
-              onSave={handleSaveSeoCheck}
-            />
-          )}
+          {/* SEO 자동 점수 패널 */}
+          <SeoScorePanel
+            content={content}
+            categoryId={content.secondary_category || content.category_id}
+          />
         </div>
 
         {/* 오른쪽 사이드바 (1/3) */}
