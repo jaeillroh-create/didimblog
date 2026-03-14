@@ -30,3 +30,16 @@ export const CATEGORY_STATUSES = {
   MATURE: { label: "안정", color: "#6B7280" },
   ADJUST: { label: "조정", color: "#F59E0B" },
 } as const;
+
+// ── 디딤 공통 상수 ──
+
+export const DIDIM_EMAIL = 'admin@didimip.com' as const;
+export const DIDIM_PHONE = '000-0000-0000' as const;
+export const DIDIM_SIGNATURE = '특허그룹 디딤 | 기업을 아는 변리사' as const;
+
+// 카테고리 계층 구조 (1차 → 2차 매핑)
+export const CATEGORY_HIERARCHY: Record<string, string[]> = {
+  'CAT-A': ['CAT-A-01', 'CAT-A-02', 'CAT-A-03'],
+  'CAT-B': ['CAT-B-01', 'CAT-B-02', 'CAT-B-03'],
+  'CAT-C': ['CAT-C-01', 'CAT-C-02', 'CAT-C-03'],
+} as const;

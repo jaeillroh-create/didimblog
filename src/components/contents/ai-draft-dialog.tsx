@@ -77,7 +77,11 @@ export function AiDraftDialog({
   const [keyword, setKeyword] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
   const [additionalContext, setAdditionalContext] = useState("");
-  const [selectedLlmId, setSelectedLlmId] = useState<string>("");
+  const activeConfigs = llmConfigs.filter((c) => c.is_active);
+  const defaultConfig = activeConfigs.find((c) => c.is_default) ?? activeConfigs[0];
+  const [selectedLlmId, setSelectedLlmId] = useState<string>(
+    defaultConfig ? String(defaultConfig.id) : ""
+  );
 
   // 뉴스 검색
   const [newsQuery, setNewsQuery] = useState("");
@@ -102,7 +106,6 @@ export function AiDraftDialog({
   const secondaryCategories = categories.filter(
     (c) => c.tier === "secondary" && c.parent_id === categoryId
   );
-  const activeConfigs = llmConfigs.filter((c) => c.is_active);
 
   // 현재 주차 계산
   const currentWeek = getCurrentWeek(blogStartDate);

@@ -68,6 +68,12 @@ export interface Content {
   quality_score_1st: number | null;
   quality_score_final: number | null;
   quality_grade: QualityGrade | null;
+  // 본문 및 태그
+  body: string | null;
+  tags: string[] | null;
+  seo_keywords: string | null;
+  scheduled_at: string | null;
+  is_deleted: boolean;
   // AI 관련 필드
   ai_generation_id: number | null;
   is_ai_generated: boolean;

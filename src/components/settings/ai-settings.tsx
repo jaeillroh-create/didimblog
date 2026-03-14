@@ -43,8 +43,8 @@ const PROVIDER_INFO: Record<
   claude: {
     label: "Claude (Anthropic)",
     models: [
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (권장)" },
       { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
-      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     ],
   },
   openai: {

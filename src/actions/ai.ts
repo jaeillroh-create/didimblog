@@ -151,7 +151,19 @@ async function getActiveLLMConfig(
     .eq("is_default", true)
     .eq("is_active", true)
     .single();
-  return data as LLMConfig | null;
+
+  if (data) return data as LLMConfig;
+
+  // DB에 기본 LLM이 없으면 활성 LLM 중 첫 번째 사용
+  const { data: fallback } = await supabase
+    .from("llm_configs")
+    .select("*")
+    .eq("is_active", true)
+    .order("id", { ascending: true })
+    .limit(1)
+    .single();
+
+  return (fallback as LLMConfig) ?? null;
 }
 
 async function getPromptTemplate(
