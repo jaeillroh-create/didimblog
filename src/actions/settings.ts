@@ -111,6 +111,16 @@ const DEMO_STATE_TRANSITIONS: StateTransition[] = [
   },
   {
     id: 8,
+    entity_type: "content",
+    from_status: "S3",
+    to_status: "S2",
+    conditions: null,
+    auto_checks: [],
+    description: "발행예정→검토: 재검토 필요 시 역행",
+    is_reversible: true,
+  },
+  {
+    id: 9,
     entity_type: "lead",
     from_status: "S3",
     to_status: "S4",
@@ -120,7 +130,7 @@ const DEMO_STATE_TRANSITIONS: StateTransition[] = [
     is_reversible: false,
   },
   {
-    id: 9,
+    id: 10,
     entity_type: "lead",
     from_status: "S4",
     to_status: "S5",
@@ -130,7 +140,7 @@ const DEMO_STATE_TRANSITIONS: StateTransition[] = [
     is_reversible: false,
   },
   {
-    id: 10,
+    id: 11,
     entity_type: "lead",
     from_status: "S4",
     to_status: "S3",

@@ -310,8 +310,8 @@ export function ContentDetailClient({
             <ArrowLeft className="h-4 w-4 mr-1" />
             목록
           </Button>
-          {/* S2 이상: 네이버 발행 준비 버튼 */}
-          {statusIndex >= 2 && (
+          {/* S1 이상: 네이버 발행 준비 버튼 */}
+          {statusIndex >= 1 && (
             <Button
               variant="outline"
               size="sm"

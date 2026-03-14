@@ -218,6 +218,16 @@ function getDemoTransitions(): StateTransition[] {
       description: "검토→초안: 수정 필요 시 역행",
       is_reversible: true,
     },
+    {
+      id: 8,
+      entity_type: "content",
+      from_status: "S3",
+      to_status: "S2",
+      conditions: null,
+      auto_checks: [],
+      description: "발행예정→검토: 재검토 필요 시 역행",
+      is_reversible: true,
+    },
   ];
 }
 
