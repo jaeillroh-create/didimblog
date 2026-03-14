@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { getSeoCheck } from "@/actions/seo-checks";
 import type {
   Content,
   Category,
@@ -54,6 +53,7 @@ function getDemoContent(id: string): Content | null {
     seo_keywords: null,
     scheduled_at: null,
     is_deleted: false,
+    seo_score: null,
     ai_generation_id: null,
     is_ai_generated: false,
     ai_edited_by: null,
@@ -287,16 +287,12 @@ export default async function ContentDetailPage({ params }: PageProps) {
   if (profiles.length === 0) profiles = getDemoProfiles();
   if (transitions.length === 0) transitions = getDemoTransitions();
 
-  // SEO 체크 데이터
-  const seoCheck = await getSeoCheck(id);
-
   return (
     <ContentDetailClient
       content={content}
       categories={categories}
       profiles={profiles}
       transitions={transitions}
-      seoCheck={seoCheck}
     />
   );
 }

@@ -377,11 +377,32 @@ export async function generateDraft(
         let title = lines[0]?.replace(/^#+\s*/, "").trim() || input.topic;
         if (title.length > 50) title = title.substring(0, 50);
 
-        // 태그 추출 (본문 하단 #태그 형식)
-        const tagMatches = fullText.match(/#([^\s#]+)/g);
-        const tags = tagMatches
-          ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10)
-          : null;
+        // 구조화된 태그 추출 ([TAGS]...[/TAGS] 블록)
+        let tags: string[] | null = null;
+        const tagsMatch = fullText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[\/TAGS\]/);
+        if (tagsMatch) {
+          tags = tagsMatch[1]
+            .split(/[,\n]/)
+            .map((t) => t.replace(/^\d+\.\s*/, "").trim())
+            .filter(Boolean)
+            .slice(0, 10);
+        } else {
+          // 폴백: #태그 형식
+          const tagMatches = fullText.match(/#([^\s#]+)/g);
+          tags = tagMatches
+            ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10)
+            : null;
+        }
+
+        // ALT 텍스트 추출 ([ALT_TEXTS]...[/ALT_TEXTS] 블록)
+        let imageAltTexts: string[] | null = null;
+        const altMatch = fullText.match(/\[ALT_TEXTS\]\s*([\s\S]*?)\s*\[\/ALT_TEXTS\]/);
+        if (altMatch) {
+          imageAltTexts = altMatch[1]
+            .split("\n")
+            .map((line) => line.replace(/^\d+\.\s*/, "").trim())
+            .filter(Boolean);
+        }
 
         // 이미지 마커 추출
         const imageMarkerRegex = /\[IMAGE:\s*(.+?)\]/g;
@@ -391,6 +412,15 @@ export async function generateDraft(
           imageMarkers.push({
             position: match.index,
             description: match[1],
+          });
+        }
+
+        // 이미지 마커에 ALT 텍스트 매핑
+        if (imageAltTexts && imageAltTexts.length > 0) {
+          imageMarkers.forEach((marker, i) => {
+            if (imageAltTexts[i]) {
+              (marker as Record<string, unknown>).alt_text = imageAltTexts[i];
+            }
           });
         }
 

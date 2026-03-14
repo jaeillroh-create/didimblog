@@ -74,6 +74,8 @@ export interface Content {
   seo_keywords: string | null;
   scheduled_at: string | null;
   is_deleted: boolean;
+  // SEO 점수 (자동 계산)
+  seo_score: number | null;
   // AI 관련 필드
   ai_generation_id: number | null;
   is_ai_generated: boolean;

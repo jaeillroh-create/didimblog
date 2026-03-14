@@ -216,6 +216,7 @@ function makeDemoContent(overrides: Partial<Content> & { id: string; title: stri
     seo_keywords: null,
     scheduled_at: null,
     is_deleted: false,
+    seo_score: null,
     ai_generation_id: null,
     is_ai_generated: false,
     ai_edited_by: null,
@@ -532,6 +533,7 @@ export async function createContent(input: CreateContentInput): Promise<{
       seo_keywords: null,
       scheduled_at: null,
       is_deleted: false,
+      seo_score: null,
       ai_generation_id: null,
       is_ai_generated: false,
       ai_edited_by: null,
@@ -699,6 +701,7 @@ export interface UpdateContentInput {
   seo_keywords?: string | null;
   scheduled_at?: string | null;
   notes?: string | null;
+  seo_score?: number | null;
 }
 
 export async function updateContent(
