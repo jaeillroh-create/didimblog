@@ -301,7 +301,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       <PageHeader
         title="초안 편집"
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => router.push("/contents")}>
               <ArrowLeft className="mr-1 h-4 w-4" />
               콘텐츠 관리

@@ -25,8 +25,8 @@ export function calcPartialScore(
   if (actual >= min && actual <= max) return weight;
 
   const span = Math.max(max - min, 1);
-  const tolerance1 = Math.round(span * 0.5);
-  const tolerance2 = Math.round(span * 1.0);
+  const tolerance1 = span;           // ±100% of span
+  const tolerance2 = span * 2;       // ±200% of span
 
   // ±50% → 67%
   if (actual >= min - tolerance1 && actual <= max + tolerance1) {
