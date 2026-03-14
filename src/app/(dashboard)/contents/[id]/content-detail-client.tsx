@@ -20,6 +20,7 @@ import { TimelineStep } from "@/components/common/timeline-step";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { SeoScorePanel } from "@/components/contents/seo-score-panel";
 import { QualityScore } from "@/components/contents/quality-score";
+import { PerformanceInput } from "@/components/contents/performance-input";
 import { calculateSeoScore } from "@/lib/seo-calculator";
 import {
   updateContent,
@@ -301,7 +302,7 @@ export function ContentDetailClient({
         }
         description={`${CONTENT_STATES[content.status]?.label ?? content.status} | ${getCategoryName(content.category_id)}`}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -310,8 +311,8 @@ export function ContentDetailClient({
             <ArrowLeft className="h-4 w-4 mr-1" />
             목록
           </Button>
-          {/* S2 이상: 네이버 발행 준비 버튼 */}
-          {statusIndex >= 2 && (
+          {/* S1 이상: 네이버 발행 준비 버튼 */}
+          {statusIndex >= 1 && (
             <Button
               variant="outline"
               size="sm"
@@ -645,6 +646,9 @@ export function ContentDetailClient({
               <TimelineStep steps={timelineSteps} />
             </CardContent>
           </Card>
+
+          {/* 성과 입력 (S4 이상) */}
+          {statusIndex >= 4 && <PerformanceInput content={content} />}
 
           {/* 품질 점수 (S4 이상) */}
           {statusIndex >= 4 && <QualityScore content={content} />}

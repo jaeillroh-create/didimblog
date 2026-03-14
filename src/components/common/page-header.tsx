@@ -28,7 +28,7 @@ export function PageHeader({ title, description, actions, children, className }:
           )}
         </div>
         {rightContent && (
-          <div className="flex shrink-0 items-center gap-2">{rightContent}</div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">{rightContent}</div>
         )}
       </div>
       <div className="divider" />
