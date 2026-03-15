@@ -346,17 +346,10 @@ export async function getKeywordCoverage(): Promise<{
     };
   } catch (err) {
     console.error("[getKeywordCoverage] 에러:", err);
-    // 데모 데이터 폴백
-    const { getKeywordPool } = await import("@/actions/keywords");
-    const keywords = await getKeywordPool();
-    const data: KeywordCoverageItem[] = keywords.map((kw) => ({
-      keyword: kw,
-      coveredContent: null,
-    }));
     return {
-      data,
-      stats: { total: data.length, covered: 0, uncovered: data.length },
-      error: null,
+      data: [],
+      stats: { total: 0, covered: 0, uncovered: 0 },
+      error: "키워드 커버리지 데이터를 불러올 수 없습니다.",
     };
   }
 }
