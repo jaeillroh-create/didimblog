@@ -3,21 +3,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { KeywordPool, KeywordRanking } from "@/lib/types/database";
 
-// ── 데모 데이터 ──
-
-const DEMO_KEYWORDS: KeywordPool[] = [
-  { id: "kw-1", keyword: "직무발명보상금 절세", category_id: "CAT-A", sub_category_id: "CAT-A-01", priority: "HIGH", covered_content_id: null, created_at: "2026-01-01T00:00:00Z" },
-  { id: "kw-2", keyword: "법인세 줄이는 방법", category_id: "CAT-A", sub_category_id: "CAT-A-01", priority: "HIGH", covered_content_id: null, created_at: "2026-01-01T00:00:00Z" },
-  { id: "kw-3", keyword: "대표이사 직무발명보상금", category_id: "CAT-A", sub_category_id: "CAT-A-01", priority: "HIGH", covered_content_id: null, created_at: "2026-01-01T00:00:00Z" },
-  { id: "kw-4", keyword: "기업부설연구소 세액공제", category_id: "CAT-A", sub_category_id: "CAT-A-03", priority: "HIGH", covered_content_id: null, created_at: "2026-01-01T00:00:00Z" },
-  { id: "kw-5", keyword: "연구소 세무조사", category_id: "CAT-A", sub_category_id: "CAT-A-03", priority: "HIGH", covered_content_id: null, created_at: "2026-01-01T00:00:00Z" },
-  { id: "kw-6", keyword: "R&D 세액공제 환수", category_id: "CAT-A", sub_category_id: "CAT-A-03", priority: "HIGH", covered_content_id: null, created_at: "2026-01-01T00:00:00Z" },
-  { id: "kw-7", keyword: "벤처기업인증 혜택", category_id: "CAT-A", sub_category_id: "CAT-A-02", priority: "MEDIUM", covered_content_id: null, created_at: "2026-01-01T00:00:00Z" },
-  { id: "kw-8", keyword: "AI 특허 출원", category_id: "CAT-B", sub_category_id: "CAT-B-01", priority: "MEDIUM", covered_content_id: null, created_at: "2026-01-01T00:00:00Z" },
-  { id: "kw-9", keyword: "스타트업 특허 전략", category_id: "CAT-B", sub_category_id: "CAT-B-02", priority: "MEDIUM", covered_content_id: null, created_at: "2026-01-01T00:00:00Z" },
-  { id: "kw-10", keyword: "직무발명 소송 사례", category_id: "CAT-B", sub_category_id: "CAT-B-03", priority: "MEDIUM", covered_content_id: null, created_at: "2026-01-01T00:00:00Z" },
-];
-
 // ── 키워드 풀 조회 ──
 
 export async function getKeywordPool(): Promise<KeywordPool[]> {
@@ -30,10 +15,10 @@ export async function getKeywordPool(): Promise<KeywordPool[]> {
       .order("keyword", { ascending: true });
 
     if (error) throw error;
-    if (data && data.length > 0) return data as KeywordPool[];
-    return DEMO_KEYWORDS;
-  } catch {
-    return DEMO_KEYWORDS;
+    return (data ?? []) as KeywordPool[];
+  } catch (err) {
+    console.error("[getKeywordPool] 에러:", err);
+    return [];
   }
 }
 
@@ -49,10 +34,10 @@ export async function getHighKeywords(): Promise<KeywordPool[]> {
       .order("keyword", { ascending: true });
 
     if (error) throw error;
-    if (data && data.length > 0) return data as KeywordPool[];
-    return DEMO_KEYWORDS.filter((k) => k.priority === "HIGH");
-  } catch {
-    return DEMO_KEYWORDS.filter((k) => k.priority === "HIGH");
+    return (data ?? []) as KeywordPool[];
+  } catch (err) {
+    console.error("[getHighKeywords] 에러:", err);
+    return [];
   }
 }
 
@@ -73,7 +58,8 @@ export async function getKeywordRankings(
 
     if (error) throw error;
     return (data ?? []) as KeywordRanking[];
-  } catch {
+  } catch (err) {
+    console.error("[getKeywordRankings] 에러:", err);
     return [];
   }
 }

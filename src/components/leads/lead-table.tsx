@@ -368,7 +368,7 @@ export function LeadTable({ leads, profiles, contents }: LeadTableProps) {
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-48">
-                  <EmptyState title="리드가 없습니다." description="새 리드를 추가해 주세요." />
+                  <EmptyState title="아직 등록된 리드가 없습니다" description="상담 문의가 오면 여기에 기록하세요." />
                 </TableCell>
               </TableRow>
             )}

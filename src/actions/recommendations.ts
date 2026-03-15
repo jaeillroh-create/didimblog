@@ -129,19 +129,6 @@ export async function getWeeklyRecommendations(): Promise<Recommendation[]> {
     }
   } catch (err) {
     console.error("[추천엔진] 추천 생성 실패:", err);
-    // 데모 추천 반환
-    if (recommendations.length === 0) {
-      recommendations.push({
-        priority: "PRIMARY",
-        category: "변리사의 현장 수첩",
-        categoryId: "CAT-A",
-        subCategory: "절세 시뮬레이션",
-        subCategoryId: "CAT-A-01",
-        title: "미처분이익잉여금 정리 — 실무에서 꼭 알아야 할 핵심 정리",
-        reason: "키워드 '미처분이익잉여금 정리' 미발행",
-        keywords: ["미처분이익잉여금 정리"],
-      });
-    }
   }
 
   return recommendations;
