@@ -10,9 +10,14 @@ import type { Content } from "@/lib/types/database";
 /**
  * 범위 기반 부분 점수 계산
  * 만점: min~max 범위 내
- * 67%: ±50% tolerance
- * 33%: ±100% tolerance
+ * 67%: ±tolerance1 (range × 1.6, 최소 5)
+ * 33%: ±tolerance2 (range × 2.2, 최소 10)
  * 0%: 범위 완전 벗어남
+ *
+ * 예시 (제목 25~30자, weight=10):
+ *   27자 → 10점, 36자 → 7점(67%), 15자 → 3점(33%), 42자 → 0점
+ * 예시 (본문 1500~2000자, weight=15):
+ *   1800자 → 15점, 2771자 → 10점(67%), 800자 → 5점(33%), 3500자 → 0점
  */
 export function calcPartialScore(
   actual: number,
@@ -25,15 +30,15 @@ export function calcPartialScore(
   if (actual >= min && actual <= max) return weight;
 
   const span = Math.max(max - min, 1);
-  const tolerance1 = span;           // ±100% of span
-  const tolerance2 = span * 2;       // ±200% of span
+  const tolerance1 = Math.max(Math.ceil(span * 1.6), 5);   // 67% 점수 범위
+  const tolerance2 = Math.max(Math.ceil(span * 2.2), 10);   // 33% 점수 범위
 
-  // ±50% → 67%
+  // tolerance1 이내 → 67%
   if (actual >= min - tolerance1 && actual <= max + tolerance1) {
     return Math.round(weight * 0.67);
   }
 
-  // ±100% → 33%
+  // tolerance2 이내 → 33%
   if (actual >= min - tolerance2 && actual <= max + tolerance2) {
     return Math.round(weight * 0.33);
   }

@@ -20,15 +20,15 @@ export function PageHeader({ title, description, actions, children, className }:
   const rightContent = actions || children;
   return (
     <div className={cn("space-y-4", className)}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 space-y-1">
           <h1 className="t-2xl text-g-900">{title}</h1>
           {description && (
             <p className="t-md text-g-400">{description}</p>
           )}
         </div>
         {rightContent && (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">{rightContent}</div>
+          <div className="flex flex-wrap items-center gap-2">{rightContent}</div>
         )}
       </div>
       <div className="divider" />
