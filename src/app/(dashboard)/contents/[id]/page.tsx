@@ -56,6 +56,8 @@ function getDemoContent(id: string): Content | null {
     seo_score: null,
     health_status: "HEALTHY",
     health_checked_at: null,
+    series_id: null,
+    series_order: null,
     ai_generation_id: null,
     is_ai_generated: false,
     ai_edited_by: null,

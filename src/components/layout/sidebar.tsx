@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Users,
   BarChart3,
+  ShieldCheck,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -26,6 +27,7 @@ const NAVIGATION_ITEMS = [
   { href: "/calendar", icon: Calendar, label: "발행 캘린더" },
   { href: "/categories", icon: FolderOpen, label: "카테고리" },
   { href: "/leads", icon: Users, label: "리드 추적" },
+  { href: "/manage", icon: ShieldCheck, label: "글 관리" },
   { href: "/analytics", icon: BarChart3, label: "성과 분석" },
   { href: "/settings", icon: Settings, label: "설정" },
 ] as const;

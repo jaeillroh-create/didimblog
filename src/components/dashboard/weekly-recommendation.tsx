@@ -17,19 +17,22 @@ interface WeeklyRecommendationProps {
 
 const PRIORITY_STYLES = {
   URGENT: {
-    badge: "bg-red-100 text-red-700",
-    label: "긴급",
+    badge: "bg-red-600 text-white animate-pulse",
+    label: "긴급 발행",
     icon: AlertTriangle,
+    cardClass: "border-red-300 bg-red-50/50 ring-1 ring-red-200",
   },
   PRIMARY: {
     badge: "bg-blue-100 text-blue-700",
     label: "1순위",
     icon: Pin,
+    cardClass: "",
   },
   SECONDARY: {
     badge: "bg-gray-100 text-gray-600",
     label: "2순위",
     icon: Pin,
+    cardClass: "",
   },
 };
 
@@ -88,7 +91,7 @@ export function WeeklyRecommendation({
             return (
               <div
                 key={idx}
-                className="rounded-lg border p-4 space-y-2"
+                className={`rounded-lg border p-4 space-y-2 ${style.cardClass}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">

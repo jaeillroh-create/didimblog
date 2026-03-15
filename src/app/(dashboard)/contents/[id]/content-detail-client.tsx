@@ -21,6 +21,8 @@ import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { SeoScorePanel } from "@/components/contents/seo-score-panel";
 import { QualityScore } from "@/components/contents/quality-score";
 import { PerformanceInput } from "@/components/contents/performance-input";
+import { HealthBanner } from "@/components/contents/health-banner";
+import { InternalLinksPanel } from "@/components/contents/internal-links-panel";
 import { calculateSeoScore } from "@/lib/seo-calculator";
 import {
   updateContent,
@@ -333,6 +335,15 @@ export function ContentDetailClient({
           </Button>
         </div>
       </PageHeader>
+
+      {/* 헬스 상태 배너 (S4 이상) */}
+      {statusIndex >= 4 && (
+        <HealthBanner
+          contentId={content.id}
+          healthStatus={content.health_status}
+          healthCheckedAt={content.health_checked_at}
+        />
+      )}
 
       {/* 2-column 레이아웃 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -649,6 +660,9 @@ export function ContentDetailClient({
 
           {/* 성과 입력 (S4 이상) */}
           {statusIndex >= 4 && <PerformanceInput content={content} />}
+
+          {/* 내부 링크 추천 */}
+          <InternalLinksPanel contentId={content.id} />
 
           {/* 품질 점수 (S4 이상) */}
           {statusIndex >= 4 && <QualityScore content={content} />}
