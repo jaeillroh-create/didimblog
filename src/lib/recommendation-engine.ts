@@ -13,6 +13,18 @@ export interface Recommendation {
   keywords?: string[];
   newsUrl?: string;
   sourcePostId?: string;
+  /** 뉴스 추천 전용: 매칭된 감시 키워드 */
+  matchedWatchKeywords?: string[];
+  /** 뉴스 추천 전용: 디딤과의 관련성 설명 */
+  relevanceReason?: string;
+  /** 뉴스 추천 전용: 타깃 독자 */
+  targetAudience?: string;
+  /** 뉴스 추천 전용: 블로그 글 관점 제안 */
+  suggestedAngle?: string;
+  /** 관련 기존 발행 글 제목 */
+  affectedExistingPosts?: string[];
+  /** 재검증 상태 (뉴스 추천 전용, 클라이언트 관리) */
+  verificationStatus?: "pending" | "verified" | "rejected";
 }
 
 // ── 월간 발행 통계 ──
@@ -130,3 +142,86 @@ export const URGENT_NEWS_KEYWORDS = [
   "세액공제 변경",
   "벤처인증 요건",
 ];
+
+// ── 뉴스 추천 이유 생성 (규칙 기반, API 호출 없음) ──
+
+interface NewsReasonInfo {
+  reason: string;
+  audience: string;
+  angle: string;
+}
+
+const KEYWORD_REASON_MAP: Record<string, NewsReasonInfo> = {
+  "조세특례제한법": {
+    reason: "디딤의 핵심 서비스인 직무발명보상 절세 컨설팅에 직접 영향",
+    audience: "법인세 부담이 큰 중소기업 대표",
+    angle: "법 개정이 우리 회사 절세에 어떤 영향을 미치는지 실제 시뮬레이션으로 보여주기",
+  },
+  "세액공제": {
+    reason: "기업부설연구소 세액공제 및 R&D 비용 처리에 직접 관련",
+    audience: "기업부설연구소를 운영 중인 기업의 경영지원팀",
+    angle: "세액공제 기준 변경 시 우리 연구소는 어떻게 대응해야 하는지",
+  },
+  "벤처기업인증": {
+    reason: "디딤의 벤처인증 컨설팅 서비스와 직접 연결",
+    audience: "벤처인증을 준비 중인 스타트업 대표",
+    angle: "변경된 요건이 우리 회사 인증에 유리한지 불리한지 분석",
+  },
+  "벤처인증": {
+    reason: "디딤의 벤처인증 컨설팅 서비스와 직접 연결",
+    audience: "벤처인증을 준비 중이거나 갱신 예정인 기업 대표",
+    angle: "인증 요건 변화가 우리 회사에 미치는 영향과 대응 전략",
+  },
+  "직무발명": {
+    reason: "디딤 최고 마진 서비스(직무발명보상 절세)의 핵심 주제",
+    audience: "연구개발 인력이 있는 기업의 대표 또는 CTO",
+    angle: "판례/제도 변화가 보상금 설계에 미치는 실무 영향",
+  },
+  "특허법": {
+    reason: "특허 출원 전략 및 IP 보호 서비스와 관련",
+    audience: "기술 기반 기업의 CTO, 경영지원팀",
+    angle: "법 개정이 우리 회사 특허 포트폴리오에 미치는 영향",
+  },
+  "AI 기본법": {
+    reason: "2026년 시행 예정인 핵심 법안, IP 라운지 5대 이슈축",
+    audience: "AI 기술 활용 기업 전체",
+    angle: "기본법 시행 전 AI 특허/저작권 대비 체크리스트",
+  },
+  "AI": {
+    reason: "AI 특허 전략 서비스 및 IP 라운지 콘텐츠 축과 관련",
+    audience: "AI/기술 스타트업 대표",
+    angle: "AI 규제 변화가 기술기업의 IP 전략에 미치는 영향",
+  },
+  "인공지능": {
+    reason: "AI 특허 전략 서비스 및 IP 라운지 콘텐츠 축과 관련",
+    audience: "AI/기술 스타트업 대표",
+    angle: "AI 규제 변화가 기술기업의 IP 전략에 미치는 영향",
+  },
+  "연구소": {
+    reason: "기업부설연구소 설립/사후관리 서비스와 직접 연결",
+    audience: "연구소를 운영 중이거나 설립 예정인 기업",
+    angle: "제도 변화에 따른 연구소 운영 실무 대응 방법",
+  },
+};
+
+export function generateNewsRecommendationReason(
+  matchedKeywords: string[]
+): { relevanceReason: string; targetAudience: string; suggestedAngle: string } {
+  for (const keyword of matchedKeywords) {
+    for (const [watchKey, info] of Object.entries(KEYWORD_REASON_MAP)) {
+      if (keyword.includes(watchKey) || watchKey.includes(keyword)) {
+        return {
+          relevanceReason: info.reason,
+          targetAudience: info.audience,
+          suggestedAngle: info.angle,
+        };
+      }
+    }
+  }
+
+  return {
+    relevanceReason: "IP 업계 동향으로, 디딤 블로그 독자에게 유용한 정보",
+    targetAudience: "중소기업 대표 및 경영지원 담당자",
+    suggestedAngle: "이 이슈가 중소기업에 미치는 실질적 영향 분석",
+  };
+}

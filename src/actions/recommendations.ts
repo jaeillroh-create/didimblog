@@ -9,6 +9,7 @@ import {
   getPrimaryCategoryId,
   suggestDiarySub,
   generateTitleSuggestion,
+  generateNewsRecommendationReason,
   URGENT_NEWS_KEYWORDS,
 } from "@/lib/recommendation-engine";
 import type { KeywordPool } from "@/lib/types/database";
@@ -290,6 +291,14 @@ async function getUrgentNewsRecommendations(): Promise<Recommendation[]> {
 
       if (recentNews.length > 0) {
         const article = recentNews[0];
+        const matchedKeywords = [keyword];
+
+        // 규칙 기반 추천 이유 생성
+        const reasonInfo = generateNewsRecommendationReason(matchedKeywords);
+
+        // 관련 기존 발행 글 검색
+        const affectedPosts = await findAffectedExistingPosts(matchedKeywords);
+
         results.push({
           priority: "URGENT",
           category: "IP 라운지",
@@ -299,7 +308,13 @@ async function getUrgentNewsRecommendations(): Promise<Recommendation[]> {
           title: article.title.replace(/<[^>]*>/g, ""),
           reason: `시의성 뉴스: ${article.title.replace(/<[^>]*>/g, "").slice(0, 40)}...`,
           newsUrl: article.link,
-          keywords: [keyword],
+          keywords: matchedKeywords,
+          matchedWatchKeywords: matchedKeywords,
+          relevanceReason: reasonInfo.relevanceReason,
+          targetAudience: reasonInfo.targetAudience,
+          suggestedAngle: reasonInfo.suggestedAngle,
+          affectedExistingPosts: affectedPosts,
+          verificationStatus: "pending",
         });
       }
     }
@@ -310,6 +325,63 @@ async function getUrgentNewsRecommendations(): Promise<Recommendation[]> {
   // 캐시 저장
   newsCache = { data: results, timestamp: Date.now() };
   return results;
+}
+
+// ── 관련 기존 발행 글 검색 ──
+
+async function findAffectedExistingPosts(
+  matchedKeywords: string[]
+): Promise<string[]> {
+  try {
+    const supabase = await createClient();
+
+    // 키워드와 관련된 발행 글 검색 (제목/타겟키워드에 키워드 포함)
+    const titles: string[] = [];
+
+    for (const keyword of matchedKeywords) {
+      // keyword_pool에서 covered_content_id 조회
+      const { data: coveredKeywords } = await supabase
+        .from("keyword_pool")
+        .select("covered_content_id")
+        .ilike("keyword", `%${keyword}%`)
+        .not("covered_content_id", "is", null)
+        .limit(3);
+
+      if (coveredKeywords && coveredKeywords.length > 0) {
+        const contentIds = coveredKeywords
+          .map((k) => k.covered_content_id)
+          .filter(Boolean);
+        if (contentIds.length > 0) {
+          const { data: contents } = await supabase
+            .from("contents")
+            .select("title")
+            .in("id", contentIds)
+            .eq("is_deleted", false);
+          if (contents) {
+            titles.push(...contents.map((c) => c.title ?? "제목 없음"));
+          }
+        }
+      }
+
+      // target_keyword에서 직접 매칭
+      const { data: directMatch } = await supabase
+        .from("contents")
+        .select("title")
+        .eq("status", "S4")
+        .eq("is_deleted", false)
+        .ilike("target_keyword", `%${keyword}%`)
+        .limit(3);
+
+      if (directMatch) {
+        titles.push(...directMatch.map((c) => c.title ?? "제목 없음"));
+      }
+    }
+
+    // 중복 제거
+    return [...new Set(titles)].slice(0, 5);
+  } catch {
+    return [];
+  }
 }
 
 // ── 월간 발행 현황 ──
