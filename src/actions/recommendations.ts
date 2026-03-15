@@ -208,28 +208,55 @@ async function getTopicForCategory(
       };
     }
 
-    // 3. 성과 기반 후속편
+    // 3. 성과 기반 후속편 (조회수 + 상담 건수 기반)
     const { data: topPosts } = await supabase
       .from("contents")
-      .select("id, title, views_1m, category_id")
+      .select("id, title, views_1m, category_id, target_keyword")
       .eq("status", "S4")
       .eq("is_deleted", false)
       .not("views_1m", "is", null)
       .order("views_1m", { ascending: false })
-      .limit(3);
+      .limit(10);
 
-    const catPosts = (topPosts ?? []).filter(
-      (p) => getPrimaryCategoryId(p.category_id ?? "") === categoryId
-    );
+    // 상담 건수 집계
+    const { data: leads } = await supabase
+      .from("leads")
+      .select("source_content_id")
+      .not("source_content_id", "is", null);
+
+    const leadCounts: Record<string, number> = {};
+    for (const lead of leads ?? []) {
+      if (lead.source_content_id) {
+        leadCounts[lead.source_content_id] =
+          (leadCounts[lead.source_content_id] ?? 0) + 1;
+      }
+    }
+
+    // 종합 점수 = 조회수 × 1 + 상담건수 × 500
+    const catPosts = (topPosts ?? [])
+      .filter((p) => getPrimaryCategoryId(p.category_id ?? "") === categoryId)
+      .map((p) => ({
+        ...p,
+        score: (p.views_1m ?? 0) + (leadCounts[p.id] ?? 0) * 500,
+        consultations: leadCounts[p.id] ?? 0,
+      }))
+      .sort((a, b) => b.score - a.score);
+
     if (catPosts.length > 0) {
       const post = catPosts[0];
+      const keyword = post.target_keyword ?? post.title ?? "";
+      const consultText =
+        post.consultations > 0
+          ? `, 상담 ${post.consultations}건 유입`
+          : "";
       return {
         priority: "SECONDARY",
         category: categoryName,
         categoryId,
         title: `"${post.title}" 후속편`,
-        reason: `원글 조회수 ${(post.views_1m ?? 0).toLocaleString()}회, 후속편 추천`,
+        reason: `원글 조회수 ${(post.views_1m ?? 0).toLocaleString()}회${consultText} — 후속편 추천`,
         sourcePostId: post.id,
+        keywords: keyword ? [keyword] : undefined,
       };
     }
 

@@ -79,6 +79,9 @@ export interface Content {
   // 건강 상태
   health_status: HealthStatus;
   health_checked_at: string | null;
+  // 시리즈
+  series_id: string | null;
+  series_order: number | null;
   // AI 관련 필드
   ai_generation_id: number | null;
   is_ai_generated: boolean;
@@ -320,6 +323,15 @@ export interface Schedule {
   planned_date: string;
   status: ScheduleStatus;
   notes: string | null;
+}
+
+// ── 시리즈 ──
+
+export interface Series {
+  id: string;
+  name: string;
+  total_planned: number;
+  created_at: string;
 }
 
 // ── 건강 상태 타입 ──
