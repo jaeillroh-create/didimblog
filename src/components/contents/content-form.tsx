@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -18,9 +19,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { createContent } from "@/actions/contents";
+import { generateDraft } from "@/actions/ai";
 import { formatDate, getNextTuesday, calculateSlaDates } from "@/lib/utils/date-helpers";
-import type { Category } from "@/lib/types/database";
+import type { Category, LLMConfig } from "@/lib/types/database";
+import { Sparkles, FileEdit } from "lucide-react";
+import { toast } from "sonner";
 
 interface ContentFormProps {
   /** 다이얼로그 열림 상태 */
@@ -29,19 +34,25 @@ interface ContentFormProps {
   onOpenChange: (open: boolean) => void;
   /** 카테고리 목록 */
   categories: Category[];
+  /** LLM 설정 (AI 자동작성용) */
+  llmConfigs?: LLMConfig[];
   /** 생성 완료 후 콜백 */
   onCreated?: () => void;
 }
 
 /**
  * 새 콘텐츠 생성 다이얼로그 폼
+ * - 수동 생성: S0 기획 상태로 빈 콘텐츠 생성
+ * - AI 자동작성: S0 생성 후 동일 SEO 기준으로 AI 초안 자동 생성 → 편집기 이동
  */
 export function ContentForm({
   open,
   onOpenChange,
   categories,
+  llmConfigs,
   onCreated,
 }: ContentFormProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const nextTuesday = getNextTuesday();
@@ -53,6 +64,9 @@ export function ContentForm({
   const [targetKeyword, setTargetKeyword] = useState("");
   const [targetAudience, setTargetAudience] = useState<string>("");
   const [publishDate, setPublishDate] = useState(formatDate(nextTuesday));
+  const [autoGenerate, setAutoGenerate] = useState(false);
+
+  const hasLlmConfigs = llmConfigs && llmConfigs.length > 0;
 
   function resetForm() {
     setTitle("");
@@ -61,6 +75,7 @@ export function ContentForm({
     setTargetKeyword("");
     setTargetAudience("");
     setPublishDate(formatDate(getNextTuesday()));
+    setAutoGenerate(false);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -69,7 +84,8 @@ export function ContentForm({
     if (!title.trim() || !categoryId) return;
 
     startTransition(async () => {
-      const { error } = await createContent({
+      // 1. 콘텐츠(S0) 생성
+      const { data: content, error } = await createContent({
         title: title.trim(),
         category_id: categoryId,
         secondary_category: secondaryCategory.trim() || undefined,
@@ -79,8 +95,34 @@ export function ContentForm({
       });
 
       if (error) {
-        console.error("[ContentForm] 생성 실패:", error);
+        toast.error(`콘텐츠 생성 실패: ${error}`);
         return;
+      }
+
+      // 2. AI 자동작성 모드인 경우 → AI 초안 생성
+      if (autoGenerate && content) {
+        toast.info("AI 초안을 생성합니다...");
+
+        const result = await generateDraft({
+          topic: title.trim(),
+          categoryId,
+          keyword: targetKeyword.trim() || title.trim(),
+          targetAudience: targetAudience || undefined,
+          subCategoryId: secondaryCategory.trim() || undefined,
+          contentId: content.id,
+          llmConfigId: llmConfigs?.[0]?.id,
+        });
+
+        if (result.success && result.generationId) {
+          resetForm();
+          onOpenChange(false);
+          onCreated?.();
+          router.push(`/contents/ai-editor/${result.generationId}`);
+          return;
+        }
+
+        // AI 생성 실패해도 콘텐츠는 이미 생성됨
+        toast.error(`AI 초안 생성 실패: ${result.error ?? "알 수 없는 오류"}. 콘텐츠는 S0 상태로 생성되었습니다.`);
       }
 
       resetForm();
@@ -191,6 +233,45 @@ export function ContentForm({
             </p>
           </div>
 
+          {/* AI 자동작성 옵션 */}
+          {hasLlmConfigs && (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setAutoGenerate(false)}
+                    className={`flex-1 flex items-center gap-2 rounded-lg border p-3 text-sm transition-colors ${!autoGenerate ? "border-[var(--brand)] bg-[var(--brand)]/5 text-[var(--brand)]" : "border-gray-200 text-muted-foreground hover:border-gray-300"}`}
+                  >
+                    <FileEdit className="h-4 w-4 shrink-0" />
+                    <div className="text-left">
+                      <div className="font-medium">수동 작성</div>
+                      <div className="text-[10px] opacity-70">S0 기획 상태로 생성</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAutoGenerate(true)}
+                    className={`flex-1 flex items-center gap-2 rounded-lg border p-3 text-sm transition-colors ${autoGenerate ? "border-[var(--brand-accent)] bg-[var(--brand-accent)]/5 text-[var(--brand-accent)]" : "border-gray-200 text-muted-foreground hover:border-gray-300"}`}
+                  >
+                    <Sparkles className="h-4 w-4 shrink-0" />
+                    <div className="text-left">
+                      <div className="font-medium">AI 자동작성</div>
+                      <div className="text-[10px] opacity-70">SEO 기준으로 초안 생성</div>
+                    </div>
+                  </button>
+                </div>
+                {autoGenerate && (
+                  <p className="text-[11px] text-muted-foreground">
+                    카테고리별 SEO 기준(분량, 키워드 빈도, 소제목, CTA 등)에 맞춰 AI가 초안을 자동 생성합니다.
+                    생성 후 편집기에서 수정할 수 있습니다.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+
           <DialogFooter>
             <button
               type="button"
@@ -203,9 +284,15 @@ export function ContentForm({
               type="submit"
               className="btn btn-primary btn-md"
               disabled={isPending || !title.trim() || !categoryId}
-              style={{ backgroundColor: "var(--brand)" }}
+              style={{ backgroundColor: autoGenerate ? "var(--brand-accent)" : "var(--brand)" }}
             >
-              {isPending ? "생성 중..." : "생성하기"}
+              {isPending
+                ? autoGenerate
+                  ? "AI 생성 중..."
+                  : "생성 중..."
+                : autoGenerate
+                  ? "AI 자동작성"
+                  : "생성하기"}
             </button>
           </DialogFooter>
         </form>

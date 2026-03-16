@@ -139,10 +139,36 @@ export function WeeklyRecommendation({
             const isVerified = vStatus === "verified";
             const isNews = rec.priority === "URGENT" && rec.newsUrl;
 
+            // 부적합 카드: 접힌 상태로 표시 (한 줄 요약만)
+            if (isRejected) {
+              return (
+                <div
+                  key={idx}
+                  className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-2 flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <XCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                    <span className="text-xs text-muted-foreground line-through truncate">
+                      {rec.title}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-red-400 shrink-0">
+                    부적합{verification[idx]?.note ? ` — ${verification[idx].note}` : ""}
+                  </span>
+                </div>
+              );
+            }
+
+            // 다른 뉴스가 부적합이면 이 카드 강조
+            const hasRejectedNews = recommendations.some(
+              (r, i) => i !== idx && r.priority === "URGENT" && r.newsUrl && getVerificationStatus(i) === "rejected"
+            );
+            const boostClass = hasRejectedNews && !isNews ? "ring-2 ring-blue-200 bg-blue-50/30" : "";
+
             return (
               <div
                 key={idx}
-                className={`rounded-lg border p-4 space-y-3 transition-opacity ${style.cardClass} ${isRejected ? "opacity-50" : ""}`}
+                className={`rounded-lg border p-4 space-y-3 ${style.cardClass} ${boostClass}`}
               >
                 {/* 헤더: 뱃지 + 카테고리 */}
                 <div className="flex items-start justify-between gap-2">
@@ -159,19 +185,13 @@ export function WeeklyRecommendation({
                   </div>
                   {isNews && (
                     <span className="text-[10px] text-muted-foreground">
-                      {isVerified
-                        ? "✅ 적합"
-                        : isRejected
-                          ? "❌ 부적합"
-                          : "⏳ 미검증"}
+                      {isVerified ? "✅ 적합" : "⏳ 미검증"}
                     </span>
                   )}
                 </div>
 
                 {/* 제목 */}
-                <p className={`text-sm font-medium ${isRejected ? "line-through" : ""}`}>
-                  {rec.title}
-                </p>
+                <p className="text-sm font-medium">{rec.title}</p>
 
                 {/* 추천 이유 상세 */}
                 <div className="space-y-1.5">
@@ -242,7 +262,7 @@ export function WeeklyRecommendation({
                 </div>
 
                 {/* 재검증 영역 (뉴스 추천 전용) */}
-                {isNews && !isRejected && !isVerified && (
+                {isNews && !isVerified && (
                   <div className="space-y-2">
                     <Separator />
                     <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
@@ -282,14 +302,6 @@ export function WeeklyRecommendation({
                       />
                     </div>
                   </div>
-                )}
-
-                {/* 부적합 판단 시 메시지 */}
-                {isNews && isRejected && (
-                  <p className="text-xs text-red-500 italic">
-                    이 뉴스는 부적합으로 판단됨
-                    {verification[idx]?.note ? ` — ${verification[idx].note}` : ""}
-                  </p>
                 )}
 
                 {/* 하단 액션 버튼 */}
