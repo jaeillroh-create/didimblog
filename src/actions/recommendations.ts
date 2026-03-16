@@ -10,6 +10,7 @@ import {
   suggestDiarySub,
   generateTitleSuggestion,
   generateNewsRecommendationReason,
+  validateNewsRelevance,
   URGENT_NEWS_KEYWORDS,
 } from "@/lib/recommendation-engine";
 import type { KeywordPool } from "@/lib/types/database";
@@ -272,67 +273,151 @@ async function getUrgentNewsRecommendations(): Promise<Recommendation[]> {
 
   const results: Recommendation[] = [];
 
-  try {
-    // 동적 import — 뉴스 검색 모듈
-    const { searchNews } = await import("@/actions/news-search");
-
-    // 최근 3일 뉴스 검색 (키워드 1개만 — 속도/비용 최적화)
-    const keyword =
-      URGENT_NEWS_KEYWORDS[
-        Math.floor(Math.random() * URGENT_NEWS_KEYWORDS.length)
-      ];
-    const searchResult = await searchNews(keyword, 3, "date");
-
-    if (searchResult.success && searchResult.articles) {
-      // 3일 이내 뉴스만 필터
-      const threeDaysAgo = new Date();
-      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-
-      const recentNews = searchResult.articles.filter((article) => {
-        try {
-          const pubDate = new Date(article.pubDate);
-          return pubDate >= threeDaysAgo;
-        } catch {
-          return false;
-        }
-      });
-
-      if (recentNews.length > 0) {
-        const article = recentNews[0];
-        const matchedKeywords = [keyword];
-
-        // 규칙 기반 추천 이유 생성
-        const reasonInfo = generateNewsRecommendationReason(matchedKeywords);
-
-        // 관련 기존 발행 글 검색
-        const affectedPosts = await findAffectedExistingPosts(matchedKeywords);
-
-        results.push({
-          priority: "URGENT",
-          category: "IP 라운지",
-          categoryId: "CAT-B",
-          subCategory: "IP 뉴스 한 입",
-          subCategoryId: "CAT-B-03",
-          title: article.title.replace(/<[^>]*>/g, ""),
-          reason: `시의성 뉴스: ${article.title.replace(/<[^>]*>/g, "").slice(0, 40)}...`,
-          newsUrl: article.link,
-          keywords: matchedKeywords,
-          matchedWatchKeywords: matchedKeywords,
-          relevanceReason: reasonInfo.relevanceReason,
-          targetAudience: reasonInfo.targetAudience,
-          suggestedAngle: reasonInfo.suggestedAngle,
-          affectedExistingPosts: affectedPosts,
-          verificationStatus: "pending",
-        });
-      }
+  // 1. 뉴스 기반 긴급 추천 시도
+  const newsRec = await tryNewsBasedRecommendation();
+  if (newsRec) {
+    results.push(newsRec);
+  } else {
+    // 2. 뉴스 없거나 관련성 검증 실패 → 키워드 기반 긴급 추천 (뉴스 불필요)
+    const keywordRec = await tryKeywordBasedUrgentRecommendation();
+    if (keywordRec) {
+      results.push(keywordRec);
     }
-  } catch (err) {
-    console.error("[추천엔진] 뉴스 API 실패:", err);
   }
 
   // 캐시 저장
   newsCache = { data: results, timestamp: Date.now() };
   return results;
+}
+
+/** 뉴스 기반 긴급 추천: 관련성 검증 + 다중 기사 후보 중 최적 선택 */
+async function tryNewsBasedRecommendation(): Promise<Recommendation | null> {
+  try {
+    const { searchNews } = await import("@/actions/news-search");
+
+    // 여러 키워드로 검색하여 최적 기사 찾기 (최대 3개 키워드)
+    const shuffled = [...URGENT_NEWS_KEYWORDS].sort(() => Math.random() - 0.5);
+    const keywordsToTry = shuffled.slice(0, 3);
+
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+    interface ScoredArticle {
+      title: string;
+      link: string;
+      keyword: string;
+      score: number;
+      positiveMatches: string[];
+    }
+
+    const candidates: ScoredArticle[] = [];
+
+    for (const keyword of keywordsToTry) {
+      const searchResult = await searchNews(keyword, 5, "date");
+      if (!searchResult.success || !searchResult.articles) continue;
+
+      for (const article of searchResult.articles) {
+        // 날짜 필터
+        try {
+          const pubDate = new Date(article.pubDate);
+          if (pubDate < threeDaysAgo) continue;
+        } catch {
+          continue;
+        }
+
+        // 관련성 검증
+        const relevance = validateNewsRelevance(article.title, keyword);
+        if (!relevance.isRelevant) {
+          console.log(
+            `[추천엔진] 뉴스 부적합 필터링: "${article.title.replace(/<[^>]*>/g, "").slice(0, 30)}..." — ${relevance.reason}`
+          );
+          continue;
+        }
+
+        candidates.push({
+          title: article.title.replace(/<[^>]*>/g, ""),
+          link: article.link,
+          keyword,
+          score: relevance.score,
+          positiveMatches: relevance.positiveMatches,
+        });
+      }
+    }
+
+    // 관련성 점수 높은 순으로 정렬, 최적 기사 선택
+    candidates.sort((a, b) => b.score - a.score);
+
+    if (candidates.length === 0) {
+      console.log("[추천엔진] 관련성 검증을 통과한 뉴스 기사 없음");
+      return null;
+    }
+
+    const best = candidates[0];
+    const matchedKeywords = [best.keyword];
+    const reasonInfo = generateNewsRecommendationReason(matchedKeywords);
+    const affectedPosts = await findAffectedExistingPosts(matchedKeywords);
+
+    return {
+      priority: "URGENT",
+      category: "IP 라운지",
+      categoryId: "CAT-B",
+      subCategory: "IP 뉴스 한 입",
+      subCategoryId: "CAT-B-03",
+      title: best.title,
+      reason: `시의성 뉴스: ${best.title.slice(0, 40)}...`,
+      newsUrl: best.link,
+      keywords: matchedKeywords,
+      matchedWatchKeywords: matchedKeywords,
+      relevanceReason: reasonInfo.relevanceReason,
+      targetAudience: reasonInfo.targetAudience,
+      suggestedAngle: reasonInfo.suggestedAngle,
+      affectedExistingPosts: affectedPosts,
+      verificationStatus: "pending",
+    };
+  } catch (err) {
+    console.error("[추천엔진] 뉴스 API 실패:", err);
+    return null;
+  }
+}
+
+/** 뉴스 없이 키워드 기반 긴급 추천 (뉴스가 없거나 관련 뉴스가 없을 때) */
+async function tryKeywordBasedUrgentRecommendation(): Promise<Recommendation | null> {
+  try {
+    const supabase = await createClient();
+
+    // HIGH 우선순위 미커버 키워드 중 가장 오래된 것
+    const { data: urgentKeywords } = await supabase
+      .from("keyword_pool")
+      .select("*")
+      .eq("priority", "HIGH")
+      .is("covered_content_id", null)
+      .order("created_at", { ascending: true })
+      .limit(3);
+
+    if (!urgentKeywords || urgentKeywords.length === 0) return null;
+
+    // 첫 번째 미커버 HIGH 키워드로 긴급 추천
+    const kw = urgentKeywords[0] as KeywordPool;
+    const matchedKeywords = [kw.keyword];
+    const reasonInfo = generateNewsRecommendationReason(matchedKeywords);
+
+    return {
+      priority: "URGENT",
+      category: "IP 라운지",
+      categoryId: kw.category_id ?? "CAT-B",
+      title: generateTitleSuggestion(kw.keyword),
+      reason: `HIGH 우선순위 키워드 '${kw.keyword}' 미발행 — 긴급 작성 권장`,
+      keywords: matchedKeywords,
+      matchedWatchKeywords: matchedKeywords,
+      relevanceReason: reasonInfo.relevanceReason,
+      targetAudience: reasonInfo.targetAudience,
+      suggestedAngle: reasonInfo.suggestedAngle,
+      verificationStatus: "pending",
+    };
+  } catch (err) {
+    console.error("[추천엔진] 키워드 기반 긴급 추천 실패:", err);
+    return null;
+  }
 }
 
 // ── 관련 기존 발행 글 검색 ──

@@ -238,7 +238,7 @@ export function WeeklyRecommendation({
             const vStatus = getVerificationStatus(idx);
             const isRejected = vStatus === "rejected";
             const isVerified = vStatus === "verified";
-            const isNews = rec.priority === "URGENT" && rec.newsUrl;
+            const isUrgent = rec.priority === "URGENT";
 
             // 부적합 카드: 접힌 상태로 표시 (한 줄 요약만)
             if (isRejected) {
@@ -264,7 +264,7 @@ export function WeeklyRecommendation({
             const hasRejectedNews = recommendations.some(
               (r, i) => i !== idx && r.priority === "URGENT" && r.newsUrl && getVerificationStatus(i) === "rejected"
             );
-            const boostClass = hasRejectedNews && !isNews ? "ring-2 ring-blue-200 bg-blue-50/30" : "";
+            const boostClass = hasRejectedNews && !isUrgent ? "ring-2 ring-blue-200 bg-blue-50/30" : "";
 
             return (
               <div
@@ -284,7 +284,7 @@ export function WeeklyRecommendation({
                       {rec.category}
                     </span>
                   </div>
-                  {isNews && (
+                  {isUrgent && (
                     <span className="text-[10px] text-muted-foreground">
                       {isVerified ? "✅ 적합" : "⏳ 미검증"}
                     </span>
@@ -303,7 +303,7 @@ export function WeeklyRecommendation({
                   <Separator className="my-1" />
 
                   {/* 뉴스 추천: 상세 이유 */}
-                  {isNews && rec.matchedWatchKeywords && rec.matchedWatchKeywords.length > 0 && (
+                  {isUrgent && rec.matchedWatchKeywords && rec.matchedWatchKeywords.length > 0 && (
                     <div className="space-y-1 text-xs text-muted-foreground">
                       <div className="flex items-start gap-1.5">
                         <Tag className="h-3 w-3 mt-0.5 shrink-0" />
@@ -357,13 +357,13 @@ export function WeeklyRecommendation({
                   )}
 
                   {/* 비뉴스 추천: 간단 이유 */}
-                  {!isNews && (
+                  {!isUrgent && (
                     <p className="text-xs text-muted-foreground">{rec.reason}</p>
                   )}
                 </div>
 
                 {/* 재검증 영역 (뉴스 추천 전용) */}
-                {isNews && !isVerified && (
+                {isUrgent && !isVerified && (
                   <div className="space-y-2">
                     <Separator />
                     <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
@@ -371,7 +371,7 @@ export function WeeklyRecommendation({
                       재검증
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      이 뉴스가 디딤 블로그에 적합한가요?
+                      이 추천이 디딤 블로그에 적합한가요?
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
