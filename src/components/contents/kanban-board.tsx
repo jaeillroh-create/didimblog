@@ -314,6 +314,7 @@ export function KanbanBoard({
         open={formOpen}
         onOpenChange={setFormOpen}
         categories={categories}
+        llmConfigs={llmConfigs}
         onCreated={handleContentCreated}
       />
 
