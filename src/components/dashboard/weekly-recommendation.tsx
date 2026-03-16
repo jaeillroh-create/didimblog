@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/common/empty-state";
 import { AiDraftDialog, type AiDraftInitialValues } from "@/components/contents/ai-draft-dialog";
+import { refreshWeeklyRecommendations } from "@/actions/recommendations";
 import type { Recommendation } from "@/lib/recommendation-engine";
 import type { Category, LLMConfig } from "@/lib/types/database";
 import {
@@ -23,7 +24,10 @@ import {
   Users,
   Lightbulb,
   Link2,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface WeeklyRecommendationProps {
   recommendations: Recommendation[];
@@ -58,13 +62,21 @@ const PRIORITY_STYLES = {
 };
 
 export function WeeklyRecommendation({
-  recommendations,
+  recommendations: initialRecommendations,
   categories,
   llmConfigs,
 }: WeeklyRecommendationProps) {
+  const [recommendations, setRecommendations] = useState(initialRecommendations);
   const [draftOpen, setDraftOpen] = useState(false);
   const [draftInitial, setDraftInitial] = useState<AiDraftInitialValues | undefined>();
   const [verification, setVerification] = useState<VerificationState>({});
+  const [isRefreshing, startRefresh] = useTransition();
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+
+  // 모든 추천이 부적합인지 확인
+  const allRejected =
+    recommendations.length > 0 &&
+    recommendations.every((_, idx) => verification[idx]?.status === "rejected");
 
   function handleCreateDraft(rec: Recommendation) {
     setDraftInitial({
@@ -101,21 +113,90 @@ export function WeeklyRecommendation({
     return verification[idx]?.status ?? "pending";
   }
 
-  if (recommendations.length === 0) {
+  function handleRefresh() {
+    setRefreshError(null);
+    startRefresh(async () => {
+      try {
+        const newRecs = await refreshWeeklyRecommendations();
+        setRecommendations(newRecs);
+        setVerification({}); // 재검증 상태 초기화
+        if (newRecs.length === 0) {
+          toast.info("추천 가능한 주제가 없습니다. 키워드 풀을 확인해주세요.");
+        } else {
+          toast.success(`추천 ${newRecs.length}건이 새로 생성되었습니다.`);
+        }
+      } catch (err) {
+        console.error("[추천 새로고침] 실패:", err);
+        setRefreshError("추천 새로고침에 실패했습니다. 잠시 후 다시 시도해주세요.");
+        toast.error("추천 새로고침에 실패했습니다.");
+      }
+    });
+  }
+
+  // ── 빈 상태 / 전부 부적합 ──
+  if (recommendations.length === 0 || allRejected) {
     return (
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Pin className="h-4 w-4" />
-            이번 주 추천
+          <CardTitle className="text-base flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Pin className="h-4 w-4" />
+              이번 주 추천
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="h-7 px-2 text-muted-foreground"
+            >
+              {isRefreshing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              <span className="ml-1 text-xs">새로고침</span>
+            </Button>
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {/* 전부 부적합인 경우 접힌 카드들 표시 */}
+          {allRejected && recommendations.map((rec, idx) => (
+            <div
+              key={idx}
+              className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-2 flex items-center justify-between gap-2"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <XCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                <span className="text-xs text-muted-foreground line-through truncate">
+                  {rec.title}
+                </span>
+              </div>
+              <span className="text-[10px] text-red-400 shrink-0">부적합</span>
+            </div>
+          ))}
+
           <EmptyState
-            icon={<Sparkles className="h-8 w-8 text-muted-foreground" />}
-            title="추천 주제를 계산 중입니다..."
-            description="카테고리 균형과 키워드 커버리지를 분석하여 최적의 주제를 추천합니다."
+            icon={
+              allRejected
+                ? <XCircle className="h-8 w-8 text-muted-foreground" />
+                : <Sparkles className="h-8 w-8 text-muted-foreground" />
+            }
+            title={
+              allRejected
+                ? "모든 추천이 부적합 처리되었습니다"
+                : "추천 주제를 계산 중입니다..."
+            }
+            description={
+              allRejected
+                ? "새로고침 버튼을 눌러 새로운 추천을 받아보세요."
+                : "카테고리 균형과 키워드 커버리지를 분석하여 최적의 주제를 추천합니다."
+            }
           />
+
+          {refreshError && (
+            <p className="text-xs text-red-500 text-center">{refreshError}</p>
+          )}
         </CardContent>
       </Card>
     );
@@ -125,12 +206,32 @@ export function WeeklyRecommendation({
     <>
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Pin className="h-4 w-4" />
-            이번 주 추천
+          <CardTitle className="text-base flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Pin className="h-4 w-4" />
+              이번 주 추천
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="h-7 px-2 text-muted-foreground"
+            >
+              {isRefreshing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              <span className="ml-1 text-xs">새로고침</span>
+            </Button>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {refreshError && (
+            <p className="text-xs text-red-500 bg-red-50 rounded p-2">{refreshError}</p>
+          )}
+
           {recommendations.map((rec, idx) => {
             const style = PRIORITY_STYLES[rec.priority];
             const Icon = style.icon;

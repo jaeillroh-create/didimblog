@@ -24,6 +24,14 @@ interface NewsCache {
 let newsCache: NewsCache | null = null;
 const NEWS_CACHE_TTL = 60 * 60 * 1000; // 1시간
 
+// ── 추천 새로고침 (캐시 초기화 + 재생성) ──
+
+export async function refreshWeeklyRecommendations(): Promise<Recommendation[]> {
+  // 뉴스 캐시 강제 초기화
+  newsCache = null;
+  return getWeeklyRecommendations();
+}
+
 // ── 메인 추천 함수 ──
 
 export async function getWeeklyRecommendations(): Promise<Recommendation[]> {
