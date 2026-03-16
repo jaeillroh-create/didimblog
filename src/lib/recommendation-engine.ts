@@ -143,6 +143,99 @@ export const URGENT_NEWS_KEYWORDS = [
   "벤처인증 요건",
 ];
 
+// ── 뉴스 기사 관련성 검증 (false positive 방지) ──
+
+/** 디딤 블로그 도메인과 관련된 포지티브 키워드 (제목에 1개 이상 포함 필요) */
+const DOMAIN_POSITIVE_KEYWORDS = [
+  // 핵심 서비스
+  "특허", "발명", "IP", "지식재산", "지재권",
+  "세액공제", "절세", "조세", "세금",
+  "벤처", "벤처인증", "벤처기업",
+  "연구소", "기업부설", "R&D", "연구개발",
+  // IP 라운지 주제
+  "AI 특허", "인공지능", "AI 기본법", "AI 규제",
+  "영업비밀", "직무발명", "보상금",
+  "기술이전", "라이선싱",
+  // 대상 고객
+  "중소기업", "스타트업", "창업",
+];
+
+/** 완전 무관 분야 네거티브 키워드 (제목에 포함되면 제외) */
+const DOMAIN_NEGATIVE_KEYWORDS = [
+  // 방산/군사
+  "방산", "방위", "군사", "국방", "무기", "미사일", "전투기", "잠수함", "K-방산",
+  // 연예/스포츠
+  "아이돌", "드라마", "영화", "축구", "야구", "농구", "올림픽",
+  // 부동산
+  "아파트", "분양", "재건축", "부동산",
+  // 정치
+  "대선", "총선", "여당", "야당", "탄핵",
+  // 기타 무관
+  "주가", "증시", "코스피", "코스닥", "환율",
+];
+
+export interface NewsRelevanceResult {
+  isRelevant: boolean;
+  score: number;
+  positiveMatches: string[];
+  negativeMatches: string[];
+  reason: string;
+}
+
+/**
+ * 뉴스 기사 제목의 디딤 블로그 관련성을 규칙 기반으로 검증
+ * - 네거티브 키워드 포함 → 즉시 부적합
+ * - 포지티브 키워드 매칭 수로 점수 산정
+ * - 검색 키워드가 제목에 직접 포함되어야 가산점
+ */
+export function validateNewsRelevance(
+  articleTitle: string,
+  searchKeyword: string
+): NewsRelevanceResult {
+  const title = articleTitle.replace(/<[^>]*>/g, "").toLowerCase();
+  const searchKw = searchKeyword.toLowerCase();
+
+  // 1. 네거티브 키워드 체크 (하나라도 있으면 부적합)
+  const negativeMatches = DOMAIN_NEGATIVE_KEYWORDS.filter((kw) =>
+    title.includes(kw.toLowerCase())
+  );
+  if (negativeMatches.length > 0) {
+    return {
+      isRelevant: false,
+      score: -1,
+      positiveMatches: [],
+      negativeMatches,
+      reason: `무관 분야 키워드 감지: ${negativeMatches.join(", ")}`,
+    };
+  }
+
+  // 2. 포지티브 키워드 매칭
+  const positiveMatches = DOMAIN_POSITIVE_KEYWORDS.filter((kw) =>
+    title.includes(kw.toLowerCase())
+  );
+
+  // 3. 검색 키워드가 제목에 직접 포함 여부 (가산점)
+  const searchKeywordInTitle = title.includes(searchKw);
+
+  // 4. 점수 계산
+  let score = positiveMatches.length * 10;
+  if (searchKeywordInTitle) score += 20;
+
+  // 포지티브 매칭 0개 + 검색 키워드도 제목에 없으면 부적합
+  const isRelevant = score >= 10;
+
+  let reason: string;
+  if (!isRelevant) {
+    reason = "제목에 디딤 도메인 관련 키워드가 없습니다";
+  } else if (searchKeywordInTitle) {
+    reason = `검색 키워드 '${searchKeyword}' 제목 포함, 관련 키워드: ${positiveMatches.join(", ") || "없음"}`;
+  } else {
+    reason = `관련 키워드 감지: ${positiveMatches.join(", ")}`;
+  }
+
+  return { isRelevant, score, positiveMatches, negativeMatches, reason };
+}
+
 // ── 뉴스 추천 이유 생성 (규칙 기반, API 호출 없음) ──
 
 interface NewsReasonInfo {
