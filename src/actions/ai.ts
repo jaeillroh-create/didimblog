@@ -20,6 +20,7 @@ import {
   type PromptKey,
   type DraftValidationWarning,
 } from "@/lib/constants/prompts";
+import { enforceEmail } from "@/lib/utils/publish-helpers";
 
 // ── 타입 정의 ──
 
@@ -372,6 +373,9 @@ export async function generateDraft(
 
         const generationTimeMs = Date.now() - startTime;
 
+        // 이메일 강제 치환 (AI가 잘못된 이메일을 생성할 수 있음)
+        fullText = enforceEmail(fullText) || fullText;
+
         // 제목 추출 (첫 번째 줄 또는 # 으로 시작하는 줄)
         const lines = fullText.split("\n").filter((l) => l.trim());
         let title = lines[0]?.replace(/^#+\s*/, "").trim() || input.topic;
@@ -421,6 +425,15 @@ export async function generateDraft(
             if (imageAltTexts[i]) {
               (marker as Record<string, unknown>).alt_text = imageAltTexts[i];
             }
+          });
+        }
+
+        // 본문 끝에 디딤 로고 이미지 마커 자동 삽입 (아직 없는 경우)
+        if (!fullText.includes("[IMAGE: 디딤 로고]")) {
+          fullText = fullText.trimEnd() + "\n\n[IMAGE: 디딤 로고]";
+          imageMarkers.push({
+            position: fullText.lastIndexOf("[IMAGE: 디딤 로고]"),
+            description: "디딤 로고",
           });
         }
 

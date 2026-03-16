@@ -17,8 +17,10 @@ import {
 } from "@/lib/utils/publish-helpers";
 import { updateContentStatus } from "@/actions/contents";
 import { CONTENT_STATES } from "@/lib/constants/content-states";
+import { DIDIM_SIGNATURE, DIDIM_LOGO_PATH } from "@/lib/constants/categories";
 import type { Content, Category, ContentStatus } from "@/lib/types/database";
 import type { CtaTemplate } from "@/actions/settings";
+import Image from "next/image";
 import {
   ArrowLeft,
   FileText,
@@ -277,9 +279,23 @@ export function PublishPrepClient({
               </CardHeader>
               <CardContent>
                 {ctaText ? (
-                  <pre className="whitespace-pre-wrap text-sm bg-muted/50 rounded-lg p-4 font-sans">
-                    {ctaText}
-                  </pre>
+                  <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                    <pre className="whitespace-pre-wrap text-sm font-sans">
+                      {ctaText.replace(DIDIM_SIGNATURE, "").trimEnd()}
+                    </pre>
+                    <div className="flex items-center gap-3 pt-2 border-t">
+                      <Image
+                        src={DIDIM_LOGO_PATH}
+                        alt="특허그룹 디딤 로고"
+                        width={120}
+                        height={40}
+                        className="object-contain"
+                      />
+                      <span className="text-sm text-muted-foreground">
+                        {DIDIM_SIGNATURE}
+                      </span>
+                    </div>
+                  </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     이 카테고리에 매칭되는 CTA 템플릿이 없습니다.

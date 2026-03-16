@@ -26,6 +26,8 @@ import {
   Image as ImageIcon,
   X,
 } from "lucide-react";
+import Image from "next/image";
+import { DIDIM_LOGO_PATH } from "@/lib/constants/categories";
 
 interface AiEditorClientProps {
   generationId: number;
@@ -389,6 +391,15 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                             IMG {i + 1}
                           </Badge>
                           <span>{desc}</span>
+                          {desc === "디딤 로고" && (
+                            <Image
+                              src={DIDIM_LOGO_PATH}
+                              alt="특허그룹 디딤 로고"
+                              width={80}
+                              height={28}
+                              className="object-contain ml-auto"
+                            />
+                          )}
                         </div>
                       );
                     })}
