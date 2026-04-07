@@ -391,16 +391,18 @@ export async function generateDraft(
         const apiKey = await decryptApiKey(llmConfig.api_key_encrypted!);
 
         // 자동 컨텍스트 수집 (기존 글 참조 + 경쟁 글 분석)
-        const [existingCtx, competitorCtx] = await Promise.all([
-          getExistingContentContext(input.categoryId, input.keyword),
-          getCompetitorContext(input.keyword),
-        ]);
-
-        const enrichedContext = [
-          input.additionalContext || "",
-          existingCtx,
-          competitorCtx,
-        ].filter(Boolean).join("\n\n");
+        let enrichedContext = input.additionalContext || "";
+        try {
+          const [existingCtx, competitorCtx] = await Promise.all([
+            getExistingContentContext(input.categoryId, input.keyword).catch(() => ""),
+            getCompetitorContext(input.keyword).catch(() => ""),
+          ]);
+          const parts = [enrichedContext, existingCtx, competitorCtx].filter(Boolean);
+          enrichedContext = parts.join("\n\n");
+        } catch (e) {
+          console.error("[generateDraft] 컨텍스트 수집 실패:", e);
+          // 실패해도 기존 additionalContext로 계속 진행
+        }
 
         // 메시지 구성: DB 템플릿 우선, 없으면 상수 프롬프트 사용
         const messages: LLMMessage[] = [];
