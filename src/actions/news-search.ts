@@ -563,7 +563,7 @@ const FIXED_KEYWORDS = [
   "연구개발비 세액공제",
   "R&D 세액공제 중소기업",
   // 정책·제도 변경
-  "특허청 정책",
+  "지식재산처 정책",
   "발명진흥법 개정",
   "조세특례제한법 연구개발",
 ];
@@ -575,7 +575,7 @@ const DOMAIN_TERMS = [
   "연구소", "연구개발", "R&D", "기업부설",
   "벤처", "벤처인증", "벤처확인",
   "세액공제", "조특법", "조세특례",
-  "특허청", "발명진흥", "기술평가", "기술이전",
+  "지식재산처", "발명진흥", "기술평가", "기술이전",
 ];
 
 // 비즈니스 맥락 키워드 (최소 1개 필수)
@@ -598,9 +598,16 @@ function decodeHtmlEntities(text: string): string {
     .replace(/<\/?b>/g, "");
 }
 
-/** 2계층 AND 관련성 필터: DOMAIN_TERMS + BIZ_TERMS 동시 포함 여부 */
-function isRelevantNews(title: string, description: string): boolean {
-  const text = (title + " " + description).replace(/<\/?b>/g, "");
+/** 3계층 관련성 필터: 검색 키워드 매칭 + DOMAIN_TERMS + BIZ_TERMS */
+function isRelevantNews(title: string, description: string, searchKeyword: string): boolean {
+  const text = (title + " " + (description || "")).replace(/<\/?b>/g, "");
+
+  // 조건 1: 검색 키워드의 핵심어가 기사에 포함되어야 함
+  const keywordParts = searchKeyword.split(/\s+/).filter((w) => w.length >= 2);
+  const hasKeywordMatch = keywordParts.some((part) => text.includes(part));
+  if (!hasKeywordMatch) return false;
+
+  // 조건 2: DOMAIN + BIZ 기존 로직 유지
   const hasDomain = DOMAIN_TERMS.some((t) => text.includes(t));
   const hasBiz = BIZ_TERMS.some((t) => text.includes(t));
   return hasDomain && hasBiz;
@@ -650,7 +657,7 @@ export async function collectNews(): Promise<{ success: boolean; count: number; 
           if (pubDate < sevenDaysAgo) return false;
         }
         // 2계층 AND 관련성 필터
-        if (!isRelevantNews(a.title, a.description ?? "")) return false;
+        if (!isRelevantNews(a.title, a.description ?? "", keyword)) return false;
         return true;
       });
 
