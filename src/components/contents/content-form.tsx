@@ -147,11 +147,10 @@ export function ContentForm({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 제목 */}
-          <div className="input-wrap">
-            <Label htmlFor="title" className="input-label">제목 *</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="title">제목 *</Label>
             <Input
               id="title"
-              className="input-field"
               placeholder="콘텐츠 제목을 입력하세요"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -159,73 +158,70 @@ export function ContentForm({
             />
           </div>
 
-          {/* 카테고리 */}
-          <div className="input-wrap">
-            <Label className="input-label">카테고리 *</Label>
-            <Select value={categoryId} onValueChange={setCategoryId}>
-              <SelectTrigger>
-                <SelectValue placeholder="카테고리 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {primaryCategories.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* 카테고리 + 세부 카테고리 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>카테고리 *</Label>
+              <Select value={categoryId} onValueChange={setCategoryId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="카테고리 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {primaryCategories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="secondary">세부 카테고리</Label>
+              <Input
+                id="secondary"
+                placeholder="세부 분류 (선택)"
+                value={secondaryCategory}
+                onChange={(e) => setSecondaryCategory(e.target.value)}
+              />
+            </div>
           </div>
 
-          {/* 세부 카테고리 */}
-          <div className="input-wrap">
-            <Label htmlFor="secondary" className="input-label">세부 카테고리</Label>
-            <Input
-              id="secondary"
-              className="input-field"
-              placeholder="세부 분류 (선택)"
-              value={secondaryCategory}
-              onChange={(e) => setSecondaryCategory(e.target.value)}
-            />
-          </div>
-
-          {/* 타겟 키워드 */}
-          <div className="input-wrap">
-            <Label htmlFor="keyword" className="input-label">타겟 키워드</Label>
-            <Input
-              id="keyword"
-              className="input-field"
-              placeholder="SEO 타겟 키워드"
-              value={targetKeyword}
-              onChange={(e) => setTargetKeyword(e.target.value)}
-            />
-          </div>
-
-          {/* 타겟 독자 */}
-          <div className="input-wrap">
-            <Label className="input-label">타겟 독자</Label>
-            <Select value={targetAudience} onValueChange={setTargetAudience}>
-              <SelectTrigger>
-                <SelectValue placeholder="타겟 독자 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="startup">스타트업</SelectItem>
-                <SelectItem value="sme">중소기업</SelectItem>
-                <SelectItem value="cto">CTO/연구소장</SelectItem>
-              </SelectContent>
-            </Select>
+          {/* 타겟 키워드 + 타겟 독자 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="keyword">타겟 키워드</Label>
+              <Input
+                id="keyword"
+                placeholder="SEO 타겟 키워드"
+                value={targetKeyword}
+                onChange={(e) => setTargetKeyword(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>타겟 독자</Label>
+              <Select value={targetAudience} onValueChange={setTargetAudience}>
+                <SelectTrigger>
+                  <SelectValue placeholder="타겟 독자 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="startup">스타트업</SelectItem>
+                  <SelectItem value="sme">중소기업</SelectItem>
+                  <SelectItem value="cto">CTO/연구소장</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* 발행 예정일 */}
-          <div className="input-wrap">
-            <Label htmlFor="publishDate" className="input-label">발행 예정일</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="publishDate">발행 예정일</Label>
             <Input
               id="publishDate"
-              className="input-field"
               type="date"
               value={publishDate}
               onChange={(e) => setPublishDate(e.target.value)}
             />
-            <p className="t-xs" style={{ color: "var(--g500)" }}>
+            <p className="text-[11px] text-muted-foreground">
               SLA: AI 주제선정 D-5 ({formatDate(slaDates.briefingDue)}) / 초안 D-3 (
               {formatDate(slaDates.draftDue)}) / 검토 D-2 (
               {formatDate(slaDates.reviewDue)}) / 이미지 D-1 (
@@ -238,28 +234,24 @@ export function ContentForm({
             <>
               <Separator />
               <div className="space-y-2">
-                <div className="flex items-center gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={() => setAutoGenerate(false)}
-                    className={`flex-1 flex items-center gap-2 rounded-lg border p-3 text-sm transition-colors ${!autoGenerate ? "border-[var(--brand)] bg-[var(--brand)]/5 text-[var(--brand)]" : "border-gray-200 text-muted-foreground hover:border-gray-300"}`}
+                    className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border p-4 text-sm transition-colors ${!autoGenerate ? "border-[var(--brand)] bg-[var(--brand)]/5 text-[var(--brand)]" : "border-gray-200 text-muted-foreground hover:border-gray-300"}`}
                   >
-                    <FileEdit className="h-4 w-4 shrink-0" />
-                    <div className="text-left">
-                      <div className="font-medium">수동 작성</div>
-                      <div className="text-[10px] opacity-70">S0 기획 상태로 생성</div>
-                    </div>
+                    <FileEdit className="h-5 w-5" />
+                    <span className="font-medium">수동 작성</span>
+                    <span className="text-[10px] opacity-70">S0 기획 상태로 생성</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setAutoGenerate(true)}
-                    className={`flex-1 flex items-center gap-2 rounded-lg border p-3 text-sm transition-colors ${autoGenerate ? "border-[var(--brand-accent)] bg-[var(--brand-accent)]/5 text-[var(--brand-accent)]" : "border-gray-200 text-muted-foreground hover:border-gray-300"}`}
+                    className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border p-4 text-sm transition-colors ${autoGenerate ? "border-[var(--brand-accent)] bg-[var(--brand-accent)]/5 text-[var(--brand-accent)]" : "border-gray-200 text-muted-foreground hover:border-gray-300"}`}
                   >
-                    <Sparkles className="h-4 w-4 shrink-0" />
-                    <div className="text-left">
-                      <div className="font-medium">AI 자동작성</div>
-                      <div className="text-[10px] opacity-70">SEO 기준으로 초안 생성</div>
-                    </div>
+                    <Sparkles className="h-5 w-5" />
+                    <span className="font-medium">AI 자동작성</span>
+                    <span className="text-[10px] opacity-70">SEO 기준으로 초안 생성</span>
                   </button>
                 </div>
                 {autoGenerate && (
