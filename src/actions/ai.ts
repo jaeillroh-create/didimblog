@@ -378,203 +378,231 @@ export async function generateDraft(
 
     const generationId = generation.id;
 
-    // 4. 비동기로 LLM 호출 시작
-    (async () => {
-      const startTime = Date.now();
-      try {
-        // 상태를 generating으로 업데이트
-        await supabase
-          .from("ai_generations")
-          .update({ status: "generating" })
-          .eq("id", generationId);
-
-        const apiKey = await decryptApiKey(llmConfig.api_key_encrypted!);
-
-        // 자동 컨텍스트 수집 (기존 글 참조 + 경쟁 글 분석, 3초 타임아웃)
-        let enrichedContext = input.additionalContext || "";
-        try {
-          function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-            return Promise.race([
-              promise,
-              new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
-            ]);
-          }
-
-          const [existingCtx, competitorCtx] = await Promise.all([
-            withTimeout(getExistingContentContext(input.categoryId, input.keyword), 3000, ""),
-            withTimeout(getCompetitorContext(input.keyword), 3000, ""),
-          ]);
-          const parts = [enrichedContext, existingCtx, competitorCtx].filter(Boolean);
-          enrichedContext = parts.join("\n\n");
-        } catch (e) {
-          console.error("[generateDraft] 컨텍스트 수집 실패:", e);
-        }
-
-        // 메시지 구성: DB 템플릿 우선, 없으면 상수 프롬프트 사용
-        const messages: LLMMessage[] = [];
-
-        // 현장수첩(PROMPT_FIELD)의 subCategory별 CTA 변수 준비
-        const fieldCta = promptKey === "PROMPT_FIELD"
-          ? getFieldCta(effectiveCategoryId)
-          : { cta: "", emailSubject: "" };
-
-        const templateVariables: Record<string, string> = {
-          topic: input.topic,
-          keyword: input.keyword,
-          target_audience: input.targetAudience || "",
-          additional_context: enrichedContext,
-          subcategory: input.subCategoryId || "",
-          cta_text: fieldCta.cta,
-          email_subject: fieldCta.emailSubject,
-        };
-
-        if (template) {
-          // DB 프롬프트 템플릿 사용
-          messages.push({
-            role: "system",
-            content: template.system_prompt,
-          });
-          messages.push({
-            role: "user",
-            content: replaceTemplateVariables(
-              template.user_prompt_template,
-              templateVariables
-            ),
-          });
-        } else {
-          // 상수 프롬프트 폴백 (getPromptKey 기반)
-          const systemPrompt = replaceTemplateVariables(
-            SYSTEM_PROMPTS[promptKey],
-            templateVariables
-          );
-          const userPrompt = replaceTemplateVariables(
-            USER_PROMPTS[promptKey],
-            templateVariables
-          );
-
-          messages.push({ role: "system", content: systemPrompt });
-          messages.push({ role: "user", content: userPrompt });
-        }
-
-        const streamConfig: LLMStreamConfig = {
-          provider: llmConfig.provider as LLMProvider,
-          model: llmConfig.model_id,
-          apiKey,
-          maxTokens: 4096,
-          temperature: 0.7,
-        };
-
-        // 스트리밍으로 생성
-        let fullText = "";
-        for await (const chunk of generateStream(streamConfig, messages)) {
-          fullText += chunk;
-        }
-
-        const generationTimeMs = Date.now() - startTime;
-
-        // 제목 추출 (첫 번째 줄 또는 # 으로 시작하는 줄)
-        const lines = fullText.split("\n").filter((l) => l.trim());
-        let title = lines[0]?.replace(/^#+\s*/, "").trim() || input.topic;
-        if (title.length > 50) title = title.substring(0, 50);
-
-        // 구조화된 태그 추출 ([TAGS]...[/TAGS] 블록)
-        let tags: string[] | null = null;
-        const tagsMatch = fullText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[\/TAGS\]/);
-        if (tagsMatch) {
-          tags = tagsMatch[1]
-            .split(/[,\n]/)
-            .map((t) => t.replace(/^\d+\.\s*/, "").trim())
-            .filter(Boolean)
-            .slice(0, 10);
-        } else {
-          // 폴백: #태그 형식
-          const tagMatches = fullText.match(/#([^\s#]+)/g);
-          tags = tagMatches
-            ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10)
-            : null;
-        }
-
-        // ALT 텍스트 추출 ([ALT_TEXTS]...[/ALT_TEXTS] 블록)
-        let imageAltTexts: string[] | null = null;
-        const altMatch = fullText.match(/\[ALT_TEXTS\]\s*([\s\S]*?)\s*\[\/ALT_TEXTS\]/);
-        if (altMatch) {
-          imageAltTexts = altMatch[1]
-            .split("\n")
-            .map((line) => line.replace(/^\d+\.\s*/, "").trim())
-            .filter(Boolean);
-        }
-
-        // 이미지 마커 추출
-        const imageMarkerRegex = /\[IMAGE:\s*(.+?)\]/g;
-        const imageMarkers: { position: number; description: string }[] = [];
-        let match;
-        while ((match = imageMarkerRegex.exec(fullText)) !== null) {
-          imageMarkers.push({
-            position: match.index,
-            description: match[1],
-          });
-        }
-
-        // 이미지 마커에 ALT 텍스트 매핑
-        if (imageAltTexts && imageAltTexts.length > 0) {
-          imageMarkers.forEach((marker, i) => {
-            if (imageAltTexts[i]) {
-              (marker as Record<string, unknown>).alt_text = imageAltTexts[i];
-            }
-          });
-        }
-
-        // 결과 저장
-        await supabase
-          .from("ai_generations")
-          .update({
-            status: "completed",
-            generated_text: fullText,
-            generated_title: title,
-            generated_tags: tags,
-            image_markers: imageMarkers.length > 0 ? imageMarkers : null,
-            tokens_used: Math.ceil(fullText.length / 4), // 대략적 토큰 수 추정
-            generation_time_ms: generationTimeMs,
-          })
-          .eq("id", generationId);
-
-        // 토큰 사용량 업데이트
-        const estimatedTokens = Math.ceil(fullText.length / 4);
-        await supabase
-          .from("llm_configs")
-          .update({
-            monthly_tokens_used: llmConfig.monthly_tokens_used + estimatedTokens,
-          })
-          .eq("id", llmConfig.id);
-      } catch (err) {
-        let errorMessage = "알 수 없는 오류가 발생했습니다.";
-        if (err instanceof Error) {
-          if (err.message.includes("401") || err.message.includes("authentication") || err.message.includes("Unauthorized")) {
-            errorMessage = "API 키가 유효하지 않습니다. 설정 > AI 설정에서 API 키를 확인해주세요.";
-          } else if (err.message.includes("429") || err.message.includes("rate limit")) {
-            errorMessage = "API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
-          } else if (err.message.includes("timeout") || err.message.includes("ECONNREFUSED") || err.message.includes("ENOTFOUND") || err.message.includes("fetch failed")) {
-            errorMessage = "네트워크 오류가 발생했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.";
-          } else if (err.message.includes("context_length") || err.message.includes("max_tokens") || err.message.includes("too long")) {
-            errorMessage = "입력이 토큰 한도를 초과했습니다. 참고 사항을 줄이고 다시 시도해주세요.";
-          } else {
-            errorMessage = err.message;
-          }
-        }
-        await supabase
-          .from("ai_generations")
-          .update({
-            status: "failed",
-            error_message: errorMessage,
-            generation_time_ms: Date.now() - startTime,
-          })
-          .eq("id", generationId);
-      }
-    })();
-
     return { success: true, generationId, promptKey };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류";
+    return { success: false, error: errorMessage };
+  }
+}
+
+/**
+ * LLM 초안 생성 실행 — 클라이언트에서 Server Action으로 직접 호출
+ * Vercel 서버리스에서 요청이 끝날 때까지 함수를 유지함
+ */
+export async function executeGeneration(
+  generationId: number
+): Promise<{ success: boolean; error?: string }> {
+  const startTime = Date.now();
+  const supabase = await createClient();
+
+  try {
+    // 생성 레코드 조회
+    const { data: gen, error: fetchError } = await supabase
+      .from("ai_generations")
+      .select("*")
+      .eq("id", generationId)
+      .single();
+
+    if (fetchError || !gen) {
+      return { success: false, error: "생성 레코드를 찾을 수 없습니다." };
+    }
+
+    // 이미 generating/completed/failed 이면 중복 실행 방지
+    if (gen.status !== "pending") {
+      return { success: true };
+    }
+
+    // 상태를 generating으로 업데이트
+    await supabase
+      .from("ai_generations")
+      .update({ status: "generating" })
+      .eq("id", generationId);
+
+    // LLM 설정 조회
+    const llmConfig = await getActiveLLMConfig(supabase);
+    if (!llmConfig?.api_key_encrypted) {
+      await supabase
+        .from("ai_generations")
+        .update({ status: "failed", error_message: "LLM 설정 없음" })
+        .eq("id", generationId);
+      return { success: false, error: "LLM 설정이 없습니다." };
+    }
+
+    const apiKey = await decryptApiKey(llmConfig.api_key_encrypted);
+
+    // 프롬프트 키 결정
+    const effectiveCategoryId = gen.category_id || "";
+    const promptKey = getPromptKey(effectiveCategoryId);
+
+    // DB 프롬프트 템플릿 조회
+    const template = effectiveCategoryId
+      ? await getPromptTemplate(supabase, effectiveCategoryId, "draft_generation")
+      : null;
+
+    // 컨텍스트 수집 (3초 타임아웃)
+    let enrichedContext = gen.additional_context || "";
+    try {
+      function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+        return Promise.race([
+          promise,
+          new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
+        ]);
+      }
+
+      const [existingCtx, competitorCtx] = await Promise.all([
+        withTimeout(getExistingContentContext(effectiveCategoryId, gen.target_keyword || ""), 3000, ""),
+        withTimeout(getCompetitorContext(gen.target_keyword || ""), 3000, ""),
+      ]);
+      const parts = [enrichedContext, existingCtx, competitorCtx].filter(Boolean);
+      enrichedContext = parts.join("\n\n");
+    } catch (e) {
+      console.error("[executeGeneration] 컨텍스트 수집 실패:", e);
+    }
+
+    // 메시지 구성
+    const messages: LLMMessage[] = [];
+
+    const fieldCta = promptKey === "PROMPT_FIELD"
+      ? getFieldCta(effectiveCategoryId)
+      : { cta: "", emailSubject: "" };
+
+    const templateVariables: Record<string, string> = {
+      topic: gen.topic,
+      keyword: gen.target_keyword || "",
+      target_audience: "",
+      additional_context: enrichedContext,
+      subcategory: "",
+      cta_text: fieldCta.cta,
+      email_subject: fieldCta.emailSubject,
+    };
+
+    if (template) {
+      messages.push({ role: "system", content: template.system_prompt });
+      messages.push({
+        role: "user",
+        content: replaceTemplateVariables(template.user_prompt_template, templateVariables),
+      });
+    } else {
+      messages.push({
+        role: "system",
+        content: replaceTemplateVariables(SYSTEM_PROMPTS[promptKey], templateVariables),
+      });
+      messages.push({
+        role: "user",
+        content: replaceTemplateVariables(USER_PROMPTS[promptKey], templateVariables),
+      });
+    }
+
+    const streamConfig: LLMStreamConfig = {
+      provider: llmConfig.provider as LLMProvider,
+      model: llmConfig.model_id,
+      apiKey,
+      maxTokens: 4096,
+      temperature: 0.7,
+    };
+
+    // 스트리밍으로 생성
+    let fullText = "";
+    for await (const chunk of generateStream(streamConfig, messages)) {
+      fullText += chunk;
+    }
+
+    const generationTimeMs = Date.now() - startTime;
+
+    // 제목 추출
+    const lines = fullText.split("\n").filter((l) => l.trim());
+    let title = lines[0]?.replace(/^#+\s*/, "").trim() || gen.topic;
+    if (title.length > 50) title = title.substring(0, 50);
+
+    // 태그 추출
+    let tags: string[] | null = null;
+    const tagsMatch = fullText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[\/TAGS\]/);
+    if (tagsMatch) {
+      tags = tagsMatch[1]
+        .split(/[,\n]/)
+        .map((t) => t.replace(/^\d+\.\s*/, "").trim())
+        .filter(Boolean)
+        .slice(0, 10);
+    } else {
+      const tagMatches = fullText.match(/#([^\s#]+)/g);
+      tags = tagMatches ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10) : null;
+    }
+
+    // ALT 텍스트 추출
+    let imageAltTexts: string[] | null = null;
+    const altMatch = fullText.match(/\[ALT_TEXTS\]\s*([\s\S]*?)\s*\[\/ALT_TEXTS\]/);
+    if (altMatch) {
+      imageAltTexts = altMatch[1]
+        .split("\n")
+        .map((line) => line.replace(/^\d+\.\s*/, "").trim())
+        .filter(Boolean);
+    }
+
+    // 이미지 마커 추출
+    const imageMarkerRegex = /\[IMAGE:\s*(.+?)\]/g;
+    const imageMarkers: { position: number; description: string }[] = [];
+    let match;
+    while ((match = imageMarkerRegex.exec(fullText)) !== null) {
+      imageMarkers.push({ position: match.index, description: match[1] });
+    }
+
+    // 이미지 마커에 ALT 텍스트 매핑
+    if (imageAltTexts && imageAltTexts.length > 0) {
+      imageMarkers.forEach((marker, i) => {
+        if (imageAltTexts[i]) {
+          (marker as Record<string, unknown>).alt_text = imageAltTexts[i];
+        }
+      });
+    }
+
+    // 결과 저장
+    await supabase
+      .from("ai_generations")
+      .update({
+        status: "completed",
+        generated_text: fullText,
+        generated_title: title,
+        generated_tags: tags,
+        image_markers: imageMarkers.length > 0 ? imageMarkers : null,
+        tokens_used: Math.ceil(fullText.length / 4),
+        generation_time_ms: generationTimeMs,
+      })
+      .eq("id", generationId);
+
+    // 토큰 사용량 업데이트
+    const estimatedTokens = Math.ceil(fullText.length / 4);
+    await supabase
+      .from("llm_configs")
+      .update({
+        monthly_tokens_used: llmConfig.monthly_tokens_used + estimatedTokens,
+      })
+      .eq("id", llmConfig.id);
+
+    return { success: true };
+  } catch (err) {
+    let errorMessage = "알 수 없는 오류가 발생했습니다.";
+    if (err instanceof Error) {
+      if (err.message.includes("401") || err.message.includes("authentication") || err.message.includes("Unauthorized")) {
+        errorMessage = "API 키가 유효하지 않습니다. 설정 > AI 설정에서 API 키를 확인해주세요.";
+      } else if (err.message.includes("429") || err.message.includes("rate limit")) {
+        errorMessage = "API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
+      } else if (err.message.includes("timeout") || err.message.includes("ECONNREFUSED") || err.message.includes("ENOTFOUND") || err.message.includes("fetch failed")) {
+        errorMessage = "네트워크 오류가 발생했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.";
+      } else if (err.message.includes("context_length") || err.message.includes("max_tokens") || err.message.includes("too long")) {
+        errorMessage = "입력이 토큰 한도를 초과했습니다. 참고 사항을 줄이고 다시 시도해주세요.";
+      } else {
+        errorMessage = err.message;
+      }
+    }
+    await supabase
+      .from("ai_generations")
+      .update({
+        status: "failed",
+        error_message: errorMessage,
+        generation_time_ms: Date.now() - startTime,
+      })
+      .eq("id", generationId);
+
     return { success: false, error: errorMessage };
   }
 }
