@@ -542,11 +542,73 @@ export async function summarizeSearchResults(
 
 // ── 뉴스 자동 수집 ──
 
-const FIXED_KEYWORDS = ["직무발명보상", "벤처기업인증", "기업부설연구소", "세법개정", "특허법개정"];
+const FIXED_KEYWORDS = [
+  // 직무발명보상 (최우선 서비스)
+  "직무발명보상금 절세",
+  "직무발명보상 세액공제",
+  "직무발명보상 우수기업",
+  // 기업부설연구소
+  "기업부설연구소 설립",
+  "기업부설연구소 세액공제",
+  "기업부설연구소 사후관리",
+  "연구개발전담부서 인정",
+  // 벤처인증
+  "벤처기업인증 혜택",
+  "벤처기업확인 기술보증",
+  // 특허·IP 전략
+  "중소기업 특허출원",
+  "지식재산 경영",
+  "IP 전략 중소기업",
+  // R&D 세제
+  "연구개발비 세액공제",
+  "R&D 세액공제 중소기업",
+  // 정책·제도 변경
+  "특허청 정책",
+  "발명진흥법 개정",
+  "조세특례제한법 연구개발",
+];
+
+// IP·지식재산 도메인 키워드 (최소 1개 필수)
+const DOMAIN_TERMS = [
+  "특허", "실용신안", "상표권", "디자인권", "지식재산",
+  "발명", "변리", "IP", "직무발명", "보상금제도",
+  "연구소", "연구개발", "R&D", "기업부설",
+  "벤처", "벤처인증", "벤처확인",
+  "세액공제", "조특법", "조세특례",
+  "특허청", "발명진흥", "기술평가", "기술이전",
+];
+
+// 비즈니스 맥락 키워드 (최소 1개 필수)
+const BIZ_TERMS = [
+  "기업", "법인", "중소기업", "중견기업", "스타트업",
+  "대표", "경영", "절세", "세금", "법인세",
+  "인증", "설립", "혜택", "지원", "공제",
+  "컨설팅", "관리", "출원", "등록", "심사",
+  "전략", "제도", "정책", "개정", "시행",
+];
+
+/** HTML 엔티티 디코딩 + 태그 제거 */
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#39;/g, "'")
+    .replace(/<\/?b>/g, "");
+}
+
+/** 2계층 AND 관련성 필터: DOMAIN_TERMS + BIZ_TERMS 동시 포함 여부 */
+function isRelevantNews(title: string, description: string): boolean {
+  const text = (title + " " + description).replace(/<\/?b>/g, "");
+  const hasDomain = DOMAIN_TERMS.some((t) => text.includes(t));
+  const hasBiz = BIZ_TERMS.some((t) => text.includes(t));
+  return hasDomain && hasBiz;
+}
 
 /**
  * 키워드 풀(HIGH) + 고정 키워드로 네이버 뉴스 수집 → news_items 저장
- * 최근 7일 이내 뉴스만 저장, 같은 link 중복 제거
+ * 최근 7일 이내 + 2계층 관련성 필터 통과 뉴스만 저장, 같은 link 중복 제거
  */
 export async function collectNews(): Promise<{ success: boolean; count: number; error?: string }> {
   try {
@@ -587,14 +649,16 @@ export async function collectNews(): Promise<{ success: boolean; count: number; 
           const pubDate = new Date(a.pubDate);
           if (pubDate < sevenDaysAgo) return false;
         }
+        // 2계층 AND 관련성 필터
+        if (!isRelevantNews(a.title, a.description ?? "")) return false;
         return true;
       });
 
       if (newArticles.length === 0) continue;
 
       const rows = newArticles.map((a) => ({
-        title: a.title,
-        description: a.description || null,
+        title: decodeHtmlEntities(a.title),
+        description: a.description ? decodeHtmlEntities(a.description) : null,
         link: a.link,
         pub_date: a.pubDate ? new Date(a.pubDate).toISOString() : null,
         search_keyword: keyword,
