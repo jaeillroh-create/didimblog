@@ -68,9 +68,24 @@ async function decryptApiKey(encryptedKey: string): Promise<string> {
 
 function parseJsonResponse(text: string): Record<string, unknown> | null {
   let cleaned = text.trim();
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+
+  // ```json ... ``` 블록 추출
+  if (cleaned.includes("```")) {
+    const match = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (match) cleaned = match[1].trim();
   }
+
+  // JSON 객체 부분만 추출 (첫 번째 { 부터 마지막 } 까지)
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch {
+      // 아래로 폴백
+    }
+  }
+
+  // 전체를 시도
   try {
     return JSON.parse(cleaned);
   } catch {
@@ -239,7 +254,7 @@ export async function analyzeFileForBriefing(
 
     const parsed = parseJsonResponse(result);
     if (!parsed) {
-      console.error("[file-upload] JSON 파싱 실패. LLM 원문:", result.slice(0, 200));
+      console.error("[file-upload] JSON 파싱 실패. LLM 전체 원문:", result);
       return { success: false, error: "브리핑 생성 결과를 파싱할 수 없습니다. LLM 응답 형식 오류." };
     }
 
