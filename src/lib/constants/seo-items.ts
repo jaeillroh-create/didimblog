@@ -1,3 +1,4 @@
+// LEGACY: seo-rubrics.ts (카테고리별 루브릭)로 대체됨. 설정 페이지 호환용으로 보존.
 // SEO 체크리스트 18항목 정의
 export type SeoGrade = "required" | "recommended" | "optional";
 

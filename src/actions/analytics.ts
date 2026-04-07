@@ -51,6 +51,44 @@ export interface AnalyticsSummary {
   conversionRateChange: number;
 }
 
+// ── 헬퍼: contents 테이블에서 폴백 KPI 생성 ──
+
+async function getMonthlyKPIFallback(): Promise<MonthlyKPI[]> {
+  try {
+    const supabase = await createClient();
+
+    // published_at이 있는 콘텐츠에서 월별 집계
+    const { data, error } = await supabase
+      .from("contents")
+      .select("published_at, views_1m, avg_duration_sec, cta_clicks")
+      .not("published_at", "is", null);
+
+    if (error || !data || data.length === 0) return [];
+
+    const monthMap = new Map<string, MonthlyKPI>();
+    for (const row of data) {
+      const month = (row.published_at as string).substring(0, 7);
+      const existing = monthMap.get(month) ?? {
+        month,
+        totalViews: 0,
+        avgDuration: 0,
+        conversions: 0,
+        publishedCount: 0,
+        leadCount: 0,
+        contractAmount: 0,
+      };
+      existing.totalViews += row.views_1m ?? 0;
+      existing.conversions += row.cta_clicks ?? 0;
+      existing.publishedCount += 1;
+      monthMap.set(month, existing);
+    }
+
+    return Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
+  } catch {
+    return [];
+  }
+}
+
 // ── Server Actions ──
 
 export async function getMonthlyKPI(): Promise<{
@@ -166,7 +204,12 @@ export async function getAnalyticsSummary(): Promise<{
   error: string | null;
 }> {
   try {
-    const { data: kpiData } = await getMonthlyKPI();
+    let { data: kpiData } = await getMonthlyKPI();
+
+    // content_metrics에 데이터가 없으면 contents 테이블에서 폴백
+    if (kpiData.length === 0) {
+      kpiData = await getMonthlyKPIFallback();
+    }
 
     if (kpiData.length >= 2) {
       const current = kpiData[kpiData.length - 1];

@@ -1,3 +1,4 @@
+// LEGACY: seo-score-panel.tsx (자동 채점)로 대체됨. 참조용으로 보존.
 "use client";
 
 import { useState, useCallback } from "react";
