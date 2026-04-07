@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useMemo, useTransition } from "react";
 import { saveBlogStartDate } from "@/actions/ai";
 import { Calendar, Loader2, CheckCircle2 } from "lucide-react";
 
@@ -30,11 +30,13 @@ export function BlogSettings({ initialStartDate }: BlogSettingsProps) {
     });
   }
 
-  // 현재 주차 계산
-  const today = new Date();
-  const start = new Date(startDate);
-  const diffDays = (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-  const currentWeek = Math.ceil(diffDays / 7);
+  // 현재 주차 계산 — suppressHydrationWarning으로 서버/클라이언트 차이 허용
+  const currentWeek = useMemo(() => {
+    const today = new Date();
+    const start = new Date(startDate);
+    const diffDays = (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+    return Math.ceil(diffDays / 7);
+  }, [startDate]);
 
   return (
     <div className="space-y-6">
@@ -81,7 +83,7 @@ export function BlogSettings({ initialStartDate }: BlogSettingsProps) {
 
           <div className="p-3 space-y-1" style={{ background: "var(--g50)", borderRadius: "var(--r-md)" }}>
             <p className="t-sm" style={{ fontWeight: 600, color: "var(--g900)" }}>현재 상태</p>
-            <div className="flex items-center gap-4 t-xs" style={{ color: "var(--g400)" }}>
+            <div className="flex items-center gap-4 t-xs" style={{ color: "var(--g400)" }} suppressHydrationWarning>
               <span>시작일: {startDate}</span>
               <span>현재 주차: <span className="font-num" style={{ fontWeight: 700 }}>W{currentWeek > 0 ? currentWeek : "-"}</span></span>
               <span>
