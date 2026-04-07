@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useMemo, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,10 +24,13 @@ export function KeywordRankingTracker({
   const [editValue, setEditValue] = useState("");
 
   // 현재 월 (1일 기준)
-  const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const lastMonthStr = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, "0")}-01`;
+  const { currentMonth, lastMonthStr } = useMemo(() => {
+    const now = new Date();
+    const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lms = `${lm.getFullYear()}-${String(lm.getMonth() + 1).padStart(2, "0")}-01`;
+    return { currentMonth: cm, lastMonthStr: lms };
+  }, []);
 
   function getRank(keywordId: string, month: string): number | null {
     const r = rankings.find(
@@ -70,7 +73,7 @@ export function KeywordRankingTracker({
   }
 
   return (
-    <Card>
+    <Card suppressHydrationWarning>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <Search className="h-4 w-4" />

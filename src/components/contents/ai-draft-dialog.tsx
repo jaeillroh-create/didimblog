@@ -826,7 +826,9 @@ export function AiDraftDialog({
                   <FileText className="h-4 w-4" style={{ color: "var(--brand-accent)" }} />
                   <span className="font-medium">{uploadedFile.name}</span>
                   <span className="text-xs text-[var(--neutral-text-muted)]">
-                    ({(uploadedFile.size / 1024 / 1024).toFixed(1)}MB)
+                    ({uploadedFile.size < 1024 * 1024
+                      ? `${(uploadedFile.size / 1024).toFixed(0)}KB`
+                      : `${(uploadedFile.size / 1024 / 1024).toFixed(1)}MB`})
                   </span>
                 </div>
                 <button

@@ -62,7 +62,7 @@ export function HealthBanner({
               ? "이 글은 업데이트가 필요합니다. 내용을 검토하고 최신 정보로 수정해주세요."
               : "이 글은 점검이 필요합니다. 내용이 최신 상태인지 확인해주세요."}
             {healthCheckedAt &&
-              ` (마지막 점검: ${new Date(healthCheckedAt).toLocaleDateString("ko-KR")})`}
+              ` (마지막 점검: ${healthCheckedAt.substring(0, 10)})`}
           </p>
         </div>
       </div>
