@@ -239,7 +239,8 @@ export async function analyzeFileForBriefing(
 
     const parsed = parseJsonResponse(result);
     if (!parsed) {
-      return { success: false, error: "브리핑 생성에 실패했습니다. 직접 입력해주세요." };
+      console.error("[file-upload] JSON 파싱 실패. LLM 원문:", result.slice(0, 200));
+      return { success: false, error: "브리핑 생성 결과를 파싱할 수 없습니다. LLM 응답 형식 오류." };
     }
 
     const briefing = buildBriefingFromParsed(parsed, input);
@@ -249,8 +250,9 @@ export async function analyzeFileForBriefing(
       briefing,
     };
   } catch (error) {
-    console.error("파일 분석 오류:", error);
-    return { success: false, error: "파일 분석 중 오류가 발생했습니다. 다시 시도해주세요." };
+    const errMsg = error instanceof Error ? error.message : String(error);
+    console.error("파일 분석 상세 오류:", errMsg);
+    return { success: false, error: `파일 분석 실패: ${errMsg.slice(0, 100)}` };
   }
 }
 
