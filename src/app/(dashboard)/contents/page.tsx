@@ -7,8 +7,13 @@ import {
   getStateTransitions,
 } from "@/actions/contents";
 import { getLLMConfigs } from "@/actions/ai";
+import type { AiDraftInitialValues } from "@/components/contents/ai-draft-dialog";
 
-export default async function ContentsPage() {
+interface ContentsPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function ContentsPage({ searchParams }: ContentsPageProps) {
   const [
     { data: contents },
     { data: categories },
@@ -23,6 +28,17 @@ export default async function ContentsPage() {
     getLLMConfigs(),
   ]);
 
+  // URL 쿼리파라미터로 AI 초안 다이얼로그 자동 열기
+  const params = await searchParams;
+  const action = typeof params.action === "string" ? params.action : undefined;
+  const topic = typeof params.topic === "string" ? params.topic : undefined;
+  const context = typeof params.context === "string" ? params.context : undefined;
+
+  let aiDraftInitial: AiDraftInitialValues | undefined;
+  if (action === "ai-draft" && topic) {
+    aiDraftInitial = { topic };
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -36,6 +52,8 @@ export default async function ContentsPage() {
         profiles={profiles}
         transitions={transitions}
         llmConfigs={llmConfigs}
+        aiDraftInitialValues={aiDraftInitial}
+        aiDraftInitialContext={context}
       />
     </div>
   );

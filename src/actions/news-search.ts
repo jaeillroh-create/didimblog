@@ -543,48 +543,16 @@ export async function summarizeSearchResults(
 // ── 뉴스 자동 수집 ──
 
 const FIXED_KEYWORDS = [
-  // 직무발명보상 (최우선 서비스)
-  "직무발명보상금 절세",
+  "직무발명보상금",
   "직무발명보상 세액공제",
-  "직무발명보상 우수기업",
-  // 기업부설연구소
-  "기업부설연구소 설립",
-  "기업부설연구소 세액공제",
-  "기업부설연구소 사후관리",
-  "연구개발전담부서 인정",
-  // 벤처인증
-  "벤처기업인증 혜택",
-  "벤처기업확인 기술보증",
-  // 특허·IP 전략
-  "중소기업 특허출원",
-  "지식재산 경영",
-  "IP 전략 중소기업",
-  // R&D 세제
+  "기업부설연구소",
   "연구개발비 세액공제",
-  "R&D 세액공제 중소기업",
-  // 정책·제도 변경
-  "지식재산처 정책",
-  "발명진흥법 개정",
+  "벤처기업인증",
+  "벤처기업 혜택",
+  "중소기업 특허",
+  "중소기업 법인세 감면",
+  "지식재산 중소기업",
   "조세특례제한법 연구개발",
-];
-
-// IP·지식재산 도메인 키워드 (최소 1개 필수)
-const DOMAIN_TERMS = [
-  "특허", "실용신안", "상표권", "디자인권", "지식재산",
-  "발명", "변리", "IP", "직무발명", "보상금제도",
-  "연구소", "연구개발", "R&D", "기업부설",
-  "벤처", "벤처인증", "벤처확인",
-  "세액공제", "조특법", "조세특례",
-  "지식재산처", "발명진흥", "기술평가", "기술이전",
-];
-
-// 비즈니스 맥락 키워드 (최소 1개 필수)
-const BIZ_TERMS = [
-  "기업", "법인", "중소기업", "중견기업", "스타트업",
-  "대표", "경영", "절세", "세금", "법인세",
-  "인증", "설립", "혜택", "지원", "공제",
-  "컨설팅", "관리", "출원", "등록", "심사",
-  "전략", "제도", "정책", "개정", "시행",
 ];
 
 /** HTML 엔티티 디코딩 + 태그 제거 */
@@ -598,41 +566,95 @@ function decodeHtmlEntities(text: string): string {
     .replace(/<\/?b>/g, "");
 }
 
-/** 3계층 관련성 필터: 검색 키워드 매칭 + DOMAIN_TERMS + BIZ_TERMS */
-function isRelevantNews(title: string, description: string, searchKeyword: string): boolean {
+/** 키워드 기반 폴백 관련성 필터 (AI 호출 실패 시 사용) */
+function isRelevantNewsFallback(title: string, description: string, searchKeyword: string): boolean {
   const text = (title + " " + (description || "")).replace(/<\/?b>/g, "");
-
-  // 조건 1: 검색 키워드의 핵심어가 기사에 포함되어야 함
   const keywordParts = searchKeyword.split(/\s+/).filter((w) => w.length >= 2);
-  const hasKeywordMatch = keywordParts.some((part) => text.includes(part));
-  if (!hasKeywordMatch) return false;
+  return keywordParts.some((part) => text.includes(part));
+}
 
-  // 조건 2: DOMAIN + BIZ 기존 로직 유지
-  const hasDomain = DOMAIN_TERMS.some((t) => text.includes(t));
-  const hasBiz = BIZ_TERMS.some((t) => text.includes(t));
-  return hasDomain && hasBiz;
+interface ArticleCandidate {
+  title: string;
+  description: string;
+  link: string;
+  keyword: string;
+  pubDate?: string;
+}
+
+/** AI 관련성 필터: LLM에게 뉴스 목록을 보내 디딤 블로그 글감 여부 판단 */
+async function filterRelevantNews(
+  articles: ArticleCandidate[]
+): Promise<ArticleCandidate[]> {
+  if (articles.length === 0) return [];
+
+  const llmConfig = await getActiveLLMConfig();
+  if (!llmConfig) {
+    // LLM 미설정 → 폴백
+    console.warn("[뉴스수집] LLM 미설정, 키워드 폴백 필터 사용");
+    return articles.filter((a) => isRelevantNewsFallback(a.title, a.description, a.keyword));
+  }
+
+  const articleList = articles
+    .map((a, i) => `[${i + 1}] ${a.title} — ${a.description}`)
+    .join("\n");
+
+  const messages: LLMMessage[] = [
+    {
+      role: "system",
+      content: `당신은 특허법인 "특허그룹 디딤"의 블로그 편집자입니다.
+디딤의 서비스: 직무발명보상 절세 컨설팅, 기업부설연구소 설립/사후관리, 벤처기업인증, 특허출원, IP전략 컨설팅.
+타깃 독자: 중소·중견기업 대표, 경영지원 담당자.
+
+아래 뉴스 목록에서 디딤 블로그의 글감으로 활용할 수 있는 뉴스만 골라주세요.
+"글감으로 활용 가능"의 기준:
+- 디딤 서비스와 직접 관련된 제도·세법·정책 변경
+- 타깃 독자(중소기업 대표)가 관심 가질 산업 동향
+- 디딤이 전문 코멘트를 달 수 있는 IP·세제 이슈
+
+다음은 제외:
+- 대기업 실적/주가/인사 뉴스
+- 일반 행사·축제·시상식
+- 디딤 서비스와 무관한 부동산·금융·정치 뉴스
+- 특정 법무법인·회계법인 홍보성 기사
+
+관련 있는 뉴스의 번호만 JSON 배열로 답해주세요. 예: [1, 3, 7]
+관련 있는 뉴스가 없으면 빈 배열 []을 반환하세요.`,
+    },
+    {
+      role: "user",
+      content: `뉴스 목록:\n${articleList}`,
+    },
+  ];
+
+  try {
+    const result = await generateFull(
+      { ...llmConfig, maxTokens: 256, temperature: 0.2 },
+      messages
+    );
+
+    const jsonMatch = result.match(/\[[\d\s,]*\]/);
+    if (!jsonMatch) {
+      console.warn("[뉴스수집] AI 응답 파싱 실패, 폴백 사용");
+      return articles.filter((a) => isRelevantNewsFallback(a.title, a.description, a.keyword));
+    }
+
+    const indices = JSON.parse(jsonMatch[0]) as number[];
+    return articles.filter((_, i) => indices.includes(i + 1));
+  } catch (err) {
+    console.warn("[뉴스수집] AI 필터 호출 실패, 폴백 사용:", err);
+    return articles.filter((a) => isRelevantNewsFallback(a.title, a.description, a.keyword));
+  }
 }
 
 /**
- * 키워드 풀(HIGH) + 고정 키워드로 네이버 뉴스 수집 → news_items 저장
- * 최근 7일 이내 + 2계층 관련성 필터 통과 뉴스만 저장, 같은 link 중복 제거
+ * 고정 키워드로 네이버 뉴스 수집 → AI 관련성 판단 → news_items 저장
+ * 최근 7일 이내, 같은 link 중복 제거
  */
 export async function collectNews(): Promise<{ success: boolean; count: number; error?: string }> {
   try {
     const supabase = await createClient();
 
-    // HIGH 우선순위 키워드 가져오기
-    const { data: highKeywords } = await supabase
-      .from("keyword_pool")
-      .select("keyword")
-      .eq("priority", "HIGH");
-
-    const keywords = [
-      ...FIXED_KEYWORDS,
-      ...(highKeywords ?? []).map((k: { keyword: string }) => k.keyword),
-    ];
-    // 중복 키워드 제거
-    const uniqueKeywords = [...new Set(keywords)];
+    const uniqueKeywords = [...new Set(FIXED_KEYWORDS)];
 
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -643,43 +665,62 @@ export async function collectNews(): Promise<{ success: boolean; count: number; 
       .select("link");
     const linkSet = new Set((existingLinks ?? []).map((r: { link: string }) => r.link));
 
-    let savedCount = 0;
+    // 1단계: 키워드 검색 → HTML 디코딩 → 중복/날짜 제거
+    const candidates: ArticleCandidate[] = [];
 
     for (const keyword of uniqueKeywords) {
-      const result = await searchNaver(keyword, 10, "date");
+      const result = await searchNaver(keyword, 5, "date");
       if (!result.success || !result.articles) continue;
 
-      const newArticles = result.articles.filter((a) => {
-        if (linkSet.has(a.link)) return false;
-        // 7일 이내 필터
+      for (const a of result.articles) {
+        if (linkSet.has(a.link)) continue;
         if (a.pubDate) {
           const pubDate = new Date(a.pubDate);
-          if (pubDate < sevenDaysAgo) return false;
+          if (pubDate < sevenDaysAgo) continue;
         }
-        // 2계층 AND 관련성 필터
-        if (!isRelevantNews(a.title, a.description ?? "", keyword)) return false;
-        return true;
-      });
-
-      if (newArticles.length === 0) continue;
-
-      const rows = newArticles.map((a) => ({
-        title: decodeHtmlEntities(a.title),
-        description: a.description ? decodeHtmlEntities(a.description) : null,
-        link: a.link,
-        pub_date: a.pubDate ? new Date(a.pubDate).toISOString() : null,
-        search_keyword: keyword,
-        source: "naver",
-      }));
-
-      const { error } = await supabase.from("news_items").insert(rows);
-      if (!error) {
-        savedCount += rows.length;
-        for (const a of newArticles) linkSet.add(a.link);
+        // 디코딩 후 후보에 추가
+        candidates.push({
+          title: decodeHtmlEntities(a.title),
+          description: decodeHtmlEntities(a.description ?? ""),
+          link: a.link,
+          keyword,
+          pubDate: a.pubDate,
+        });
+        linkSet.add(a.link); // 같은 링크 중복 방지
       }
     }
 
-    return { success: true, count: savedCount };
+    if (candidates.length === 0) {
+      console.log("[뉴스수집] 후보 뉴스 0건");
+      return { success: true, count: 0 };
+    }
+
+    // 2단계: AI 관련성 판단
+    const relevant = await filterRelevantNews(candidates);
+    const excluded = candidates.length - relevant.length;
+    console.log(`[뉴스수집] ${candidates.length}건 중 ${relevant.length}건 관련, ${excluded}건 제외`);
+
+    if (relevant.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    // 3단계: 저장
+    const rows = relevant.map((a) => ({
+      title: a.title,
+      description: a.description || null,
+      link: a.link,
+      pub_date: a.pubDate ? new Date(a.pubDate).toISOString() : null,
+      search_keyword: a.keyword,
+      source: "naver",
+    }));
+
+    const { error } = await supabase.from("news_items").insert(rows);
+    if (error) {
+      console.error("[뉴스수집] 저장 에러:", error);
+      return { success: false, count: 0, error: "뉴스 저장에 실패했습니다." };
+    }
+
+    return { success: true, count: relevant.length };
   } catch (err) {
     console.error("[collectNews] 에러:", err);
     return { success: false, count: 0, error: "뉴스 수집 중 오류가 발생했습니다." };

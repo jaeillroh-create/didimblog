@@ -20,7 +20,7 @@ import {
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { KanbanColumn } from "@/components/contents/kanban-column";
 import { ContentForm } from "@/components/contents/content-form";
-import { AiDraftDialog } from "@/components/contents/ai-draft-dialog";
+import { AiDraftDialog, type AiDraftInitialValues } from "@/components/contents/ai-draft-dialog";
 import { CONTENT_STATUS_OPTIONS } from "@/lib/constants/content-states";
 import { CONTENT_STATES } from "@/lib/constants/content-states";
 import { useContentFilterStore } from "@/stores/content-filter";
@@ -48,6 +48,10 @@ interface KanbanBoardProps {
   transitions: StateTransition[];
   /** LLM 설정 (AI 생성용) */
   llmConfigs?: LLMConfig[];
+  /** AI 초안 다이얼로그 초기값 (URL 쿼리파라미터에서 전달) */
+  aiDraftInitialValues?: AiDraftInitialValues;
+  /** AI 초안 다이얼로그 초기 참고사항 */
+  aiDraftInitialContext?: string;
 }
 
 /**
@@ -59,11 +63,13 @@ export function KanbanBoard({
   profiles,
   transitions,
   llmConfigs = [],
+  aiDraftInitialValues,
+  aiDraftInitialContext,
 }: KanbanBoardProps) {
   const router = useRouter();
   const [contents, setContents] = useState(initialContents);
   const [formOpen, setFormOpen] = useState(false);
-  const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [aiDialogOpen, setAiDialogOpen] = useState(!!aiDraftInitialValues);
   const [errorDialog, setErrorDialog] = useState<{
     open: boolean;
     title: string;
@@ -324,6 +330,8 @@ export function KanbanBoard({
         onOpenChange={setAiDialogOpen}
         categories={categories}
         llmConfigs={llmConfigs}
+        initialValues={aiDraftInitialValues}
+        initialContext={aiDraftInitialContext}
       />
 
       {/* 에러 다이얼로그 */}
