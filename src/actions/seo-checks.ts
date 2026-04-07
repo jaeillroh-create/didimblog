@@ -1,3 +1,4 @@
+// LEGACY: seo-calculator.ts 기반 자동 채점으로 대체됨. seo_checks 테이블은 레거시.
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
