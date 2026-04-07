@@ -65,6 +65,7 @@ interface AiDraftDialogProps {
   categories: Category[];
   llmConfigs?: LLMConfig[];
   initialValues?: AiDraftInitialValues;
+  initialContext?: string;
 }
 
 export function AiDraftDialog({
@@ -73,6 +74,7 @@ export function AiDraftDialog({
   categories,
   llmConfigs = [],
   initialValues,
+  initialContext,
 }: AiDraftDialogProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -91,7 +93,7 @@ export function AiDraftDialog({
   const [secondaryCategory, setSecondaryCategory] = useState(initialValues?.secondaryCategory ?? "");
   const [keyword, setKeyword] = useState(initialValues?.keyword ?? "");
   const [targetAudience, setTargetAudience] = useState("");
-  const [additionalContext, setAdditionalContext] = useState("");
+  const [additionalContext, setAdditionalContext] = useState(initialContext || "");
   const activeConfigs = llmConfigs.filter((c) => c.is_active);
   const defaultConfig = activeConfigs.find((c) => c.is_default) ?? activeConfigs[0];
   const [selectedLlmId, setSelectedLlmId] = useState<string>(
@@ -1256,6 +1258,9 @@ export function AiDraftDialog({
                   value={additionalContext}
                   onChange={(e) => setAdditionalContext(e.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">
+                  기존 발행 글 참조 및 네이버 경쟁 글 분석이 AI에 자동 전달됩니다.
+                </p>
               </div>
 
               {/* LLM 모델 선택 */}

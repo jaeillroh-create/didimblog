@@ -234,6 +234,86 @@ function encryptApiKey(apiKey: string): string {
   return Buffer.from(apiKey, "utf-8").toString("base64");
 }
 
+// ── 컨텍스트 빌더 ──
+
+/**
+ * 같은 카테고리의 기존 발행 글 참조 컨텍스트 생성
+ */
+export async function getExistingContentContext(
+  categoryId: string,
+  keyword: string
+): Promise<string> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("contents")
+      .select("title, target_keyword, body")
+      .eq("category_id", categoryId)
+      .in("status", ["S4", "S5"])
+      .order("published_at", { ascending: false })
+      .limit(5);
+
+    if (error || !data || data.length === 0) return "";
+
+    const lines = data.map((c, i) => {
+      const summary = c.body ? c.body.substring(0, 100).replace(/\n/g, " ") + "..." : "";
+      return `${i + 1}. "${c.title}" (키워드: ${c.target_keyword ?? "없음"}) — ${summary}`;
+    });
+
+    return `[기존 발행 글 참조]\n${lines.join("\n")}\n→ 위 글들과 내용이 겹치지 않도록, 새로운 각도에서 작성해주세요.`;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * 네이버 블로그 검색으로 경쟁 글 상위 5건 제목 수집
+ */
+export async function getCompetitorContext(keyword: string): Promise<string> {
+  try {
+    if (!keyword.trim()) return "";
+
+    const supabase = await createClient();
+    const { data: config } = await supabase
+      .from("search_api_configs")
+      .select("*")
+      .eq("provider", "naver")
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (!config?.client_id || !config?.client_secret_encrypted) return "";
+
+    const clientSecret = await decryptApiKey(config.client_secret_encrypted);
+
+    const url = new URL("https://openapi.naver.com/v1/search/blog.json");
+    url.searchParams.set("query", keyword.trim());
+    url.searchParams.set("display", "5");
+    url.searchParams.set("sort", "sim");
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        "X-Naver-Client-Id": config.client_id,
+        "X-Naver-Client-Secret": clientSecret,
+      },
+    });
+
+    if (!response.ok) return "";
+
+    const data = await response.json();
+    const items = (data.items || []) as { title: string }[];
+
+    if (items.length === 0) return "";
+
+    const lines = items.map(
+      (item, i) => `${i + 1}. "${item.title.replace(/<[^>]*>/g, "")}"`
+    );
+
+    return `[네이버 검색 상위 글 분석]\n현재 "${keyword}"(으)로 검색 시 상위 노출 블로그:\n${lines.join("\n")}\n→ 위 글들과 차별화되는 제목과 각도로 작성해주세요.`;
+  } catch {
+    return "";
+  }
+}
+
 // ── Server Actions ──
 
 /**
@@ -310,6 +390,18 @@ export async function generateDraft(
 
         const apiKey = await decryptApiKey(llmConfig.api_key_encrypted!);
 
+        // 자동 컨텍스트 수집 (기존 글 참조 + 경쟁 글 분석)
+        const [existingCtx, competitorCtx] = await Promise.all([
+          getExistingContentContext(input.categoryId, input.keyword),
+          getCompetitorContext(input.keyword),
+        ]);
+
+        const enrichedContext = [
+          input.additionalContext || "",
+          existingCtx,
+          competitorCtx,
+        ].filter(Boolean).join("\n\n");
+
         // 메시지 구성: DB 템플릿 우선, 없으면 상수 프롬프트 사용
         const messages: LLMMessage[] = [];
 
@@ -322,7 +414,7 @@ export async function generateDraft(
           topic: input.topic,
           keyword: input.keyword,
           target_audience: input.targetAudience || "",
-          additional_context: input.additionalContext || "",
+          additional_context: enrichedContext,
           subcategory: input.subCategoryId || "",
           cta_text: fieldCta.cta,
           email_subject: fieldCta.emailSubject,
