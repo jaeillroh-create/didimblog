@@ -33,6 +33,8 @@ import {
   getMonthWeeks,
 } from "@/lib/constants/schedule-data";
 import type { ScheduleItem } from "@/lib/constants/schedule-data";
+import { generateBriefing, type BriefingData } from "@/actions/briefing";
+import { analyzeFileForBriefing } from "@/actions/file-upload";
 import {
   Sparkles,
   Lightbulb,
@@ -46,6 +48,8 @@ import {
   FileText,
   CheckCircle2,
   Calendar,
+  Upload,
+  ArrowRight,
 } from "lucide-react";
 
 export interface AiDraftInitialValues {
@@ -72,7 +76,7 @@ export function AiDraftDialog({
 }: AiDraftDialogProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [activeTab, setActiveTab] = useState<"recommend" | "manual">(
+  const [activeTab, setActiveTab] = useState<"recommend" | "briefing" | "file" | "manual">(
     initialValues?.topic ? "manual" : "recommend"
   );
 
@@ -112,6 +116,21 @@ export function AiDraftDialog({
 
   // 에러
   const [error, setError] = useState<string | null>(null);
+
+  // F1: 주제 기반 브리핑
+  const [briefingTopic, setBriefingTopic] = useState("");
+  const [briefingCategoryId, setBriefingCategoryId] = useState("");
+  const [briefingResult, setBriefingResult] = useState<BriefingData | null>(null);
+  const [generatingBriefing, setGeneratingBriefing] = useState(false);
+  const [briefingError, setBriefingError] = useState<string | null>(null);
+
+  // F2: 파일 업로드 기반 브리핑
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [fileCategoryId, setFileCategoryId] = useState("");
+  const [fileResult, setFileResult] = useState<BriefingData | null>(null);
+  const [analyzingFile, setAnalyzingFile] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const primaryCategories = categories.filter((c) => c.tier === "primary");
   const secondaryCategories = categories.filter(
@@ -276,6 +295,122 @@ export function AiDraftDialog({
     }
   }
 
+  // F1: 브리핑 생성
+  async function handleGenerateBriefing() {
+    if (!briefingTopic.trim()) return;
+
+    setGeneratingBriefing(true);
+    setBriefingError(null);
+    setBriefingResult(null);
+
+    const result = await generateBriefing({
+      topic: briefingTopic.trim(),
+      categoryId: briefingCategoryId || undefined,
+      llmConfigId: selectedLlmId ? parseInt(selectedLlmId) : undefined,
+    });
+
+    if (!result.success) {
+      setBriefingError(result.error || "브리핑 생성에 실패했습니다.");
+      setGeneratingBriefing(false);
+      return;
+    }
+
+    setBriefingResult(result.briefing!);
+    setGeneratingBriefing(false);
+  }
+
+  // F1: 브리핑 결과를 manual 탭으로 전달
+  function applyBriefingToManual(briefing: BriefingData) {
+    setTopic(briefing.topic);
+    setKeyword(briefing.keyword);
+    setTargetAudience("");
+
+    // 카테고리 매핑
+    const primaryCat = primaryCategories.find((c) => c.id === briefing.categoryId);
+    if (primaryCat) {
+      setCategoryId(primaryCat.id);
+      const secondaryCat = categories.find(
+        (c) => c.tier === "secondary" && c.id === briefing.secondaryCategoryId
+      );
+      setSecondaryCategory(secondaryCat?.id || "");
+    }
+
+    // episode + additionalContext 합산
+    const contextParts: string[] = [];
+    if (briefing.episode) contextParts.push(`[에피소드]\n${briefing.episode}`);
+    if (briefing.additionalContext) contextParts.push(`[참고사항]\n${briefing.additionalContext}`);
+    setAdditionalContext(contextParts.join("\n\n"));
+
+    setActiveTab("manual");
+  }
+
+  // F2: 파일 업로드 처리
+  function handleFileSelect(file: File) {
+    const allowedTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+      "image/jpeg",
+      "image/png",
+    ];
+    const allowedExtensions = [".pdf", ".docx", ".txt", ".jpg", ".jpeg", ".png"];
+    const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
+
+    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(ext)) {
+      setFileError("PDF, DOCX, TXT, JPG, PNG만 지원합니다.");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setFileError("10MB 이하 파일만 업로드 가능합니다.");
+      return;
+    }
+
+    setUploadedFile(file);
+    setFileError(null);
+    setFileResult(null);
+  }
+
+  async function handleAnalyzeFile() {
+    if (!uploadedFile) return;
+
+    setAnalyzingFile(true);
+    setFileError(null);
+    setFileResult(null);
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(",")[1] || "";
+      const result = await analyzeFileForBriefing({
+        fileBase64: base64,
+        fileName: uploadedFile.name,
+        fileType: uploadedFile.type,
+        categoryId: fileCategoryId || undefined,
+        llmConfigId: selectedLlmId ? parseInt(selectedLlmId) : undefined,
+      });
+
+      if (!result.success) {
+        setFileError(result.error || "파일 분석에 실패했습니다.");
+        setAnalyzingFile(false);
+        return;
+      }
+
+      setFileResult(result.briefing!);
+      setAnalyzingFile(false);
+    };
+    reader.onerror = () => {
+      setFileError("파일을 읽을 수 없습니다.");
+      setAnalyzingFile(false);
+    };
+    reader.readAsDataURL(uploadedFile);
+  }
+
+  // 카테고리 ID → 이름 매핑
+  function getCategoryName(catId: string): string {
+    const cat = categories.find((c) => c.id === catId);
+    return cat?.name || catId;
+  }
+
   function resetForm() {
     setTopic("");
     setCategoryId("");
@@ -292,6 +427,14 @@ export function AiDraftDialog({
     setExpandedKeywords([]);
     setSummaryText(null);
     setSortOption("date");
+    setBriefingTopic("");
+    setBriefingCategoryId("");
+    setBriefingResult(null);
+    setBriefingError(null);
+    setUploadedFile(null);
+    setFileCategoryId("");
+    setFileResult(null);
+    setFileError(null);
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -447,12 +590,20 @@ export function AiDraftDialog({
 
         <Tabs
           value={activeTab}
-          onValueChange={(v) => setActiveTab(v as "recommend" | "manual")}
+          onValueChange={(v) => setActiveTab(v as "recommend" | "briefing" | "file" | "manual")}
         >
           <TabsList className="w-full">
             <TabsTrigger value="recommend" className="flex-1">
               <Calendar className="mr-1 h-4 w-4" />
               추천 주제
+            </TabsTrigger>
+            <TabsTrigger value="briefing" className="flex-1">
+              <Lightbulb className="mr-1 h-4 w-4" />
+              주제로 브리핑
+            </TabsTrigger>
+            <TabsTrigger value="file" className="flex-1">
+              <Upload className="mr-1 h-4 w-4" />
+              파일로 브리핑
             </TabsTrigger>
             <TabsTrigger value="manual" className="flex-1">
               직접 입력
@@ -514,6 +665,269 @@ export function AiDraftDialog({
                   </div>
                 )}
               </>
+            )}
+          </TabsContent>
+
+          {/* F1: 주제로 브리핑 생성 탭 */}
+          <TabsContent value="briefing" className="mt-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="briefing-topic">주제 입력 *</Label>
+              <Input
+                id="briefing-topic"
+                placeholder="예: 법인세 2억 내던 제조업체 절세 사례"
+                value={briefingTopic}
+                onChange={(e) => setBriefingTopic(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleGenerateBriefing();
+                  }
+                }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>카테고리 사전 지정 (선택)</Label>
+              <Select value={briefingCategoryId} onValueChange={setBriefingCategoryId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="AI가 자동 판단" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">AI가 자동 판단</SelectItem>
+                  {primaryCategories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              onClick={handleGenerateBriefing}
+              disabled={generatingBriefing || !briefingTopic.trim()}
+              className="w-full"
+              style={{ backgroundColor: "var(--brand-accent)" }}
+            >
+              {generatingBriefing ? (
+                <>
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  브리핑 생성 중...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-1.5 h-4 w-4" />
+                  브리핑 생성
+                </>
+              )}
+            </Button>
+
+            {briefingError && (
+              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+                {briefingError}
+              </div>
+            )}
+
+            {briefingResult && (
+              <div className="space-y-3">
+                <div className="text-xs font-semibold text-[var(--neutral-text-muted)] uppercase tracking-wider">
+                  생성 결과 미리보기
+                </div>
+                <div className="rounded-lg border p-4 space-y-2 text-sm">
+                  <div className="flex gap-2">
+                    <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">카테고리</span>
+                    <span>{getCategoryName(briefingResult.categoryId)}{briefingResult.secondaryCategoryId ? ` > ${getCategoryName(briefingResult.secondaryCategoryId)}` : ""}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">주제</span>
+                    <span>{briefingResult.topic}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">키워드</span>
+                    <span>{briefingResult.keyword}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">타깃</span>
+                    <span>{briefingResult.targetAudience}</span>
+                  </div>
+                  {briefingResult.episode && (
+                    <div className="flex gap-2">
+                      <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">에피소드</span>
+                      <span className="text-xs leading-relaxed">{briefingResult.episode}</span>
+                    </div>
+                  )}
+                  {briefingResult.additionalContext && (
+                    <div className="flex gap-2">
+                      <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">참고사항</span>
+                      <span className="text-xs leading-relaxed">{briefingResult.additionalContext}</span>
+                    </div>
+                  )}
+                </div>
+
+                <Button
+                  onClick={() => applyBriefingToManual(briefingResult)}
+                  className="w-full"
+                  variant="outline"
+                >
+                  수정 후 초안 생성
+                  <ArrowRight className="ml-1.5 h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* F2: 파일로 브리핑 생성 탭 */}
+          <TabsContent value="file" className="mt-4 space-y-4">
+            <div className="space-y-2">
+              <Label>파일 업로드</Label>
+              <div
+                className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors cursor-pointer ${
+                  isDragging
+                    ? "border-[var(--brand-accent)] bg-[var(--brand-accent)]/5"
+                    : "border-gray-300 hover:border-[var(--brand-accent)]"
+                }`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  const file = e.dataTransfer.files[0];
+                  if (file) handleFileSelect(file);
+                }}
+                onClick={() => {
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = ".pdf,.docx,.txt,.jpg,.jpeg,.png";
+                  input.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) handleFileSelect(file);
+                  };
+                  input.click();
+                }}
+              >
+                <FileText className="h-8 w-8 text-[var(--neutral-text-muted)] mb-2" />
+                <p className="text-sm text-[var(--neutral-text-muted)]">
+                  파일을 여기에 드래그하거나 클릭하여 선택하세요
+                </p>
+                <p className="text-xs text-[var(--neutral-text-muted)] mt-1">
+                  PDF, DOCX, TXT, JPG, PNG (10MB)
+                </p>
+              </div>
+            </div>
+
+            {uploadedFile && (
+              <div className="flex items-center justify-between rounded-md bg-[var(--neutral-surface)] p-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <FileText className="h-4 w-4" style={{ color: "var(--brand-accent)" }} />
+                  <span className="font-medium">{uploadedFile.name}</span>
+                  <span className="text-xs text-[var(--neutral-text-muted)]">
+                    ({(uploadedFile.size / 1024 / 1024).toFixed(1)}MB)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadedFile(null);
+                    setFileResult(null);
+                    setFileError(null);
+                  }}
+                  className="text-[var(--neutral-text-muted)] hover:text-red-500"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>카테고리 사전 지정 (선택)</Label>
+              <Select value={fileCategoryId} onValueChange={setFileCategoryId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="AI가 자동 판단" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">AI가 자동 판단</SelectItem>
+                  {primaryCategories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              onClick={handleAnalyzeFile}
+              disabled={analyzingFile || !uploadedFile}
+              className="w-full"
+              style={{ backgroundColor: "var(--brand-accent)" }}
+            >
+              {analyzingFile ? (
+                <>
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  파일 분석 중...
+                </>
+              ) : (
+                <>
+                  <FileText className="mr-1.5 h-4 w-4" />
+                  파일 분석 → 브리핑 생성
+                </>
+              )}
+            </Button>
+
+            {fileError && (
+              <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+                {fileError}
+              </div>
+            )}
+
+            {fileResult && (
+              <div className="space-y-3">
+                <div className="text-xs font-semibold text-[var(--neutral-text-muted)] uppercase tracking-wider">
+                  분석 결과 미리보기
+                </div>
+                <div className="rounded-lg border p-4 space-y-2 text-sm">
+                  <div className="flex gap-2">
+                    <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">카테고리</span>
+                    <span>{getCategoryName(fileResult.categoryId)}{fileResult.secondaryCategoryId ? ` > ${getCategoryName(fileResult.secondaryCategoryId)}` : ""}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">주제</span>
+                    <span>{fileResult.topic}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">키워드</span>
+                    <span>{fileResult.keyword}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">타깃</span>
+                    <span>{fileResult.targetAudience}</span>
+                  </div>
+                  {fileResult.episode && (
+                    <div className="flex gap-2">
+                      <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">에피소드</span>
+                      <span className="text-xs leading-relaxed">{fileResult.episode}</span>
+                    </div>
+                  )}
+                  {fileResult.additionalContext && (
+                    <div className="flex gap-2">
+                      <span className="font-medium text-[var(--neutral-text-muted)] w-16 shrink-0">참고사항</span>
+                      <span className="text-xs leading-relaxed">{fileResult.additionalContext}</span>
+                    </div>
+                  )}
+                </div>
+
+                <Button
+                  onClick={() => applyBriefingToManual(fileResult)}
+                  className="w-full"
+                  variant="outline"
+                >
+                  수정 후 초안 생성
+                  <ArrowRight className="ml-1.5 h-4 w-4" />
+                </Button>
+              </div>
             )}
           </TabsContent>
 

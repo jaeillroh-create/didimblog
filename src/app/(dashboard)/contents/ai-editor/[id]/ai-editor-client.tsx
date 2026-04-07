@@ -10,7 +10,9 @@ import { PageHeader } from "@/components/common/page-header";
 import { CrossValidationPanel } from "@/components/contents/cross-validation-panel";
 import { getGenerationStatus } from "@/actions/ai";
 import { createContent } from "@/actions/contents";
-import type { GenerationStatus } from "@/lib/types/database";
+import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
+import { ImageGenPanel } from "@/components/contents/image-gen-panel";
+import type { GenerationStatus, ImageMarker } from "@/lib/types/database";
 import {
   ArrowLeft,
   Save,
@@ -134,6 +136,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [showValidation, setShowValidation] = useState(false);
   const [currentGenerationId, setCurrentGenerationId] = useState(generationId);
 
+  // 이미지 생성
+  const [imageGenAvailable, setImageGenAvailable] = useState(false);
+  const [generatedImageUrls, setGeneratedImageUrls] = useState<Record<number, string>>({});
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+
   // 폴링으로 생성 상태 확인
   useEffect(() => {
     let cancelled = false;
@@ -178,6 +185,72 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
     return () => { cancelled = true; };
   }, [status, currentGenerationId]);
+
+  // 이미지 생성 가능 여부 + 기존 이미지 로드
+  useEffect(() => {
+    checkImageGenAvailable().then(setImageGenAvailable);
+  }, []);
+
+  useEffect(() => {
+    if (status === "completed") {
+      getGeneratedImages(currentGenerationId).then((result) => {
+        if (result.success && result.images) {
+          const urls: Record<number, string> = {};
+          for (const img of result.images) {
+            if (img.public_url) {
+              urls[img.marker_index] = img.public_url;
+            }
+          }
+          setGeneratedImageUrls(urls);
+        }
+      });
+    }
+  }, [status, currentGenerationId]);
+
+  // 이미지 마커 추출 (재사용)
+  const imageMarkers: (ImageMarker & { rawText: string })[] = [];
+  const markerRegex = /\[IMAGE:\s*(.+?)\]/g;
+  let markerMatch;
+  while ((markerMatch = markerRegex.exec(editText)) !== null) {
+    imageMarkers.push({
+      position: markerMatch.index,
+      description: markerMatch[1],
+      rawText: markerMatch[0],
+      imageUrl: generatedImageUrls[imageMarkers.length] || undefined,
+    });
+  }
+
+  function handleImageGenerated(markerIndex: number, imageUrl: string) {
+    setGeneratedImageUrls((prev) => ({ ...prev, [markerIndex]: imageUrl }));
+  }
+
+  async function handleBulkGenerate() {
+    if (imageMarkers.length === 0) return;
+    setBulkGenerating(true);
+
+    const markers = imageMarkers.map((m, i) => ({
+      index: i,
+      description: m.description,
+    }));
+
+    const result = await generateAllInfographics({
+      generationId: currentGenerationId,
+      blogTopic: editTitle,
+      markers,
+    });
+
+    if (result.success) {
+      const urls: Record<number, string> = { ...generatedImageUrls };
+      for (const img of result.images) {
+        if (img.imageUrl) {
+          urls[img.markerIndex] = img.imageUrl;
+        }
+      }
+      setGeneratedImageUrls(urls);
+    }
+
+    setBulkGenerating(false);
+  }
 
   // SEO 점수 계산
   const seoResult = calculateSeoScore(editTitle, editText, keyword);
@@ -359,44 +432,70 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             </CardContent>
           </Card>
 
-          {/* 이미지 마커 목록 */}
-          {(() => {
-            const markers = editText.match(/\[IMAGE:\s*(.+?)\]/g) || [];
-            if (markers.length === 0) return null;
-            return (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm flex items-center gap-1">
+          {/* 이미지 마커 목록 + 이미지 생성 */}
+          {imageMarkers.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span className="flex items-center gap-1">
                     <ImageIcon className="h-4 w-4" />
-                    이미지 마커 ({markers.length}개)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {markers.map((marker, i) => {
-                      const desc = marker.replace(/\[IMAGE:\s*/, "").replace(/\]$/, "");
-                      return (
-                        <div
-                          key={i}
-                          className="flex items-center gap-2 rounded-md p-2 text-sm"
-                          style={{ backgroundColor: "var(--neutral-surface)" }}
+                    이미지 마커 ({imageMarkers.length}개)
+                  </span>
+                  {imageGenAvailable && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleBulkGenerate}
+                      disabled={bulkGenerating}
+                    >
+                      {bulkGenerating ? (
+                        <>
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                          일괄 생성 중...
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="mr-1 h-3.5 w-3.5" />
+                          전체 이미지 일괄 생성
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {imageMarkers.map((marker, i) =>
+                    imageGenAvailable ? (
+                      <ImageGenPanel
+                        key={i}
+                        marker={{ ...marker, imageUrl: generatedImageUrls[i] }}
+                        markerIndex={i}
+                        generationId={currentGenerationId}
+                        blogTopic={editTitle}
+                        onImageGenerated={handleImageGenerated}
+                      />
+                    ) : (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 rounded-md p-2 text-sm"
+                        style={{ backgroundColor: "var(--neutral-surface)" }}
+                      >
+                        <Badge
+                          variant="outline"
+                          className="shrink-0"
+                          style={{ borderColor: "var(--brand-accent)", color: "var(--brand-accent)" }}
                         >
-                          <Badge
-                            variant="outline"
-                            className="shrink-0"
-                            style={{ borderColor: "var(--brand-accent)", color: "var(--brand-accent)" }}
-                          >
-                            IMG {i + 1}
-                          </Badge>
-                          <span>{desc}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })()}
+                          IMG {i + 1}
+                        </Badge>
+                        <span>{marker.description}</span>
+                      </div>
+                    )
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* 교차검증 패널 */}
           {showValidation && (

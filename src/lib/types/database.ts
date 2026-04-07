@@ -171,6 +171,27 @@ export interface ImageMarker {
   position: number;
   description: string;
   suggested_type?: string;
+  imageUrl?: string;
+  imageId?: string;
+  altText?: string;
+  generationStatus?: "pending" | "generating" | "completed" | "failed";
+}
+
+export interface GeneratedImage {
+  id: string;
+  generation_id: number;
+  marker_index: number;
+  description: string;
+  prompt_used: string | null;
+  image_provider: string;
+  image_model: string;
+  storage_path: string | null;
+  public_url: string | null;
+  alt_text: string | null;
+  status: "pending" | "generating" | "completed" | "failed";
+  error_message: string | null;
+  generation_time_ms: number | null;
+  created_at: string;
 }
 
 export interface AIGeneration {
