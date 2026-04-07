@@ -543,29 +543,12 @@ export async function summarizeSearchResults(
 // ── 뉴스 자동 수집 ──
 
 const FIXED_KEYWORDS = [
-  // 직무발명보상 (최우선 서비스)
-  "직무발명보상금 절세",
-  "직무발명보상 세액공제",
-  "직무발명보상 우수기업",
-  // 기업부설연구소
-  "기업부설연구소 설립",
-  "기업부설연구소 세액공제",
-  "기업부설연구소 사후관리",
-  "연구개발전담부서 인정",
-  // 벤처인증
-  "벤처기업인증 혜택",
-  "벤처기업확인 기술보증",
-  // 특허·IP 전략
-  "중소기업 특허출원",
-  "지식재산 경영",
-  "IP 전략 중소기업",
-  // R&D 세제
-  "연구개발비 세액공제",
-  "R&D 세액공제 중소기업",
-  // 정책·제도 변경
-  "지식재산처 정책",
-  "발명진흥법 개정",
-  "조세특례제한법 연구개발",
+  "직무발명보상금 세액공제",
+  "직무발명보상 제도 개정",
+  "기업부설연구소 세액공제 변경",
+  "벤처기업인증 기준 변경",
+  "연구개발비 세액공제 개정",
+  "중소기업 법인세 감면 개정",
 ];
 
 // IP·지식재산 도메인 키워드 (최소 1개 필수)
@@ -614,25 +597,14 @@ function isRelevantNews(title: string, description: string, searchKeyword: strin
 }
 
 /**
- * 키워드 풀(HIGH) + 고정 키워드로 네이버 뉴스 수집 → news_items 저장
- * 최근 7일 이내 + 2계층 관련성 필터 통과 뉴스만 저장, 같은 link 중복 제거
+ * 고정 키워드로 네이버 뉴스 수집 → news_items 저장
+ * 최근 7일 이내 + 관련성 필터 통과 뉴스만 저장, 같은 link 중복 제거
  */
 export async function collectNews(): Promise<{ success: boolean; count: number; error?: string }> {
   try {
     const supabase = await createClient();
 
-    // HIGH 우선순위 키워드 가져오기
-    const { data: highKeywords } = await supabase
-      .from("keyword_pool")
-      .select("keyword")
-      .eq("priority", "HIGH");
-
-    const keywords = [
-      ...FIXED_KEYWORDS,
-      ...(highKeywords ?? []).map((k: { keyword: string }) => k.keyword),
-    ];
-    // 중복 키워드 제거
-    const uniqueKeywords = [...new Set(keywords)];
+    const uniqueKeywords = [...new Set(FIXED_KEYWORDS)];
 
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -646,7 +618,7 @@ export async function collectNews(): Promise<{ success: boolean; count: number; 
     let savedCount = 0;
 
     for (const keyword of uniqueKeywords) {
-      const result = await searchNaver(keyword, 10, "date");
+      const result = await searchNaver(keyword, 5, "date");
       if (!result.success || !result.articles) continue;
 
       const newArticles = result.articles.filter((a) => {

@@ -71,7 +71,7 @@ export function NewsFeed({ initialNews }: NewsFeedProps) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
             <Newspaper className="h-4 w-4" />
-            최근 뉴스
+            제도·정책 뉴스
           </CardTitle>
           <Button
             variant="outline"
@@ -92,8 +92,8 @@ export function NewsFeed({ initialNews }: NewsFeedProps) {
         {news.length === 0 ? (
           <EmptyState
             icon={<Newspaper className="h-8 w-8 text-muted-foreground" />}
-            title="수집된 뉴스가 없습니다"
-            description="'새로고침' 버튼을 클릭하면 키워드 기반으로 최신 뉴스를 수집합니다"
+            title="이번 주 관련 뉴스 없음"
+            description="직접 검색하려면 AI 초안 생성의 뉴스 탭을 이용하세요"
           />
         ) : (
           <div className="space-y-3">
