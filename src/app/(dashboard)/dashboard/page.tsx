@@ -39,7 +39,7 @@ export default async function DashboardPage() {
     getTopPerformingPosts(),
     getCategories(),
     getLLMConfigs(),
-    getRecentNews(3),
+    getRecentNews(5),
   ]);
 
   const now = new Date();
