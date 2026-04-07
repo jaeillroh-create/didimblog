@@ -28,6 +28,7 @@ import {
   Pencil,
   Zap,
   Newspaper,
+  Image as ImageIcon,
 } from "lucide-react";
 
 interface AiSettingsProps {
@@ -339,6 +340,41 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* 이미지 생성 설정 */}
+      <div className="scard">
+        <div className="scard-head">
+          <div className="scard-head-left">
+            <ImageIcon className="h-5 w-5" style={{ color: "var(--g500)" }} />
+            <span className="scard-head-title">이미지 생성 설정</span>
+          </div>
+        </div>
+        <div className="scard-body">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between py-2">
+              <div className="space-y-1">
+                <span className="t-sm" style={{ fontWeight: 600, color: "var(--g900)" }}>
+                  OpenAI DALL-E 3
+                </span>
+                <p className="t-xs" style={{ color: "var(--g400)" }}>
+                  AI 에디터에서 본문 인포그래픽 이미지를 자동 생성합니다
+                </p>
+              </div>
+              {getConfigForProvider("openai")?.is_active ? (
+                <span className="ucl-badge ucl-badge-sm badge-success">사용 가능</span>
+              ) : (
+                <span className="ucl-badge ucl-badge-sm badge-neutral">비활성</span>
+              )}
+            </div>
+            <div className="ucl-alert alert-info">
+              <span className="t-xs">
+                이미지 생성은 위 LLM 설정의 OpenAI API 키를 공유합니다.
+                OpenAI가 등록되어 있지 않으면 이미지 생성이 비활성화됩니다.
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
