@@ -390,25 +390,25 @@ export async function generateDraft(
 
         const apiKey = await decryptApiKey(llmConfig.api_key_encrypted!);
 
-        // 자동 컨텍스트 수집 (기존 글 참조 + 경쟁 글 분석, 3초 타임아웃)
-        let enrichedContext = input.additionalContext || "";
-        try {
-          function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-            return Promise.race([
-              promise,
-              new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
-            ]);
-          }
-
-          const [existingCtx, competitorCtx] = await Promise.all([
-            withTimeout(getExistingContentContext(input.categoryId, input.keyword), 3000, ""),
-            withTimeout(getCompetitorContext(input.keyword), 3000, ""),
-          ]);
-          const parts = [enrichedContext, existingCtx, competitorCtx].filter(Boolean);
-          enrichedContext = parts.join("\n\n");
-        } catch (e) {
-          console.error("[generateDraft] 컨텍스트 수집 실패:", e);
-        }
+        // TODO: 컨텍스트 수집 임시 비활성화 — Vercel 타임아웃 이슈 해결 후 복원
+        const enrichedContext = input.additionalContext || "";
+        // try {
+        //   function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+        //     return Promise.race([
+        //       promise,
+        //       new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
+        //     ]);
+        //   }
+        //
+        //   const [existingCtx, competitorCtx] = await Promise.all([
+        //     withTimeout(getExistingContentContext(input.categoryId, input.keyword), 3000, ""),
+        //     withTimeout(getCompetitorContext(input.keyword), 3000, ""),
+        //   ]);
+        //   const parts = [enrichedContext, existingCtx, competitorCtx].filter(Boolean);
+        //   enrichedContext = parts.join("\n\n");
+        // } catch (e) {
+        //   console.error("[generateDraft] 컨텍스트 수집 실패:", e);
+        // }
 
         // 메시지 구성: DB 템플릿 우선, 없으면 상수 프롬프트 사용
         const messages: LLMMessage[] = [];
