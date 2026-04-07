@@ -90,11 +90,40 @@ export async function getDashboardKPI(): Promise<DashboardKPI> {
       monthlyViews = viewsData.reduce((sum, c) => sum + (c.views_1m ?? 0), 0);
     }
 
+    // 이번 달 vs 지난 달 content_metrics 비교로 monthlyViewsChange 계산
+    let monthlyViewsChange: number | null = null;
+    try {
+      const thisMonth = now.toISOString().substring(0, 7); // YYYY-MM
+      const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevMonth = prevDate.toISOString().substring(0, 7);
+
+      const { data: thisMonthMetrics } = await supabase
+        .from("content_metrics")
+        .select("views")
+        .gte("measured_at", `${thisMonth}-01`)
+        .lt("measured_at", `${thisMonth}-32`);
+
+      const { data: prevMonthMetrics } = await supabase
+        .from("content_metrics")
+        .select("views")
+        .gte("measured_at", `${prevMonth}-01`)
+        .lt("measured_at", `${prevMonth}-32`);
+
+      const thisTotal = (thisMonthMetrics ?? []).reduce((s, r) => s + (r.views ?? 0), 0);
+      const prevTotal = (prevMonthMetrics ?? []).reduce((s, r) => s + (r.views ?? 0), 0);
+
+      if (prevTotal > 0) {
+        monthlyViewsChange = Math.round(((thisTotal - prevTotal) / prevTotal) * 100);
+      }
+    } catch {
+      // content_metrics 조회 실패 시 null 유지
+    }
+
     return {
       weeklyPublished: weeklyPublished ?? 0,
       weeklyTarget: 3,
       monthlyViews,
-      monthlyViewsChange: null,
+      monthlyViewsChange,
       avgQualityScore,
       avgQualityChange: null,
       activeLeads: activeLeads ?? 0,

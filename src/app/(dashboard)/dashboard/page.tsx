@@ -13,6 +13,7 @@ import {
 } from "@/actions/recommendations";
 import { getCategories } from "@/actions/contents";
 import { getLLMConfigs } from "@/actions/ai";
+import { getRecentNews } from "@/actions/news-search";
 
 export const metadata = {
   title: "대시보드 | 디딤 블로그 운영 시스템",
@@ -29,6 +30,7 @@ export default async function DashboardPage() {
     topPosts,
     categoriesResult,
     llmResult,
+    newsItems,
   ] = await Promise.all([
     getWeeklyRecommendations(),
     getMonthlyPublishProgress(),
@@ -37,6 +39,7 @@ export default async function DashboardPage() {
     getTopPerformingPosts(),
     getCategories(),
     getLLMConfigs(),
+    getRecentNews(5),
   ]);
 
   const now = new Date();
@@ -59,6 +62,7 @@ export default async function DashboardPage() {
         topPosts={topPosts}
         categories={categoriesResult.data}
         llmConfigs={llmResult.data}
+        newsItems={newsItems}
       />
 
       {/* KPI 카드 그리드 (기존) */}

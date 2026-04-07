@@ -382,6 +382,23 @@ export interface KeywordRanking {
   created_at: string;
 }
 
+// ── 뉴스 수집 ──
+
+export interface NewsItem {
+  id: number;
+  title: string;
+  description: string | null;
+  link: string;
+  pub_date: string | null;
+  search_keyword: string;
+  source: string;
+  is_used: boolean;
+  used_content_id: string | null;
+  ai_summary: string | null;
+  blog_angle: string | null;
+  created_at: string;
+}
+
 export type EntityType = "content" | "category" | "lead";
 
 export interface StateTransition {

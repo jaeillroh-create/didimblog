@@ -106,12 +106,37 @@ export async function saveContentPerformance(
   try {
     const supabase = await createClient();
 
+    // 1) contents 테이블 업데이트 (기존 동작 유지)
     const { error } = await supabase
       .from("contents")
       .update(data)
       .eq("id", contentId);
 
     if (error) throw error;
+
+    // 2) content_metrics 테이블에도 동일 데이터 upsert
+    //    같은 content_id + 같은 월이면 UPDATE, 아니면 INSERT
+    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    const { error: metricsError } = await supabase
+      .from("content_metrics")
+      .upsert(
+        {
+          content_id: contentId,
+          measured_at: today,
+          views: data.views_1m ?? 0,
+          avg_duration_sec: data.avg_duration_sec ?? null,
+          search_rank: data.search_rank ?? null,
+          estimated_cta_clicks: data.cta_clicks ?? 0,
+          source: "manual",
+        },
+        { onConflict: "content_id,measured_at" }
+      );
+
+    if (metricsError) {
+      // content_metrics 저장 실패는 경고만 (contents 저장은 이미 성공)
+      console.warn("[saveContentPerformance] content_metrics upsert 실패:", metricsError);
+    }
+
     return { success: true, error: null };
   } catch (err) {
     console.error("[saveContentPerformance] 에러:", err);

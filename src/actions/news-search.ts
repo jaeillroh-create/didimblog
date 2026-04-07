@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { generateFull } from "@/lib/llm";
-import type { SearchApiConfig, SearchApiProvider, NewsArticle, LLMStreamConfig, LLMMessage } from "@/lib/types/database";
+import type { SearchApiConfig, SearchApiProvider, NewsArticle, NewsItem, LLMStreamConfig, LLMMessage } from "@/lib/types/database";
 
 // ── 타입 정의 ──
 
@@ -537,5 +537,195 @@ export async function summarizeSearchResults(
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "요약 생성 중 오류가 발생했습니다.";
     return { success: false, error: errorMessage };
+  }
+}
+
+// ── 뉴스 자동 수집 ──
+
+const FIXED_KEYWORDS = ["직무발명보상", "벤처기업인증", "기업부설연구소", "세법개정", "특허법개정"];
+
+/**
+ * 키워드 풀(HIGH) + 고정 키워드로 네이버 뉴스 수집 → news_items 저장
+ * 최근 7일 이내 뉴스만 저장, 같은 link 중복 제거
+ */
+export async function collectNews(): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    // HIGH 우선순위 키워드 가져오기
+    const { data: highKeywords } = await supabase
+      .from("keyword_pool")
+      .select("keyword")
+      .eq("priority", "HIGH");
+
+    const keywords = [
+      ...FIXED_KEYWORDS,
+      ...(highKeywords ?? []).map((k: { keyword: string }) => k.keyword),
+    ];
+    // 중복 키워드 제거
+    const uniqueKeywords = [...new Set(keywords)];
+
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    // 기존 link 목록 (중복 방지)
+    const { data: existingLinks } = await supabase
+      .from("news_items")
+      .select("link");
+    const linkSet = new Set((existingLinks ?? []).map((r: { link: string }) => r.link));
+
+    let savedCount = 0;
+
+    for (const keyword of uniqueKeywords) {
+      const result = await searchNaver(keyword, 10, "date");
+      if (!result.success || !result.articles) continue;
+
+      const newArticles = result.articles.filter((a) => {
+        if (linkSet.has(a.link)) return false;
+        // 7일 이내 필터
+        if (a.pubDate) {
+          const pubDate = new Date(a.pubDate);
+          if (pubDate < sevenDaysAgo) return false;
+        }
+        return true;
+      });
+
+      if (newArticles.length === 0) continue;
+
+      const rows = newArticles.map((a) => ({
+        title: a.title,
+        description: a.description || null,
+        link: a.link,
+        pub_date: a.pubDate ? new Date(a.pubDate).toISOString() : null,
+        search_keyword: keyword,
+        source: "naver",
+      }));
+
+      const { error } = await supabase.from("news_items").insert(rows);
+      if (!error) {
+        savedCount += rows.length;
+        for (const a of newArticles) linkSet.add(a.link);
+      }
+    }
+
+    return { success: true, count: savedCount };
+  } catch (err) {
+    console.error("[collectNews] 에러:", err);
+    return { success: false, count: 0, error: "뉴스 수집 중 오류가 발생했습니다." };
+  }
+}
+
+/**
+ * 최근 뉴스 조회
+ */
+export async function getRecentNews(limit: number = 10): Promise<NewsItem[]> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("news_items")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return (data ?? []) as NewsItem[];
+  } catch (err) {
+    console.error("[getRecentNews] 에러:", err);
+    return [];
+  }
+}
+
+/**
+ * 특정 뉴스를 AI로 요약 + 블로그 각도 제안
+ */
+export async function summarizeNewsForBlog(
+  newsId: number
+): Promise<{ success: boolean; summary?: string; angle?: string; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    const { data: news, error: fetchError } = await supabase
+      .from("news_items")
+      .select("*")
+      .eq("id", newsId)
+      .single();
+
+    if (fetchError || !news) {
+      return { success: false, error: "뉴스를 찾을 수 없습니다." };
+    }
+
+    const llmConfig = await getActiveLLMConfig();
+    if (!llmConfig) {
+      return { success: false, error: "활성 LLM이 없습니다. 설정 > AI 설정에서 LLM을 등록해주세요." };
+    }
+
+    const messages: LLMMessage[] = [
+      {
+        role: "system",
+        content: `당신은 B2B 블로그 콘텐츠 전략가입니다. 뉴스 기사를 분석하고:
+1) 핵심 내용을 3줄로 요약
+2) 이 뉴스를 활용한 블로그 글 각도(angle)를 1~2개 제안
+
+JSON 형식으로 응답하세요:
+{"summary": "요약 내용", "angle": "블로그 각도 제안"}`,
+      },
+      {
+        role: "user",
+        content: `제목: ${news.title}\n설명: ${news.description ?? ""}\n키워드: ${news.search_keyword}`,
+      },
+    ];
+
+    const result = await generateFull(
+      { ...llmConfig, maxTokens: 512, temperature: 0.5 },
+      messages
+    );
+
+    let summary = result;
+    let angle = "";
+
+    try {
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        summary = parsed.summary ?? result;
+        angle = parsed.angle ?? "";
+      }
+    } catch {
+      // JSON 파싱 실패 시 원본 텍스트 사용
+    }
+
+    // news_items 업데이트
+    await supabase
+      .from("news_items")
+      .update({ ai_summary: summary, blog_angle: angle })
+      .eq("id", newsId);
+
+    return { success: true, summary, angle };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "뉴스 분석 중 오류가 발생했습니다.";
+    return { success: false, error: errorMessage };
+  }
+}
+
+/**
+ * 뉴스를 콘텐츠에 사용됨으로 표시
+ */
+export async function markNewsAsUsed(
+  newsId: number,
+  contentId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    const { error } = await supabase
+      .from("news_items")
+      .update({ is_used: true, used_content_id: contentId })
+      .eq("id", newsId);
+
+    if (error) throw error;
+    return { success: true };
+  } catch (err) {
+    console.error("[markNewsAsUsed] 에러:", err);
+    return { success: false, error: "뉴스 사용 표시에 실패했습니다." };
   }
 }
