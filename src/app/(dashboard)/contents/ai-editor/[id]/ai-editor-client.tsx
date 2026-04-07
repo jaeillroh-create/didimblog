@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/common/page-header";
 import { CrossValidationPanel } from "@/components/contents/cross-validation-panel";
-import { getGenerationStatus } from "@/actions/ai";
+import { getGenerationStatus, executeGeneration } from "@/actions/ai";
 import { createContent } from "@/actions/contents";
 import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
 import { ImageGenPanel } from "@/components/contents/image-gen-panel";
@@ -141,17 +141,36 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [generatedImageUrls, setGeneratedImageUrls] = useState<Record<number, string>>({});
   const [bulkGenerating, setBulkGenerating] = useState(false);
 
-  // 폴링으로 생성 상태 확인
+  // 폴링으로 생성 상태 확인 + pending이면 executeGeneration 트리거
+  const [executionTriggered, setExecutionTriggered] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
+    const pollStart = Date.now();
+    const TIMEOUT_MS = 120_000; // 120초 타임아웃
 
     async function poll() {
+      // 타임아웃 체크
+      if (Date.now() - pollStart > TIMEOUT_MS) {
+        setGenError("생성 시간이 초과되었습니다. 다시 시도해주세요.");
+        setStatus("failed");
+        return;
+      }
+
       const result = await getGenerationStatus(currentGenerationId);
       if (cancelled) return;
 
       if (!result.success) {
         setGenError(result.error || "상태 조회 실패");
         return;
+      }
+
+      // pending 상태이고 아직 실행 트리거 안 했으면 executeGeneration 호출
+      if (result.status === "pending" && !executionTriggered) {
+        setExecutionTriggered(true);
+        startTransition(() => {
+          executeGeneration(currentGenerationId);
+        });
       }
 
       setStatus(result.status!);
@@ -184,7 +203,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     }
 
     return () => { cancelled = true; };
-  }, [status, currentGenerationId]);
+  }, [status, currentGenerationId, executionTriggered, startTransition]);
 
   // 이미지 생성 가능 여부 + 기존 이미지 로드
   useEffect(() => {
@@ -282,6 +301,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   function handleRegenerate(newGenId: number) {
     setCurrentGenerationId(newGenId);
     setStatus("pending");
+    setExecutionTriggered(false);
     setShowValidation(false);
     setGenError(null);
   }
