@@ -25,8 +25,8 @@ export function markdownToHtml(text: string): string {
   html = html.replace(/^---+$/gm, '<hr style="border:none;border-top:2px solid #D4740A;margin:24px 0;">');
   html = html.replace(/^\*\*\*+$/gm, '<hr style="border:none;border-top:2px solid #D4740A;margin:24px 0;">');
 
-  // [IMAGE: ...] 마커
-  html = html.replace(/\[IMAGE:([^\]]+)\]/g, '<p style="background:#FFF3E0;padding:12px;border-radius:8px;color:#D4740A;text-align:center;">📷 이미지 삽입 위치:$1</p>');
+  // [IMAGE: ...] 마커 제거 (사용자가 직접 이미지 삽입)
+  html = html.replace(/\[IMAGE:[^\]]+\]/g, "");
 
   // 리스트
   html = html.replace(/^[\s]*[-*+]\s+(.+)$/gm, '<li style="margin:4px 0;">$1</li>');

@@ -15,6 +15,9 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/common/page-header";
 import { CopyButton } from "@/components/common/copy-button";
+import { DraftQualityPanel } from "@/components/contents/draft-quality-panel";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { calcDraftScore, validateDraft } from "@/lib/draft-validator";
 import { CrossValidationPanel } from "@/components/contents/cross-validation-panel";
 import {
   getGenerationStatus,
@@ -376,8 +379,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     "<<IMAGE_MARKER>>$1<<END_MARKER>>"
   );
 
-  // 저장 (S1로 전이, 콘텐츠 생성/업데이트)
-  function handleSave() {
+  // 저장 경고 다이얼로그
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
+
+  // 저장 실행
+  function doSave() {
     startTransition(async () => {
       const result = await saveAiDraftToContent(currentGenerationId, {
         title: editTitle,
@@ -393,6 +399,17 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
       router.push("/contents");
     });
+  }
+
+  // 저장 버튼 클릭: 미통과 3개 이상이면 확인 모달
+  function handleSave() {
+    const draftChecks = validateDraft(editTitle, editText, "");
+    const { failedItems } = calcDraftScore(draftChecks);
+    if (failedItems.length >= 3) {
+      setSaveConfirmOpen(true);
+    } else {
+      doSave();
+    }
   }
 
   function handleRegenerate(newGenId: number) {
@@ -729,6 +746,13 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             </CardContent>
           </Card>
 
+          {/* 초안 품질 체크 */}
+          <DraftQualityPanel
+            title={editTitle}
+            body={editText}
+            categoryId=""
+          />
+
           {/* 생성 정보 */}
           <Card>
             <CardHeader>
@@ -827,6 +851,19 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           </Card>
         </div>
       </div>
+
+      {/* 저장 경고 다이얼로그 */}
+      <ConfirmDialog
+        open={saveConfirmOpen}
+        onOpenChange={setSaveConfirmOpen}
+        title="품질 체크 미통과 항목 있음"
+        description={`품질 체크 미통과 항목이 ${validateDraft(editTitle, editText, "").filter((c) => !c.passed).length}개 있습니다. 그래도 저장하시겠습니까?`}
+        confirmLabel="저장"
+        onConfirm={() => {
+          setSaveConfirmOpen(false);
+          doSave();
+        }}
+      />
     </div>
   );
 }
