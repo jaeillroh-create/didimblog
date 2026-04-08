@@ -151,12 +151,15 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [executionTriggered, setExecutionTriggered] = useState(false);
   const [streamingText, setStreamingText] = useState("");
 
+  console.log("[AI Editor] 마운트됨, generationId:", currentGenerationId, "status:", status);
+
   useEffect(() => {
     let cancelled = false;
 
     async function clientSideGenerate() {
       if (status !== "pending" || executionTriggered) return;
 
+      console.log("[AI Editor] pending 감지, 클라이언트 생성 시작");
       setExecutionTriggered(true);
       setStatus("generating");
 
@@ -164,11 +167,13 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
       try {
         // 1. LLM 설정 조회 (짧은 요청)
+        console.log("[AI Editor] LLM config 조회 시작");
         const configRes = await fetch("/api/llm-config");
         if (!configRes.ok) {
           throw new Error("LLM 설정을 가져올 수 없습니다.");
         }
         const { apiKey, model } = await configRes.json();
+        console.log("[AI Editor] LLM config 응답:", apiKey ? "키 있음" : "키 없음", "모델:", model);
 
         // 2. 프롬프트 조립 (Server Action, 짧은 요청)
         const promptResult = await getGenerationPrompt(currentGenerationId);
@@ -179,12 +184,18 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         if (cancelled) return;
 
         // 3. 브라우저에서 직접 Anthropic API 스트리밍 호출
+        console.log("[AI Editor] Anthropic API 직접 호출 시작");
         const fullText = await clientGenerateDraft({
           messages: promptResult.messages,
           model,
           apiKey,
           onProgress: (text) => {
-            if (!cancelled) setStreamingText(text);
+            if (!cancelled) {
+              setStreamingText(text);
+              if (text.length % 500 < 20) {
+                console.log("[AI Editor] 스트리밍 수신 중, 길이:", text.length);
+              }
+            }
           },
         });
 
@@ -235,6 +246,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       } catch (err) {
         if (cancelled) return;
         const errorMessage = err instanceof Error ? err.message : "생성 중 오류가 발생했습니다.";
+        console.error("[AI Editor] 생성 에러:", err);
         setGenError(errorMessage);
         setStatus("failed");
         await markGenerationFailed(currentGenerationId, errorMessage);
@@ -252,6 +264,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         if (cancelled || Date.now() - pollStart > 120_000) {
           clearInterval(interval);
           if (!cancelled) {
+            console.log("[AI Editor] 타임아웃 발생");
             setGenError("생성 시간이 초과되었습니다.");
             setStatus("failed");
           }
