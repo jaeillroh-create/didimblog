@@ -59,9 +59,20 @@ export function markdownToHtml(text: string): string {
   html = html.replace(/^[\s]*[-*+]\s+(.+)$/gm, '<li style="margin:4px 0;">$1</li>');
   html = html.replace(/^[\s]*(\d+)\.\s+(.+)$/gm, '<li style="margin:4px 0;">$2</li>');
 
-  // 줄바꿈 → 단락
+  // 줄바꿈 → 단락 (원본 빈 줄 충실히 반영)
   html = html.replace(/\n\n/g, '</p><p style="margin:12px 0;line-height:1.8;color:#333;">');
   html = '<p style="margin:12px 0;line-height:1.8;color:#333;">' + html + "</p>";
+
+  // 빈 줄 없는 긴 단락(5문장+)에 시각적 여백 추가
+  html = html.replace(/<p[^>]*>([\s\S]*?)<\/p>/g, (match, inner: string) => {
+    const sentences = inner.split(/(?<=[.!?])\s+/).filter(Boolean);
+    if (sentences.length < 5) return match;
+    const chunks: string[] = [];
+    for (let i = 0; i < sentences.length; i += 3) {
+      chunks.push(sentences.slice(i, i + 3).join(" "));
+    }
+    return match.replace(inner, chunks.join("<br><br>"));
+  });
 
   // 닫히지 않은 <strong> 태그 정리
   const openCount = (html.match(/<strong[^>]*>/g) || []).length;
@@ -101,6 +112,21 @@ export function extractTablesAsTabSeparated(markdown: string): string[] {
   }
 
   return tables;
+}
+
+/**
+ * 태그를 네이버 블로그 형식(#태그)으로 변환, 100자 이내
+ */
+export function formatTagsForNaver(tags: string[]): string {
+  let result = "";
+  for (const tag of tags) {
+    const cleaned = tag.replace(/\s/g, "").replace(/#/g, "");
+    if (!cleaned) continue;
+    const next = result ? ` #${cleaned}` : `#${cleaned}`;
+    if ((result + next).length > 100) break;
+    result += next;
+  }
+  return result;
 }
 
 /**

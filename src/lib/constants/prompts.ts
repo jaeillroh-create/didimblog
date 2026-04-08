@@ -112,10 +112,19 @@ const COMMON_HOOK_RULES = `[도입부 작성 규칙]
 - 구체적 숫자(금액/비율/기간) 1개
 - 독자가 클릭하고 싶어지는 결과/혜택`;
 
+const COMMON_PARAGRAPH_RULES = `[단락 구조 규칙]
+- 한 단락은 2~3문장으로 제한. 한 단락 = 하나의 포인트.
+- 단락 사이에 반드시 빈 줄 삽입.
+- 소제목 직후 첫 단락은 1~2문장으로 짧게.
+- 리듬 변화: 짧은 단락(1~2문장) → 보통 단락(2~3문장) → 인용/강조 → 짧은 단락 순으로 변화를 줌.
+- 절대 5문장 이상 연속하지 않음.`;
+
 const COMMON_WRITING_RULES = `
 ${COMMON_TITLE_RULES}
 
 ${COMMON_HOOK_RULES}
+
+${COMMON_PARAGRAPH_RULES}
 
 ${COMMON_LEGAL_RULES}
 
