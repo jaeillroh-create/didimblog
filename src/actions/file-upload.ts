@@ -183,7 +183,7 @@ export async function analyzeFileForBriefing(
 
       const response = await client.messages.create({
         model: llmConfig.model_id,
-        max_tokens: 1024,
+        max_tokens: 4096,
         system: systemPrompt,
         messages: [
           {
@@ -246,7 +246,7 @@ export async function analyzeFileForBriefing(
         provider: llmConfig.provider,
         model: llmConfig.model_id,
         apiKey,
-        maxTokens: 1024,
+        maxTokens: 4096,
         temperature: 0.7,
       },
       messages
