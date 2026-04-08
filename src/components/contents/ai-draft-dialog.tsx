@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -85,7 +85,8 @@ export function AiDraftDialog({
   // 스케줄 추천
   const [publishedWeeks, setPublishedWeeks] = useState<Set<number>>(new Set());
   const [blogStartDate, setBlogStartDate] = useState("2026-01-06");
-  const [loadingSchedule, setLoadingSchedule] = useState(true);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
+  const [scheduleLoaded, setScheduleLoaded] = useState(false);
 
   // 폼 상태
   const [topic, setTopic] = useState(initialValues?.topic ?? "");
@@ -152,25 +153,20 @@ export function AiDraftDialog({
     (s) => monthWeeks.includes(s.week) && s.week !== currentWeek
   );
 
-  // 발행 완료 상태 로드
-  useEffect(() => {
-    if (!open) return;
-
-    let cancelled = false;
-
-    getPublishedWeeks().then((result) => {
-      if (cancelled) return;
-      if (result.success) {
-        setPublishedWeeks(new Set(result.publishedWeeks || []));
-        if (result.blogStartDate) {
-          setBlogStartDate(result.blogStartDate);
-        }
+  // 추천 주제 로드 (버튼 클릭 시에만)
+  const loadSchedule = useCallback(async () => {
+    if (scheduleLoaded) return;
+    setLoadingSchedule(true);
+    const result = await getPublishedWeeks();
+    if (result.success) {
+      setPublishedWeeks(new Set(result.publishedWeeks || []));
+      if (result.blogStartDate) {
+        setBlogStartDate(result.blogStartDate);
       }
-      setLoadingSchedule(false);
-    });
-
-    return () => { cancelled = true; };
-  }, [open]);
+    }
+    setLoadingSchedule(false);
+    setScheduleLoaded(true);
+  }, [scheduleLoaded]);
 
   function selectSchedule(schedule: ScheduleItem) {
     setTopic(schedule.title);
@@ -613,7 +609,25 @@ export function AiDraftDialog({
           </TabsList>
 
           <TabsContent value="recommend" className="mt-4 space-y-4">
-            {loadingSchedule ? (
+            {!scheduleLoaded && !loadingSchedule ? (
+              <div className="py-8 text-center space-y-3">
+                <Lightbulb className="mx-auto h-8 w-8 text-[var(--neutral-text-muted)]" />
+                <div>
+                  <p className="text-sm font-medium">12주 스케줄 기반 추천</p>
+                  <p className="mt-1 text-xs text-[var(--neutral-text-muted)]">
+                    버튼을 클릭하면 이번 주 추천 주제와 스케줄을 불러옵니다.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadSchedule}
+                >
+                  <Sparkles className="mr-1 h-3.5 w-3.5" />
+                  추천 주제 받기
+                </Button>
+              </div>
+            ) : loadingSchedule ? (
               <div className="py-8 text-center text-sm text-[var(--neutral-text-muted)]">
                 <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
                 스케줄을 불러오는 중...
