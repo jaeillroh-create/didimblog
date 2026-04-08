@@ -176,7 +176,9 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         console.log("[AI Editor] LLM config 응답:", apiKey ? "키 있음" : "키 없음", "모델:", model);
 
         // 2. 프롬프트 조립 (Server Action, 짧은 요청)
+        console.log("[AI Editor] getGenerationPrompt 호출 시작, generationId:", currentGenerationId);
         const promptResult = await getGenerationPrompt(currentGenerationId);
+        console.log("[AI Editor] getGenerationPrompt 응답:", promptResult.success ? "성공" : "실패", promptResult);
         if (!promptResult.success || !promptResult.messages) {
           throw new Error(promptResult.error || "프롬프트 조립 실패");
         }
@@ -184,7 +186,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         if (cancelled) return;
 
         // 3. 브라우저에서 직접 Anthropic API 스트리밍 호출
-        console.log("[AI Editor] Anthropic API 직접 호출 시작");
+        console.log("[AI Editor] clientGenerateDraft 호출 직전, messages 길이:", promptResult.messages?.length);
         const fullText = await clientGenerateDraft({
           messages: promptResult.messages,
           model,
