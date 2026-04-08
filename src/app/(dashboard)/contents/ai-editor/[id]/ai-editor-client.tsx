@@ -19,6 +19,8 @@ import { DraftQualityPanel } from "@/components/contents/draft-quality-panel";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { calcDraftScore, validateDraft } from "@/lib/draft-validator";
 import { CrossValidationPanel } from "@/components/contents/cross-validation-panel";
+import { FactCheckPanel } from "@/components/contents/fact-check-panel";
+import { PROMPT_FACT_CHECK } from "@/lib/constants/prompts";
 import {
   getGenerationStatus,
   getGenerationPrompt,
@@ -26,7 +28,7 @@ import {
   markGenerationFailed,
   saveAiDraftToContent,
 } from "@/actions/ai";
-import { clientGenerateDraft } from "@/lib/client-generate";
+import { clientGenerateDraft, clientFactCheck, type FactCheckResult } from "@/lib/client-generate";
 import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
 import { ImageGenPanel } from "@/components/contents/image-gen-panel";
 import type { GenerationStatus, ImageMarker } from "@/lib/types/database";
@@ -159,6 +161,12 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [generatedImageUrls, setGeneratedImageUrls] = useState<Record<number, string>>({});
   const [bulkGenerating, setBulkGenerating] = useState(false);
 
+  // 팩트체크
+  const [factCheckStatus, setFactCheckStatus] = useState<"idle" | "checking" | "done" | "error" | "skipped">("idle");
+  const [factCheckResult, setFactCheckResult] = useState<FactCheckResult | null>(null);
+  const [factCheckError, setFactCheckError] = useState<string | null>(null);
+  const factCheckApiRef = useRef<{ apiKey: string; model: string } | null>(null);
+
   // 클라이언트 사이드 생성 — useRef로 한 번만 트리거
   const generationTriggered = useRef(false);
   const isMounted = useRef(true);
@@ -219,6 +227,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       const selected = configData.models?.find((m: LLMModelOption) => String(m.id) === selectedModelId);
       const apiKey = selected?.apiKey ?? configData.apiKey;
       const model = selected?.model ?? configData.model;
+      factCheckApiRef.current = { apiKey, model };
 
       // 2. 프롬프트 조립
       console.log("[AI Editor] getGenerationPrompt 호출 시작, generationId:", genId);
@@ -291,6 +300,9 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         setEditTitle(title);
         setEditTags(tags);
         setStatus("completed");
+
+        // 7. 자동 팩트체크 시작
+        startFactCheck(title, fullText, factCheckApiRef.current);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "생성 중 오류가 발생했습니다.";
@@ -301,6 +313,38 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         setGenError(errorMessage);
         setStatus("failed");
       }
+    }
+  }
+
+  // 팩트체크 실행
+  async function startFactCheck(
+    title: string,
+    body: string,
+    apiConfig: { apiKey: string; model: string } | null
+  ) {
+    if (!apiConfig || !isMounted.current) return;
+
+    setFactCheckStatus("checking");
+    console.log("[AI Editor] 팩트체크 시작");
+
+    const res = await clientFactCheck({
+      title,
+      body,
+      model: apiConfig.model,
+      apiKey: apiConfig.apiKey,
+      systemPrompt: PROMPT_FACT_CHECK,
+    });
+
+    if (!isMounted.current) return;
+
+    if (res.success && res.result) {
+      console.log("[AI Editor] 팩트체크 완료, 점수:", res.result.overall_score);
+      setFactCheckResult(res.result);
+      setFactCheckStatus("done");
+    } else {
+      console.error("[AI Editor] 팩트체크 실패:", res.error);
+      setFactCheckError(res.error || "팩트체크 실패");
+      setFactCheckStatus("error");
     }
   }
 
@@ -688,6 +732,14 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
               </CardContent>
             </Card>
           )}
+
+          {/* 팩트체크 패널 */}
+          <FactCheckPanel
+            status={factCheckStatus}
+            result={factCheckResult}
+            error={factCheckError}
+            onSkip={() => setFactCheckStatus("skipped")}
+          />
 
           {/* 교차검증 패널 */}
           {showValidation && (
