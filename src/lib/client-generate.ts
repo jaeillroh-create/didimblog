@@ -13,6 +13,22 @@ export interface ClientGenerateParams {
 export async function clientGenerateDraft(
   params: ClientGenerateParams
 ): Promise<string> {
+  // messages에서 system 메시지 분리 (Anthropic API는 system을 top-level로 받음)
+  const systemMessage = params.messages.find((m) => m.role === "system");
+  const userMessages = params.messages.filter((m) => m.role !== "system");
+
+  const body: Record<string, unknown> = {
+    model: params.model,
+    max_tokens: 4096,
+    temperature: 0.7,
+    stream: true,
+    messages: userMessages,
+  };
+
+  if (systemMessage) {
+    body.system = systemMessage.content;
+  }
+
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -21,13 +37,7 @@ export async function clientGenerateDraft(
       "anthropic-version": "2023-06-01",
       "anthropic-dangerous-direct-browser-access": "true",
     },
-    body: JSON.stringify({
-      model: params.model,
-      max_tokens: 4096,
-      temperature: 0.7,
-      stream: true,
-      messages: params.messages,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
