@@ -533,6 +533,102 @@ export async function markGenerationFailed(
 }
 
 /**
+ * AI 초안을 콘텐츠로 저장 (S1 전이)
+ * - content_id가 있으면 기존 콘텐츠 업데이트
+ * - 없으면 새 콘텐츠 생성 후 연결
+ */
+export async function saveAiDraftToContent(
+  generationId: number,
+  overrides?: {
+    title?: string;
+    body?: string;
+    tags?: string[];
+    keyword?: string;
+  }
+): Promise<{ success: boolean; contentId?: string; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    // 1. generation 레코드 조회
+    const { data: gen, error: genError } = await supabase
+      .from("ai_generations")
+      .select("*")
+      .eq("id", generationId)
+      .single();
+
+    if (genError || !gen) {
+      return { success: false, error: "생성 이력을 찾을 수 없습니다." };
+    }
+
+    const title = overrides?.title || gen.generated_title || gen.topic;
+    const body = overrides?.body || gen.generated_text || "";
+    const tags = overrides?.tags || gen.generated_tags || [];
+    const keyword = overrides?.keyword || gen.target_keyword || "";
+
+    let contentId = gen.content_id;
+
+    if (contentId) {
+      // 2a. 기존 콘텐츠 업데이트
+      const { error } = await supabase
+        .from("contents")
+        .update({
+          title,
+          body,
+          tags,
+          target_keyword: keyword || undefined,
+          status: "S1",
+          draft_done_at: new Date().toISOString(),
+          ai_generation_id: generationId,
+          is_ai_generated: true,
+        })
+        .eq("id", contentId);
+
+      if (error) {
+        return { success: false, error: `콘텐츠 업데이트 실패: ${error.message}` };
+      }
+    } else {
+      // 2b. 새 콘텐츠 생성
+      const { createContent } = await import("@/actions/contents");
+      const { data: newContent, error: createError } = await createContent({
+        title,
+        category_id: gen.category_id || "CAT-A",
+        target_keyword: keyword || undefined,
+      });
+
+      if (createError || !newContent) {
+        return { success: false, error: createError || "콘텐츠 생성 실패" };
+      }
+
+      contentId = newContent.id;
+
+      // body, tags, status 업데이트 (createContent는 S0으로 생성하므로)
+      await supabase
+        .from("contents")
+        .update({
+          body,
+          tags,
+          status: "S1",
+          draft_done_at: new Date().toISOString(),
+          ai_generation_id: generationId,
+          is_ai_generated: true,
+        })
+        .eq("id", contentId);
+
+      // generation에 content_id 연결
+      await supabase
+        .from("ai_generations")
+        .update({ content_id: contentId })
+        .eq("id", generationId);
+    }
+
+    return { success: true, contentId };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "저장 실패";
+    return { success: false, error: msg };
+  }
+}
+
+/**
  * 생성 상태 조회
  */
 export async function getGenerationStatus(

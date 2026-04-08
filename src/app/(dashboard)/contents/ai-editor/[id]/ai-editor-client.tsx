@@ -14,15 +14,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/common/page-header";
+import { CopyButton } from "@/components/common/copy-button";
 import { CrossValidationPanel } from "@/components/contents/cross-validation-panel";
 import {
   getGenerationStatus,
   getGenerationPrompt,
   saveGenerationResult,
   markGenerationFailed,
+  saveAiDraftToContent,
 } from "@/actions/ai";
 import { clientGenerateDraft } from "@/lib/client-generate";
-import { createContent } from "@/actions/contents";
 import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
 import { ImageGenPanel } from "@/components/contents/image-gen-panel";
 import type { GenerationStatus, ImageMarker } from "@/lib/types/database";
@@ -39,6 +40,7 @@ import {
   AlertTriangle,
   Loader2,
   Image as ImageIcon,
+  ExternalLink,
   X,
 } from "lucide-react";
 
@@ -256,7 +258,8 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       if (tagsMatch) {
         tags = tagsMatch[1].split(/[,\n]/).map((t) => t.replace(/^\d+\.\s*/, "").trim()).filter(Boolean).slice(0, 10);
       } else {
-        const tagMatches = fullText.match(/#([^\s#]+)/g);
+        const textForTags = fullText.replace(/\[IMAGE:[\s\S]*?\]/g, "");
+        const tagMatches = textForTags.match(/#([^\s#]+)/g);
         tags = tagMatches ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10) : [];
       }
 
@@ -373,17 +376,18 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     "<<IMAGE_MARKER>>$1<<END_MARKER>>"
   );
 
-  // 저장 (S1로 전이, 콘텐츠 생성)
+  // 저장 (S1로 전이, 콘텐츠 생성/업데이트)
   function handleSave() {
     startTransition(async () => {
-      const { error } = await createContent({
+      const result = await saveAiDraftToContent(currentGenerationId, {
         title: editTitle,
-        category_id: "CAT-A", // TODO: 생성 시 카테고리 정보 연동
-        target_keyword: keyword || undefined,
+        body: editText,
+        tags: editTags,
+        keyword: keyword || undefined,
       });
 
-      if (error) {
-        setGenError(error);
+      if (!result.success) {
+        setGenError(result.error || "저장에 실패했습니다.");
         return;
       }
 
@@ -593,6 +597,16 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                     <ImageIcon className="h-4 w-4" />
                     이미지 마커 ({imageMarkers.length}개)
                   </span>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href="https://www.genspark.ai"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border hover:bg-muted/50 transition-colors"
+                    >
+                      Genspark.ai에서 이미지 생성
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   {imageGenAvailable && (
                     <Button
                       size="sm"
@@ -613,6 +627,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                       )}
                     </Button>
                   )}
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -640,7 +655,15 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                         >
                           IMG {i + 1}
                         </Badge>
-                        <span>{marker.description}</span>
+                        <span className="flex-1">{marker.description}</span>
+                        <CopyButton
+                          text={marker.rawText}
+                          label="복사"
+                          toastMessage="이미지 프롬프트가 복사되었습니다"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs shrink-0"
+                        />
                       </div>
                     )
                   )}

@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/common/status-badge";
 import { CopyButton } from "@/components/common/copy-button";
 import {
   stripMarkdown,
+  markdownToHtml,
   generateFormatGuide,
   enforceEmail,
   generateImageGuide,
@@ -112,11 +113,33 @@ export function PublishPrepClient({
     return enforceEmail(matchedCta.text);
   }, [matchedCta]);
 
-  // 본문 → 네이버용 텍스트
+  // 본문 → 네이버용 텍스트 + HTML
   const strippedBody = useMemo(
     () => stripMarkdown(content.body ?? ""),
     [content.body]
   );
+  const htmlBody = useMemo(
+    () => markdownToHtml(content.body ?? ""),
+    [content.body]
+  );
+
+  // 리치 텍스트(HTML) 클립보드 복사
+  const copyRichText = useCallback(async () => {
+    try {
+      const htmlBlob = new Blob([htmlBody], { type: "text/html" });
+      const textBlob = new Blob([strippedBody], { type: "text/plain" });
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": htmlBlob,
+          "text/plain": textBlob,
+        }),
+      ]);
+      toast.success("서식 포함 복사 완료");
+    } catch {
+      await navigator.clipboard.writeText(strippedBody);
+      toast.success("텍스트 복사 완료 (서식 미지원 브라우저)");
+    }
+  }, [htmlBody, strippedBody]);
 
   // 포맷 가이드
   const formatGuide = useMemo(
@@ -233,13 +256,19 @@ export function PublishPrepClient({
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
                   <FileText className="h-4 w-4" />
-                  본문 (마크다운 제거됨)
+                  본문
                 </CardTitle>
-                <CopyButton
-                  text={strippedBody}
-                  label="본문 복사"
-                  toastMessage="본문이 복사되었습니다 (마크다운 제거)"
-                />
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={copyRichText}>
+                    서식 포함 복사
+                  </Button>
+                  <CopyButton
+                    text={strippedBody}
+                    label="텍스트만 복사"
+                    toastMessage="본문이 복사되었습니다 (텍스트만)"
+                    variant="ghost"
+                  />
+                </div>
               </div>
             </CardHeader>
             <CardContent>

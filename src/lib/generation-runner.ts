@@ -232,7 +232,7 @@ export async function runGeneration(
     let title = lines[0]?.replace(/^#+\s*/, "").trim() || gen.topic;
     if (title.length > 50) title = title.substring(0, 50);
 
-    // 태그 추출
+    // 태그 추출 (이미지 마커 내부 텍스트 제외)
     let tags: string[] | null = null;
     const tagsMatch = fullText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[\/TAGS\]/);
     if (tagsMatch) {
@@ -242,7 +242,8 @@ export async function runGeneration(
         .filter(Boolean)
         .slice(0, 10);
     } else {
-      const tagMatches = fullText.match(/#([^\s#]+)/g);
+      const textForTags = fullText.replace(/\[IMAGE:[\s\S]*?\]/g, "");
+      const tagMatches = textForTags.match(/#([^\s#]+)/g);
       tags = tagMatches ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10) : null;
     }
 
