@@ -20,6 +20,7 @@ interface FactCheckPanelProps {
   result?: FactCheckResult | null;
   error?: string | null;
   onSkip?: () => void;
+  onRetry?: () => void;
 }
 
 const SEVERITY_STYLE: Record<string, { color: string; label: string }> = {
@@ -40,7 +41,7 @@ const FACT_VERDICT_STYLE: Record<string, string> = {
   "오류": "var(--quality-critical)",
 };
 
-export function FactCheckPanel({ status, result, error, onSkip }: FactCheckPanelProps) {
+export function FactCheckPanel({ status, result, error, onSkip, onRetry }: FactCheckPanelProps) {
   const [issuesOpen, setIssuesOpen] = useState(true);
   const [factsOpen, setFactsOpen] = useState(false);
 
@@ -69,8 +70,13 @@ export function FactCheckPanel({ status, result, error, onSkip }: FactCheckPanel
   if (status === "error") {
     return (
       <Card>
-        <CardContent className="py-4">
+        <CardContent className="py-4 flex items-center justify-between">
           <p className="text-sm text-muted-foreground">팩트체크 실패: {error || "알 수 없는 오류"}</p>
+          {onRetry && (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              재시도
+            </Button>
+          )}
         </CardContent>
       </Card>
     );

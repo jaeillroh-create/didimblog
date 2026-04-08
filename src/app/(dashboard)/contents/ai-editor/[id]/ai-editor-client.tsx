@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/common/page-header";
 import { CopyButton } from "@/components/common/copy-button";
+import { toast } from "sonner";
 import { DraftQualityPanel } from "@/components/contents/draft-quality-panel";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { calcDraftScore, validateDraft } from "@/lib/draft-validator";
@@ -659,13 +660,25 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                     이미지 마커 ({imageMarkers.length}개)
                   </span>
                   <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const bodyWithoutMarkers = editText.replace(/\[IMAGE:[^\]]+\]/g, "").replace(/\n{3,}/g, "\n\n");
+                        const markerTexts = imageMarkers.map((m, i) => `[IMG ${i + 1}]\n${m.rawText}`).join("\n\n");
+                        const fullCopy = `---\n[블로그 글 전체 내용]\n${bodyWithoutMarkers}\n\n---\n\n위 블로그 글의 맥락에 맞게 아래 ${imageMarkers.length}개의 인포그래픽을 생성해주세요.\n각 인포그래픽은 블로그 본문의 해당 위치에 삽입될 이미지입니다.\n한국어로 작성하고, 세련된 비즈니스 스타일로 만들어주세요.\n\n${markerTexts}\n---`;
+                        navigator.clipboard.writeText(fullCopy).then(() => toast.success("본문 + 이미지 프롬프트가 복사되었습니다"));
+                      }}
+                    >
+                      전체 복사 (본문+이미지)
+                    </Button>
                     <a
                       href="https://www.genspark.ai"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border hover:bg-muted/50 transition-colors"
                     >
-                      Genspark.ai에서 이미지 생성
+                      Genspark.ai
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   {imageGenAvailable && (
@@ -739,6 +752,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             result={factCheckResult}
             error={factCheckError}
             onSkip={() => setFactCheckStatus("skipped")}
+            onRetry={() => startFactCheck(editTitle, editText, factCheckApiRef.current)}
           />
 
           {/* 교차검증 패널 */}
