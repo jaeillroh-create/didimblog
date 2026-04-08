@@ -8,7 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/common/page-header";
 import { CrossValidationPanel } from "@/components/contents/cross-validation-panel";
-import { getGenerationStatus } from "@/actions/ai";
+import {
+  getGenerationStatus,
+  getGenerationPrompt,
+  saveGenerationResult,
+  markGenerationFailed,
+} from "@/actions/ai";
+import { clientGenerateDraft } from "@/lib/client-generate";
 import { createContent } from "@/actions/contents";
 import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
 import { ImageGenPanel } from "@/components/contents/image-gen-panel";
@@ -141,95 +147,105 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [generatedImageUrls, setGeneratedImageUrls] = useState<Record<number, string>>({});
   const [bulkGenerating, setBulkGenerating] = useState(false);
 
-  // 생성 트리거: pending이면 /api/generate 스트리밍 호출 → 완료 후 데이터 조회
+  // 클라이언트 사이드 생성: pending이면 브라우저에서 직접 Anthropic API 호출
   const [executionTriggered, setExecutionTriggered] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
 
   useEffect(() => {
     let cancelled = false;
 
-    async function triggerAndWait() {
-      // pending 상태가 아니거나 이미 트리거했으면 스킵
+    async function clientSideGenerate() {
       if (status !== "pending" || executionTriggered) return;
 
       setExecutionTriggered(true);
       setStatus("generating");
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120_000);
+      const startTime = Date.now();
 
       try {
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ generationId: currentGenerationId }),
-          signal: controller.signal,
-        });
-
-        if (!res.ok || !res.body) {
-          setGenError(`서버 오류 (${res.status})`);
-          setStatus("failed");
-          return;
+        // 1. LLM 설정 조회 (짧은 요청)
+        const configRes = await fetch("/api/llm-config");
+        if (!configRes.ok) {
+          throw new Error("LLM 설정을 가져올 수 없습니다.");
         }
+        const { apiKey, model } = await configRes.json();
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let lastStatus = "generating";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done || cancelled) break;
-
-          const text = decoder.decode(value, { stream: true });
-          // SSE 파싱: "data: {...}\n\n"
-          for (const line of text.split("\n")) {
-            if (!line.startsWith("data: ")) continue;
-            try {
-              const parsed = JSON.parse(line.slice(6));
-              lastStatus = parsed.status;
-              if (parsed.status === "failed") {
-                setGenError(parsed.message || "AI 초안 생성에 실패했습니다.");
-              }
-            } catch {
-              // 파싱 실패 무시
-            }
-          }
+        // 2. 프롬프트 조립 (Server Action, 짧은 요청)
+        const promptResult = await getGenerationPrompt(currentGenerationId);
+        if (!promptResult.success || !promptResult.messages) {
+          throw new Error(promptResult.error || "프롬프트 조립 실패");
         }
 
         if (cancelled) return;
 
-        // 스트림 완료 후 최종 데이터 조회
-        if (lastStatus === "completed") {
-          const finalResult = await getGenerationStatus(currentGenerationId);
-          if (finalResult.success && finalResult.status === "completed") {
-            setGeneratedText(finalResult.generatedText || "");
-            setGeneratedTitle(finalResult.generatedTitle || "");
-            setGeneratedTags(finalResult.generatedTags || []);
-            setEditText(finalResult.generatedText || "");
-            setEditTitle(finalResult.generatedTitle || "");
-            setEditTags(finalResult.generatedTags || []);
-            setStatus("completed");
-          } else {
-            setStatus("completed");
-          }
-        } else if (lastStatus === "failed") {
-          setStatus("failed");
+        // 3. 브라우저에서 직접 Anthropic API 스트리밍 호출
+        const fullText = await clientGenerateDraft({
+          messages: promptResult.messages,
+          model,
+          apiKey,
+          onProgress: (text) => {
+            if (!cancelled) setStreamingText(text);
+          },
+        });
+
+        if (cancelled) return;
+
+        const generationTimeMs = Date.now() - startTime;
+
+        // 4. 결과 파싱
+        const lines = fullText.split("\n").filter((l) => l.trim());
+        let title = lines[0]?.replace(/^#+\s*/, "").trim() || "";
+        if (title.length > 50) title = title.substring(0, 50);
+
+        let tags: string[] = [];
+        const tagsMatch = fullText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[\/TAGS\]/);
+        if (tagsMatch) {
+          tags = tagsMatch[1].split(/[,\n]/).map((t) => t.replace(/^\d+\.\s*/, "").trim()).filter(Boolean).slice(0, 10);
+        } else {
+          const tagMatches = fullText.match(/#([^\s#]+)/g);
+          tags = tagMatches ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10) : [];
         }
+
+        const imageMarkerRegex = /\[IMAGE:\s*(.+?)\]/g;
+        const imageMarkers: { position: number; description: string }[] = [];
+        let match;
+        while ((match = imageMarkerRegex.exec(fullText)) !== null) {
+          imageMarkers.push({ position: match.index, description: match[1] });
+        }
+
+        // 5. DB에 결과 저장 (Server Action, 짧은 요청)
+        await saveGenerationResult(currentGenerationId, {
+          generatedText: fullText,
+          generatedTitle: title,
+          generatedTags: tags,
+          imageMarkers,
+          generationTimeMs,
+        });
+
+        if (cancelled) return;
+
+        // 6. UI 상태 업데이트
+        setGeneratedText(fullText);
+        setGeneratedTitle(title);
+        setGeneratedTags(tags);
+        setEditText(fullText);
+        setEditTitle(title);
+        setEditTags(tags);
+        setStatus("completed");
       } catch (err) {
-        if (!cancelled) {
-          const msg = err instanceof Error && err.name === "AbortError"
-            ? "생성 시간이 초과되었습니다. 다시 시도해주세요."
-            : "생성 중 오류가 발생했습니다.";
-          setGenError(msg);
-          setStatus("failed");
-        }
-      } finally {
-        clearTimeout(timeout);
+        if (cancelled) return;
+        const errorMessage = err instanceof Error ? err.message : "생성 중 오류가 발생했습니다.";
+        setGenError(errorMessage);
+        setStatus("failed");
+        await markGenerationFailed(currentGenerationId, errorMessage);
       }
     }
 
-    // generating 상태면 폴링으로 완료 대기 (페이지 새로고침 등으로 진입 시)
-    async function pollGenerating() {
+    // 이미 generating인 상태로 페이지 진입 시 (새로고침 등) → 폴링으로 대기
+    async function pollExisting() {
       if (status !== "generating" || !executionTriggered) return;
+      // 이미 클라이언트 생성이 진행 중이면 스킵 (streamingText가 있으면 진행 중)
+      if (streamingText) return;
 
       const pollStart = Date.now();
       const interval = setInterval(async () => {
@@ -241,10 +257,8 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           }
           return;
         }
-
         const result = await getGenerationStatus(currentGenerationId);
         if (cancelled) { clearInterval(interval); return; }
-
         if (result.status === "completed") {
           clearInterval(interval);
           setGeneratedText(result.generatedText || "");
@@ -260,12 +274,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           setStatus("failed");
         }
       }, 2000);
-
       return () => clearInterval(interval);
     }
 
-    triggerAndWait();
-    pollGenerating();
+    clientSideGenerate();
+    pollExisting();
 
     return () => { cancelled = true; };
   }, [status, currentGenerationId, executionTriggered]);
@@ -367,6 +380,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     setCurrentGenerationId(newGenId);
     setStatus("pending");
     setExecutionTriggered(false);
+    setStreamingText("");
     setShowValidation(false);
     setGenError(null);
   }
@@ -396,25 +410,45 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             </Button>
           }
         />
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <Loader2
-              className="h-12 w-12 animate-spin mb-4"
-              style={{ color: "var(--brand-accent)" }}
-            />
-            <p className="text-lg font-medium mb-2">
-              {status === "pending" ? "생성 준비 중..." : "초안 작성 중..."}
-            </p>
-            <p className="text-sm text-[var(--neutral-text-muted)]">
-              카테고리별 톤과 SEO를 고려하여 초안을 생성합니다
-            </p>
-            <div className="mt-6 flex gap-2">
-              <div className="h-2 w-2 rounded-full bg-[var(--brand-accent)] animate-bounce" style={{ animationDelay: "0ms" }} />
-              <div className="h-2 w-2 rounded-full bg-[var(--brand-accent)] animate-bounce" style={{ animationDelay: "150ms" }} />
-              <div className="h-2 w-2 rounded-full bg-[var(--brand-accent)] animate-bounce" style={{ animationDelay: "300ms" }} />
-            </div>
-          </CardContent>
-        </Card>
+        {streamingText ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Loader2
+                  className="h-4 w-4 animate-spin"
+                  style={{ color: "var(--brand-accent)" }}
+                />
+                <span className="text-sm font-medium">초안 작성 중... ({streamingText.replace(/\s/g, "").length.toLocaleString()}자)</span>
+              </div>
+              <div
+                className="w-full min-h-[300px] max-h-[500px] overflow-y-auto rounded-md border border-input bg-muted/30 px-4 py-3 text-sm leading-relaxed font-mono whitespace-pre-wrap"
+              >
+                {streamingText}
+                <span className="inline-block w-1.5 h-4 bg-[var(--brand-accent)] animate-pulse ml-0.5" />
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-16">
+              <Loader2
+                className="h-12 w-12 animate-spin mb-4"
+                style={{ color: "var(--brand-accent)" }}
+              />
+              <p className="text-lg font-medium mb-2">
+                {status === "pending" ? "생성 준비 중..." : "초안 작성 중..."}
+              </p>
+              <p className="text-sm text-[var(--neutral-text-muted)]">
+                카테고리별 톤과 SEO를 고려하여 초안을 생성합니다
+              </p>
+              <div className="mt-6 flex gap-2">
+                <div className="h-2 w-2 rounded-full bg-[var(--brand-accent)] animate-bounce" style={{ animationDelay: "0ms" }} />
+                <div className="h-2 w-2 rounded-full bg-[var(--brand-accent)] animate-bounce" style={{ animationDelay: "150ms" }} />
+                <div className="h-2 w-2 rounded-full bg-[var(--brand-accent)] animate-bounce" style={{ animationDelay: "300ms" }} />
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     );
   }

@@ -398,6 +398,141 @@ export async function executeGeneration(
 }
 
 /**
+ * 생성 레코드에서 프롬프트 메시지 조립하여 반환 (클라이언트 사이드 생성용)
+ */
+export async function getGenerationPrompt(
+  generationId: number
+): Promise<{
+  success: boolean;
+  messages?: { role: string; content: string }[];
+  error?: string;
+}> {
+  try {
+    const supabase = await createClient();
+
+    const { data: gen, error } = await supabase
+      .from("ai_generations")
+      .select("*")
+      .eq("id", generationId)
+      .single();
+
+    if (error || !gen) {
+      return { success: false, error: "생성 레코드를 찾을 수 없습니다." };
+    }
+
+    const effectiveCategoryId = gen.category_id || "";
+    const promptKey = getPromptKey(effectiveCategoryId);
+
+    const template = effectiveCategoryId
+      ? await getPromptTemplate(supabase, effectiveCategoryId, "draft_generation")
+      : null;
+
+    const fieldCta = promptKey === "PROMPT_FIELD"
+      ? getFieldCta(effectiveCategoryId)
+      : { cta: "", emailSubject: "" };
+
+    const templateVariables: Record<string, string> = {
+      topic: gen.topic,
+      keyword: gen.target_keyword || "",
+      target_audience: "",
+      additional_context: gen.additional_context || "",
+      subcategory: "",
+      cta_text: fieldCta.cta,
+      email_subject: fieldCta.emailSubject,
+    };
+
+    const messages: { role: string; content: string }[] = [];
+
+    if (template) {
+      messages.push({ role: "system", content: template.system_prompt });
+      messages.push({
+        role: "user",
+        content: replaceTemplateVariables(template.user_prompt_template, templateVariables),
+      });
+    } else {
+      messages.push({
+        role: "system",
+        content: replaceTemplateVariables(SYSTEM_PROMPTS[promptKey], templateVariables),
+      });
+      messages.push({
+        role: "user",
+        content: replaceTemplateVariables(USER_PROMPTS[promptKey], templateVariables),
+      });
+    }
+
+    return { success: true, messages };
+  } catch {
+    return { success: false, error: "프롬프트 조립 실패" };
+  }
+}
+
+/**
+ * 클라이언트에서 생성된 결과를 DB에 저장 + status 업데이트
+ */
+export async function saveGenerationResult(
+  generationId: number,
+  data: {
+    generatedText: string;
+    generatedTitle: string;
+    generatedTags: string[];
+    imageMarkers?: { position: number; description: string }[];
+    generationTimeMs: number;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    const estimatedTokens = Math.ceil(data.generatedText.length / 4);
+
+    await supabase
+      .from("ai_generations")
+      .update({
+        status: "completed",
+        generated_text: data.generatedText,
+        generated_title: data.generatedTitle,
+        generated_tags: data.generatedTags,
+        image_markers: data.imageMarkers && data.imageMarkers.length > 0 ? data.imageMarkers : null,
+        tokens_used: estimatedTokens,
+        generation_time_ms: data.generationTimeMs,
+      })
+      .eq("id", generationId);
+
+    // 토큰 사용량 업데이트 (활성 기본 LLM)
+    const llmConfig = await getActiveLLMConfig(supabase);
+    if (llmConfig) {
+      await supabase
+        .from("llm_configs")
+        .update({
+          monthly_tokens_used: llmConfig.monthly_tokens_used + estimatedTokens,
+        })
+        .eq("id", llmConfig.id);
+    }
+
+    return { success: true };
+  } catch {
+    return { success: false, error: "결과 저장 실패" };
+  }
+}
+
+/**
+ * 생성 상태를 failed로 업데이트
+ */
+export async function markGenerationFailed(
+  generationId: number,
+  errorMessage: string
+): Promise<void> {
+  try {
+    const supabase = await createClient();
+    await supabase
+      .from("ai_generations")
+      .update({ status: "failed", error_message: errorMessage })
+      .eq("id", generationId);
+  } catch {
+    // 실패 기록이 안 되어도 진행
+  }
+}
+
+/**
  * 생성 상태 조회
  */
 export async function getGenerationStatus(
