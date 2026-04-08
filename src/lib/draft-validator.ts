@@ -125,14 +125,24 @@ export function validateDraft(
     detail: `현재 ${dividerCount}개`,
   });
 
+  // ── 본문구조: 마크다운 표 금지 ──
+  const hasMarkdownTable = /\|.+\|.*\n\|[-:\s|]+\|/.test(body);
+  checks.push({
+    id: "no-markdown-table",
+    category: "본문구조",
+    rule: "마크다운 표 미사용 (인포그래픽으로 대체)",
+    passed: !hasMarkdownTable,
+    detail: hasMarkdownTable ? "마크다운 표 감지됨 — 인포그래픽으로 대체 필요" : "정상",
+  });
+
   // ── 이미지 ──
   const imageMarkers = body.match(/\[IMAGE:/g) || [];
   checks.push({
     id: "image-count",
     category: "이미지",
-    rule: "이미지 마커 4개",
-    passed: imageMarkers.length === 4,
-    detail: `현재 ${imageMarkers.length}개`,
+    rule: "이미지 마커 1~5개",
+    passed: imageMarkers.length >= 1 && imageMarkers.length <= 5,
+    detail: `현재 ${imageMarkers.length}개 (1~5개 권장)`,
   });
 
   checks.push({

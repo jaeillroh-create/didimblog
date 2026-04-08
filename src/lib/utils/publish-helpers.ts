@@ -36,7 +36,13 @@ export function markdownToHtml(text: string): string {
   html = html.replace(/^---+$/gm, '<hr style="border:none;border-top:2px solid #D4740A;margin:24px 0;">');
   html = html.replace(/^\*\*\*+$/gm, '<hr style="border:none;border-top:2px solid #D4740A;margin:24px 0;">');
 
-  // [IMAGE: ...] 마커 제거 (사용자가 직접 이미지 삽입)
+  // 이미지 삽입 위치 표시 (새 형식: ━━ 📷 이미지 N ━━ ... ━━━━━━)
+  html = html.replace(
+    /━━ 📷 이미지 (\d+) ━━[\s\S]*?━━━━━━━━━━━━━━/g,
+    '<div style="background:#FFF3E0;padding:12px;border-radius:8px;margin:20px 0;text-align:center;border:2px dashed #D4740A;"><strong>📷 이미지 $1 삽입 위치</strong></div>'
+  );
+
+  // [IMAGE: ...] 마커 폴백 제거
   html = html.replace(/\[IMAGE:[^\]]+\]/g, "");
 
   // 마크다운 테이블 → 텍스트 카드
