@@ -13,6 +13,7 @@ import {
   stripMarkdown,
   markdownToHtml,
   extractTablesAsTabSeparated,
+  formatTagsForNaver,
   generateFormatGuide,
   enforceEmail,
   generateImageGuide,
@@ -160,10 +161,10 @@ export function PublishPrepClient({
     [content.body]
   );
 
-  // 태그 텍스트 (콤마 구분)
+  // 태그 텍스트 (네이버 #태그 형식, 100자 이내)
   const tagsText = useMemo(() => {
     if (!content.tags || content.tags.length === 0) return "";
-    return content.tags.join(", ");
+    return formatTagsForNaver(content.tags);
   }, [content.tags]);
 
   // ALT 텍스트 (이미지 마커 기반)
@@ -373,17 +374,30 @@ export function PublishPrepClient({
               {content.tags && content.tags.length > 0 ? (
                 <>
                   <div className="flex flex-wrap gap-1.5 mb-2">
-                    {content.tags.map((tag, i) => (
-                      <span
-                        key={i}
-                        className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-50 text-blue-700"
-                      >
-                        {tag}
-                      </span>
-                    ))}
+                    {content.tags.map((tag, i) => {
+                      const cleaned = tag.replace(/\s/g, "").replace(/#/g, "");
+                      const preview = formatTagsForNaver(content.tags!.slice(0, i + 1));
+                      const isOverflow = preview.length > 100 && formatTagsForNaver(content.tags!.slice(0, i)).length <= 100;
+                      const isExcluded = formatTagsForNaver(content.tags!.slice(0, i)).length >= 100;
+                      return (
+                        <span
+                          key={i}
+                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            isExcluded ? "bg-gray-100 text-gray-400 line-through" :
+                            isOverflow ? "bg-red-50 text-red-400" :
+                            "bg-blue-50 text-blue-700"
+                          }`}
+                        >
+                          #{cleaned}
+                        </span>
+                      );
+                    })}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {content.tags.length}/10개
+                  <p className="text-xs text-muted-foreground mt-1 font-mono break-all">
+                    {tagsText}
+                  </p>
+                  <p className={`text-xs mt-1 ${tagsText.length > 100 ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                    {tagsText.length}/100자 · {content.tags.length}개
                   </p>
                 </>
               ) : (
