@@ -36,6 +36,8 @@ export const CATEGORY_STATUSES = {
 export const DIDIM_EMAIL = 'admin@didimip.com' as const;
 export const DIDIM_PHONE = '02-571-6613' as const;
 export const DIDIM_SIGNATURE = '특허그룹 디딤 | 기업을 아는 변리사' as const;
+export const DIDIM_PROFILE_NOH = 'KAIST 출신 | 前 NHN에듀 최고지식재산책임자(CIPO) | 기업기술가치평가사' as const;
+export const DIDIM_PROFILE_LEE = '경희대 겸임교수 | 서울대 AI 최고위과정 | 반도체·디스플레이 IP 전문' as const;
 
 // 카테고리 계층 구조 (1차 → 2차 매핑)
 export const CATEGORY_HIERARCHY: Record<string, string[]> = {
