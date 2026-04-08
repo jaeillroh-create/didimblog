@@ -15,8 +15,9 @@ export function markdownToHtml(text: string): string {
   html = html.replace(/^## (.+)$/gm, '<h2 style="font-size:20px;font-weight:bold;color:#1B3A5C;margin:24px 0 12px;">$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1 style="font-size:24px;font-weight:bold;color:#1B3A5C;margin:24px 0 12px;">$1</h1>');
 
-  // 볼드
-  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // 볼드: 숫자 포함 → 오렌지, 나머지 → 검정 볼드
+  html = html.replace(/\*\*([^*\n]*\d[^*\n]*)\*\*/g, '<strong style="color:#D4740A;font-weight:bold;">$1</strong>');
+  html = html.replace(/\*\*([^*\n]+)\*\*/g, '<strong style="font-weight:bold;">$1</strong>');
 
   // 인용
   html = html.replace(/^> (.+)$/gm, '<blockquote style="border-left:4px solid #D4740A;padding-left:16px;color:#555;margin:16px 0;">$1</blockquote>');
@@ -33,8 +34,8 @@ export function markdownToHtml(text: string): string {
   html = html.replace(/^[\s]*(\d+)\.\s+(.+)$/gm, '<li style="margin:4px 0;">$2</li>');
 
   // 줄바꿈 → 단락
-  html = html.replace(/\n\n/g, '</p><p style="margin:12px 0;line-height:1.8;">');
-  html = '<p style="margin:12px 0;line-height:1.8;">' + html + "</p>";
+  html = html.replace(/\n\n/g, '</p><p style="margin:12px 0;line-height:1.8;color:#333;">');
+  html = '<p style="margin:12px 0;line-height:1.8;color:#333;">' + html + "</p>";
 
   return html;
 }
