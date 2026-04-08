@@ -6,6 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PageHeader } from "@/components/common/page-header";
 import { CrossValidationPanel } from "@/components/contents/cross-validation-panel";
 import {
@@ -151,6 +158,18 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [executionTriggered, setExecutionTriggered] = useState(false);
   const [streamingText, setStreamingText] = useState("");
 
+  // LLM 모델 선택
+  interface LLMModelOption {
+    id: number;
+    displayName: string;
+    model: string;
+    provider: string;
+    apiKey: string;
+    isDefault: boolean;
+  }
+  const [availableModels, setAvailableModels] = useState<LLMModelOption[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string>("");
+
   console.log("[AI Editor] 마운트됨, generationId:", currentGenerationId, "status:", status);
 
   useEffect(() => {
@@ -172,8 +191,22 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         if (!configRes.ok) {
           throw new Error("LLM 설정을 가져올 수 없습니다.");
         }
-        const { apiKey, model } = await configRes.json();
-        console.log("[AI Editor] LLM config 응답:", apiKey ? "키 있음" : "키 없음", "모델:", model);
+        const configData = await configRes.json();
+        console.log("[AI Editor] LLM config 응답:", configData.apiKey ? "키 있음" : "키 없음", "모델:", configData.model);
+
+        // 모델 목록 저장
+        if (configData.models) {
+          setAvailableModels(configData.models);
+          if (!selectedModelId) {
+            const def = configData.models.find((m: LLMModelOption) => m.isDefault) ?? configData.models[0];
+            if (def) setSelectedModelId(String(def.id));
+          }
+        }
+
+        // 선택된 모델 또는 기본 모델 사용
+        const selected = configData.models?.find((m: LLMModelOption) => String(m.id) === selectedModelId);
+        const apiKey = selected?.apiKey ?? configData.apiKey;
+        const model = selected?.model ?? configData.model;
 
         // 2. 프롬프트 조립 (Server Action, 짧은 요청)
         console.log("[AI Editor] getGenerationPrompt 호출 시작, generationId:", currentGenerationId);
@@ -183,10 +216,19 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           throw new Error(promptResult.error || "프롬프트 조립 실패");
         }
 
-        if (cancelled) return;
+        if (cancelled) {
+          console.log("[AI Editor] cancelled=true, 생성 중단");
+          return;
+        }
 
         // 3. 브라우저에서 직접 Anthropic API 스트리밍 호출
-        console.log("[AI Editor] clientGenerateDraft 호출 직전, messages 길이:", promptResult.messages?.length);
+        console.log("[AI Editor] clientGenerateDraft 준비 중...");
+        console.log("[AI Editor] apiKey:", apiKey ? `${apiKey.slice(0, 8)}...` : "없음");
+        console.log("[AI Editor] model:", model);
+        console.log("[AI Editor] messages 길이:", promptResult.messages?.length);
+        console.log("[AI Editor] messages[0] role:", promptResult.messages?.[0]?.role, "내용 길이:", promptResult.messages?.[0]?.content?.length);
+
+        console.log("[AI Editor] clientGenerateDraft 호출 직전");
         const fullText = await clientGenerateDraft({
           messages: promptResult.messages,
           model,
@@ -200,6 +242,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             }
           },
         });
+        console.log("[AI Editor] clientGenerateDraft 완료, 길이:", fullText?.length);
 
         if (cancelled) return;
 
@@ -425,6 +468,24 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             </Button>
           }
         />
+        {/* 모델 선택 (생성 시작 전에만 변경 가능) */}
+        {availableModels.length > 1 && !streamingText && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">LLM 모델:</span>
+            <Select value={selectedModelId} onValueChange={setSelectedModelId}>
+              <SelectTrigger className="w-[280px] h-8 text-sm">
+                <SelectValue placeholder="모델 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableModels.map((m) => (
+                  <SelectItem key={m.id} value={String(m.id)}>
+                    {m.displayName}{m.isDefault ? " (기본)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         {streamingText ? (
           <Card>
             <CardContent className="pt-6">
