@@ -95,7 +95,7 @@ function parseJsonResponse(text: string): Record<string, unknown> | null {
 
 const VALID_PRIMARY_CATEGORIES = ["CAT-A", "CAT-B", "CAT-B-03", "CAT-C"];
 const VALID_SECONDARY_CATEGORIES = [
-  "CAT-A-01", "CAT-A-02", "CAT-A-03",
+  "CAT-A-01", "CAT-A-02", "CAT-A-03", "CAT-A-04",
   "CAT-B-01", "CAT-B-02", "CAT-B-03",
   "CAT-C-01", "CAT-C-02", "CAT-C-03",
 ];
