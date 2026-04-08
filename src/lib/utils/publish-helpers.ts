@@ -1,6 +1,45 @@
 import { DIDIM_EMAIL } from "@/lib/constants/categories";
 
 /**
+ * 마크다운 → HTML 변환 (네이버 에디터 리치 텍스트 붙여넣기용)
+ */
+export function markdownToHtml(text: string): string {
+  if (!text) return "";
+
+  let html = text;
+
+  // 코드 블록 제거
+  html = html.replace(/```[\s\S]*?```/g, "");
+
+  // 제목
+  html = html.replace(/^## (.+)$/gm, '<h2 style="font-size:20px;font-weight:bold;color:#1B3A5C;margin:24px 0 12px;">$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1 style="font-size:24px;font-weight:bold;color:#1B3A5C;margin:24px 0 12px;">$1</h1>');
+
+  // 볼드
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+  // 인용
+  html = html.replace(/^> (.+)$/gm, '<blockquote style="border-left:4px solid #D4740A;padding-left:16px;color:#555;margin:16px 0;">$1</blockquote>');
+
+  // 구분선
+  html = html.replace(/^---+$/gm, '<hr style="border:none;border-top:2px solid #D4740A;margin:24px 0;">');
+  html = html.replace(/^\*\*\*+$/gm, '<hr style="border:none;border-top:2px solid #D4740A;margin:24px 0;">');
+
+  // [IMAGE: ...] 마커
+  html = html.replace(/\[IMAGE:([^\]]+)\]/g, '<p style="background:#FFF3E0;padding:12px;border-radius:8px;color:#D4740A;text-align:center;">📷 이미지 삽입 위치:$1</p>');
+
+  // 리스트
+  html = html.replace(/^[\s]*[-*+]\s+(.+)$/gm, '<li style="margin:4px 0;">$1</li>');
+  html = html.replace(/^[\s]*(\d+)\.\s+(.+)$/gm, '<li style="margin:4px 0;">$2</li>');
+
+  // 줄바꿈 → 단락
+  html = html.replace(/\n\n/g, '</p><p style="margin:12px 0;line-height:1.8;">');
+  html = '<p style="margin:12px 0;line-height:1.8;">' + html + "</p>";
+
+  return html;
+}
+
+/**
  * 마크다운 → 네이버 블로그 일반 텍스트 변환
  * 네이버 에디터는 마크다운을 지원하지 않으므로 순수 텍스트로 변환
  */
