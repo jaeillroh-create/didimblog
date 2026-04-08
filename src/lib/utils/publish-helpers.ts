@@ -8,6 +8,16 @@ export function markdownToHtml(text: string): string {
 
   let html = text;
 
+  // 짝이 안 맞는 ** 전처리 (줄 단위)
+  html = html.split("\n").map((line) => {
+    const count = (line.match(/\*\*/g) || []).length;
+    if (count % 2 !== 0) {
+      const lastIdx = line.lastIndexOf("**");
+      return line.substring(0, lastIdx) + line.substring(lastIdx + 2);
+    }
+    return line;
+  }).join("\n");
+
   // 코드 블록 제거
   html = html.replace(/```[\s\S]*?```/g, "");
 
@@ -36,6 +46,13 @@ export function markdownToHtml(text: string): string {
   // 줄바꿈 → 단락
   html = html.replace(/\n\n/g, '</p><p style="margin:12px 0;line-height:1.8;color:#333;">');
   html = '<p style="margin:12px 0;line-height:1.8;color:#333;">' + html + "</p>";
+
+  // 닫히지 않은 <strong> 태그 정리
+  const openCount = (html.match(/<strong[^>]*>/g) || []).length;
+  const closeCount = (html.match(/<\/strong>/g) || []).length;
+  for (let i = 0; i < openCount - closeCount; i++) {
+    html += "</strong>";
+  }
 
   return html;
 }
