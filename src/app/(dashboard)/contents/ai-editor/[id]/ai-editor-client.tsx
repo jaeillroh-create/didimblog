@@ -154,9 +154,14 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [generatedImageUrls, setGeneratedImageUrls] = useState<Record<number, string>>({});
   const [bulkGenerating, setBulkGenerating] = useState(false);
 
-  // 클라이언트 사이드 생성 — useRef로 한 번만 트리거, useEffect cleanup에 의해 죽지 않음
+  // 클라이언트 사이드 생성 — useRef로 한 번만 트리거
   const generationTriggered = useRef(false);
+  const isMounted = useRef(true);
   const [streamingText, setStreamingText] = useState("");
+
+  useEffect(() => {
+    return () => { isMounted.current = false; };
+  }, []);
 
   // LLM 모델 선택
   interface LLMModelOption {
@@ -197,7 +202,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       console.log("[AI Editor] LLM config 응답:", configData.apiKey ? "키 있음" : "키 없음", "모델:", configData.model);
 
       // 모델 목록 저장
-      if (configData.models) {
+      if (configData.models && isMounted.current) {
         setAvailableModels(configData.models);
         if (!selectedModelId) {
           const def = configData.models.find((m: LLMModelOption) => m.isDefault) ?? configData.models[0];
@@ -229,7 +234,9 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         model,
         apiKey,
         onProgress: (text) => {
-          setStreamingText(text);
+          if (isMounted.current) {
+            setStreamingText(text);
+          }
           if (text.length % 500 < 20) {
             console.log("[AI Editor] 스트리밍 수신 중, 길이:", text.length);
           }
@@ -260,7 +267,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         imageMarkers.push({ position: match.index, description: match[1] });
       }
 
-      // 5. DB에 결과 저장
+      // 5. DB에 결과 저장 (언마운트되어도 저장은 완료)
       await saveGenerationResult(genId, {
         generatedText: fullText,
         generatedTitle: title,
@@ -269,20 +276,25 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         generationTimeMs,
       });
 
-      // 6. UI 상태 업데이트
-      setGeneratedText(fullText);
-      setGeneratedTitle(title);
-      setGeneratedTags(tags);
-      setEditText(fullText);
-      setEditTitle(title);
-      setEditTags(tags);
-      setStatus("completed");
+      // 6. UI 상태 업데이트 (마운트된 경우에만)
+      if (isMounted.current) {
+        setGeneratedText(fullText);
+        setGeneratedTitle(title);
+        setGeneratedTags(tags);
+        setEditText(fullText);
+        setEditTitle(title);
+        setEditTags(tags);
+        setStatus("completed");
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "생성 중 오류가 발생했습니다.";
       console.error("[AI Editor] 생성 에러:", err);
-      setGenError(errorMessage);
-      setStatus("failed");
+      // DB에 실패 기록 (언마운트되어도 실행)
       await markGenerationFailed(genId, errorMessage);
+      if (isMounted.current) {
+        setGenError(errorMessage);
+        setStatus("failed");
+      }
     }
   }
 
