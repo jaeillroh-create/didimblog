@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -154,8 +154,8 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [generatedImageUrls, setGeneratedImageUrls] = useState<Record<number, string>>({});
   const [bulkGenerating, setBulkGenerating] = useState(false);
 
-  // 클라이언트 사이드 생성: pending이면 브라우저에서 직접 Anthropic API 호출
-  const [executionTriggered, setExecutionTriggered] = useState(false);
+  // 클라이언트 사이드 생성 — useRef로 한 번만 트리거, useEffect cleanup에 의해 죽지 않음
+  const generationTriggered = useRef(false);
   const [streamingText, setStreamingText] = useState("");
 
   // LLM 모델 선택
@@ -172,174 +172,119 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
   console.log("[AI Editor] 마운트됨, generationId:", currentGenerationId, "status:", status);
 
+  // pending 감지 → 생성 시작 (한 번만)
   useEffect(() => {
-    let cancelled = false;
+    if (status === "pending" && !generationTriggered.current) {
+      generationTriggered.current = true;
+      startClientGeneration(currentGenerationId);
+    }
+  }, [status, currentGenerationId]);
 
-    async function clientSideGenerate() {
-      if (status !== "pending" || executionTriggered) return;
+  async function startClientGeneration(genId: number) {
+    console.log("[AI Editor] 클라이언트 생성 시작, genId:", genId);
+    setStatus("generating");
 
-      console.log("[AI Editor] pending 감지, 클라이언트 생성 시작");
-      setExecutionTriggered(true);
-      setStatus("generating");
+    const startTime = Date.now();
 
-      const startTime = Date.now();
-
-      try {
-        // 1. LLM 설정 조회 (짧은 요청)
-        console.log("[AI Editor] LLM config 조회 시작");
-        const configRes = await fetch("/api/llm-config");
-        if (!configRes.ok) {
-          throw new Error("LLM 설정을 가져올 수 없습니다.");
-        }
-        const configData = await configRes.json();
-        console.log("[AI Editor] LLM config 응답:", configData.apiKey ? "키 있음" : "키 없음", "모델:", configData.model);
-
-        // 모델 목록 저장
-        if (configData.models) {
-          setAvailableModels(configData.models);
-          if (!selectedModelId) {
-            const def = configData.models.find((m: LLMModelOption) => m.isDefault) ?? configData.models[0];
-            if (def) setSelectedModelId(String(def.id));
-          }
-        }
-
-        // 선택된 모델 또는 기본 모델 사용
-        const selected = configData.models?.find((m: LLMModelOption) => String(m.id) === selectedModelId);
-        const apiKey = selected?.apiKey ?? configData.apiKey;
-        const model = selected?.model ?? configData.model;
-
-        // 2. 프롬프트 조립 (Server Action, 짧은 요청)
-        console.log("[AI Editor] getGenerationPrompt 호출 시작, generationId:", currentGenerationId);
-        const promptResult = await getGenerationPrompt(currentGenerationId);
-        console.log("[AI Editor] getGenerationPrompt 응답:", promptResult.success ? "성공" : "실패", promptResult);
-        if (!promptResult.success || !promptResult.messages) {
-          throw new Error(promptResult.error || "프롬프트 조립 실패");
-        }
-
-        if (cancelled) {
-          console.log("[AI Editor] cancelled=true, 생성 중단");
-          return;
-        }
-
-        // 3. 브라우저에서 직접 Anthropic API 스트리밍 호출
-        console.log("[AI Editor] clientGenerateDraft 준비 중...");
-        console.log("[AI Editor] apiKey:", apiKey ? `${apiKey.slice(0, 8)}...` : "없음");
-        console.log("[AI Editor] model:", model);
-        console.log("[AI Editor] messages 길이:", promptResult.messages?.length);
-        console.log("[AI Editor] messages[0] role:", promptResult.messages?.[0]?.role, "내용 길이:", promptResult.messages?.[0]?.content?.length);
-
-        console.log("[AI Editor] clientGenerateDraft 호출 직전");
-        const fullText = await clientGenerateDraft({
-          messages: promptResult.messages,
-          model,
-          apiKey,
-          onProgress: (text) => {
-            if (!cancelled) {
-              setStreamingText(text);
-              if (text.length % 500 < 20) {
-                console.log("[AI Editor] 스트리밍 수신 중, 길이:", text.length);
-              }
-            }
-          },
-        });
-        console.log("[AI Editor] clientGenerateDraft 완료, 길이:", fullText?.length);
-
-        if (cancelled) return;
-
-        const generationTimeMs = Date.now() - startTime;
-
-        // 4. 결과 파싱
-        const lines = fullText.split("\n").filter((l) => l.trim());
-        let title = lines[0]?.replace(/^#+\s*/, "").trim() || "";
-        if (title.length > 50) title = title.substring(0, 50);
-
-        let tags: string[] = [];
-        const tagsMatch = fullText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[\/TAGS\]/);
-        if (tagsMatch) {
-          tags = tagsMatch[1].split(/[,\n]/).map((t) => t.replace(/^\d+\.\s*/, "").trim()).filter(Boolean).slice(0, 10);
-        } else {
-          const tagMatches = fullText.match(/#([^\s#]+)/g);
-          tags = tagMatches ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10) : [];
-        }
-
-        const imageMarkerRegex = /\[IMAGE:\s*(.+?)\]/g;
-        const imageMarkers: { position: number; description: string }[] = [];
-        let match;
-        while ((match = imageMarkerRegex.exec(fullText)) !== null) {
-          imageMarkers.push({ position: match.index, description: match[1] });
-        }
-
-        // 5. DB에 결과 저장 (Server Action, 짧은 요청)
-        await saveGenerationResult(currentGenerationId, {
-          generatedText: fullText,
-          generatedTitle: title,
-          generatedTags: tags,
-          imageMarkers,
-          generationTimeMs,
-        });
-
-        if (cancelled) return;
-
-        // 6. UI 상태 업데이트
-        setGeneratedText(fullText);
-        setGeneratedTitle(title);
-        setGeneratedTags(tags);
-        setEditText(fullText);
-        setEditTitle(title);
-        setEditTags(tags);
-        setStatus("completed");
-      } catch (err) {
-        if (cancelled) return;
-        const errorMessage = err instanceof Error ? err.message : "생성 중 오류가 발생했습니다.";
-        console.error("[AI Editor] 생성 에러:", err);
-        setGenError(errorMessage);
-        setStatus("failed");
-        await markGenerationFailed(currentGenerationId, errorMessage);
+    try {
+      // 1. LLM 설정 조회
+      console.log("[AI Editor] LLM config 조회 시작");
+      const configRes = await fetch("/api/llm-config");
+      if (!configRes.ok) {
+        throw new Error("LLM 설정을 가져올 수 없습니다.");
       }
-    }
+      const configData = await configRes.json();
+      console.log("[AI Editor] LLM config 응답:", configData.apiKey ? "키 있음" : "키 없음", "모델:", configData.model);
 
-    // 이미 generating인 상태로 페이지 진입 시 (새로고침 등) → 폴링으로 대기
-    async function pollExisting() {
-      if (status !== "generating" || !executionTriggered) return;
-      // 이미 클라이언트 생성이 진행 중이면 스킵 (streamingText가 있으면 진행 중)
-      if (streamingText) return;
+      // 모델 목록 저장
+      if (configData.models) {
+        setAvailableModels(configData.models);
+        if (!selectedModelId) {
+          const def = configData.models.find((m: LLMModelOption) => m.isDefault) ?? configData.models[0];
+          if (def) setSelectedModelId(String(def.id));
+        }
+      }
 
-      const pollStart = Date.now();
-      const interval = setInterval(async () => {
-        if (cancelled || Date.now() - pollStart > 120_000) {
-          clearInterval(interval);
-          if (!cancelled) {
-            console.log("[AI Editor] 타임아웃 발생");
-            setGenError("생성 시간이 초과되었습니다.");
-            setStatus("failed");
+      // 선택된 모델 또는 기본 모델 사용
+      const selected = configData.models?.find((m: LLMModelOption) => String(m.id) === selectedModelId);
+      const apiKey = selected?.apiKey ?? configData.apiKey;
+      const model = selected?.model ?? configData.model;
+
+      // 2. 프롬프트 조립
+      console.log("[AI Editor] getGenerationPrompt 호출 시작, generationId:", genId);
+      const promptResult = await getGenerationPrompt(genId);
+      console.log("[AI Editor] getGenerationPrompt 응답:", promptResult.success ? "성공" : "실패");
+      if (!promptResult.success || !promptResult.messages) {
+        throw new Error(promptResult.error || "프롬프트 조립 실패");
+      }
+
+      // 3. Anthropic API 직접 호출
+      console.log("[AI Editor] clientGenerateDraft 호출 직전");
+      console.log("[AI Editor] apiKey:", apiKey ? `${apiKey.slice(0, 8)}...` : "없음");
+      console.log("[AI Editor] model:", model);
+      console.log("[AI Editor] messages 길이:", promptResult.messages?.length);
+
+      const fullText = await clientGenerateDraft({
+        messages: promptResult.messages,
+        model,
+        apiKey,
+        onProgress: (text) => {
+          setStreamingText(text);
+          if (text.length % 500 < 20) {
+            console.log("[AI Editor] 스트리밍 수신 중, 길이:", text.length);
           }
-          return;
-        }
-        const result = await getGenerationStatus(currentGenerationId);
-        if (cancelled) { clearInterval(interval); return; }
-        if (result.status === "completed") {
-          clearInterval(interval);
-          setGeneratedText(result.generatedText || "");
-          setGeneratedTitle(result.generatedTitle || "");
-          setGeneratedTags(result.generatedTags || []);
-          setEditText(result.generatedText || "");
-          setEditTitle(result.generatedTitle || "");
-          setEditTags(result.generatedTags || []);
-          setStatus("completed");
-        } else if (result.status === "failed") {
-          clearInterval(interval);
-          setGenError(result.error || "AI 초안 생성에 실패했습니다.");
-          setStatus("failed");
-        }
-      }, 2000);
-      return () => clearInterval(interval);
+        },
+      });
+      console.log("[AI Editor] clientGenerateDraft 완료, 길이:", fullText?.length);
+
+      const generationTimeMs = Date.now() - startTime;
+
+      // 4. 결과 파싱
+      const lines = fullText.split("\n").filter((l) => l.trim());
+      let title = lines[0]?.replace(/^#+\s*/, "").trim() || "";
+      if (title.length > 50) title = title.substring(0, 50);
+
+      let tags: string[] = [];
+      const tagsMatch = fullText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[\/TAGS\]/);
+      if (tagsMatch) {
+        tags = tagsMatch[1].split(/[,\n]/).map((t) => t.replace(/^\d+\.\s*/, "").trim()).filter(Boolean).slice(0, 10);
+      } else {
+        const tagMatches = fullText.match(/#([^\s#]+)/g);
+        tags = tagMatches ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10) : [];
+      }
+
+      const imageMarkerRegex = /\[IMAGE:\s*(.+?)\]/g;
+      const imageMarkers: { position: number; description: string }[] = [];
+      let match;
+      while ((match = imageMarkerRegex.exec(fullText)) !== null) {
+        imageMarkers.push({ position: match.index, description: match[1] });
+      }
+
+      // 5. DB에 결과 저장
+      await saveGenerationResult(genId, {
+        generatedText: fullText,
+        generatedTitle: title,
+        generatedTags: tags,
+        imageMarkers,
+        generationTimeMs,
+      });
+
+      // 6. UI 상태 업데이트
+      setGeneratedText(fullText);
+      setGeneratedTitle(title);
+      setGeneratedTags(tags);
+      setEditText(fullText);
+      setEditTitle(title);
+      setEditTags(tags);
+      setStatus("completed");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "생성 중 오류가 발생했습니다.";
+      console.error("[AI Editor] 생성 에러:", err);
+      setGenError(errorMessage);
+      setStatus("failed");
+      await markGenerationFailed(genId, errorMessage);
     }
-
-    clientSideGenerate();
-    pollExisting();
-
-    return () => { cancelled = true; };
-  }, [status, currentGenerationId, executionTriggered]);
+  }
 
   // 이미지 생성 가능 여부 + 기존 이미지 로드
   useEffect(() => {
@@ -437,7 +382,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   function handleRegenerate(newGenId: number) {
     setCurrentGenerationId(newGenId);
     setStatus("pending");
-    setExecutionTriggered(false);
+    generationTriggered.current = false;
     setStreamingText("");
     setShowValidation(false);
     setGenError(null);
