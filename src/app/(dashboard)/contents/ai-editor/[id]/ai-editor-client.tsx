@@ -40,6 +40,7 @@ import {
   AlertTriangle,
   Loader2,
   Image as ImageIcon,
+  ExternalLink,
   X,
 } from "lucide-react";
 
@@ -257,7 +258,8 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       if (tagsMatch) {
         tags = tagsMatch[1].split(/[,\n]/).map((t) => t.replace(/^\d+\.\s*/, "").trim()).filter(Boolean).slice(0, 10);
       } else {
-        const tagMatches = fullText.match(/#([^\s#]+)/g);
+        const textForTags = fullText.replace(/\[IMAGE:[\s\S]*?\]/g, "");
+        const tagMatches = textForTags.match(/#([^\s#]+)/g);
         tags = tagMatches ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10) : [];
       }
 
@@ -594,6 +596,16 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                     <ImageIcon className="h-4 w-4" />
                     이미지 마커 ({imageMarkers.length}개)
                   </span>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href="https://www.genspark.ai"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border hover:bg-muted/50 transition-colors"
+                    >
+                      Genspark.ai에서 이미지 생성
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
                   {imageGenAvailable && (
                     <Button
                       size="sm"
@@ -614,6 +626,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                       )}
                     </Button>
                   )}
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
