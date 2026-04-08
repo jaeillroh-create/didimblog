@@ -106,6 +106,49 @@ export interface FactCheckResult {
   fact_check_items: FactCheckItem[];
 }
 
+function parseFactCheckJson(text: string): object | null {
+  let cleaned = text.trim();
+
+  // 1. ```json ... ``` 블록 추출
+  if (cleaned.includes("```")) {
+    const match = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (match) cleaned = match[1].trim();
+  }
+
+  // 2. JSON 객체 부분만 추출
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch {
+      // 3. 잘린 JSON 복구 시도
+      let partial = jsonMatch[0];
+      const lastComplete = Math.max(partial.lastIndexOf("}"), partial.lastIndexOf("]"));
+      if (lastComplete > 0) {
+        partial = partial.substring(0, lastComplete + 1);
+      }
+      const openBraces = (partial.match(/\{/g) || []).length;
+      const closeBraces = (partial.match(/\}/g) || []).length;
+      const openBrackets = (partial.match(/\[/g) || []).length;
+      const closeBrackets = (partial.match(/\]/g) || []).length;
+      for (let i = 0; i < openBrackets - closeBrackets; i++) partial += "]";
+      for (let i = 0; i < openBraces - closeBraces; i++) partial += "}";
+      try {
+        return JSON.parse(partial);
+      } catch {
+        // 복구 실패
+      }
+    }
+  }
+
+  // 전체를 시도
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+}
+
 export async function clientFactCheck(params: {
   title: string;
   body: string;
@@ -119,7 +162,7 @@ export async function clientFactCheck(params: {
 
     const body: Record<string, unknown> = {
       model: params.model,
-      max_tokens: 2048,
+      max_tokens: 4096,
       temperature: 0.3,
       stream: true,
       messages: [{ role: "user", content: userMessage }],
@@ -173,14 +216,13 @@ export async function clientFactCheck(params: {
       }
     }
 
-    // JSON 파싱
-    const jsonMatch = fullText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return { success: false, error: "검증 결과를 파싱할 수 없습니다." };
+    // JSON 파싱 (3단계 + 잘린 JSON 복구)
+    const parsed = parseFactCheckJson(fullText);
+    if (!parsed) {
+      return { success: false, error: "팩트체크 결과를 파싱할 수 없습니다. 수동으로 검토해주세요." };
     }
 
-    const result = JSON.parse(jsonMatch[0]) as FactCheckResult;
-    return { success: true, result };
+    return { success: true, result: parsed as FactCheckResult };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "팩트체크 실패" };
   }

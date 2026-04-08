@@ -566,6 +566,21 @@ function decodeHtmlEntities(text: string): string {
     .replace(/<\/?b>/g, "");
 }
 
+/** 칼럼/인터뷰/광고 등 비뉴스 콘텐츠 제외 */
+const EXCLUDE_PATTERNS = [
+  "[칼럼]", "[기고]", "[시론]", "[사설]", "[논단]", "[기자수첩]",
+  "[특별기고]", "[전문가칼럼]", "[CEO칼럼]", "[변호사칼럼]",
+  "[인터뷰]", "[Who Is", "[피플]", "[人사이드]", "[만나보니]",
+  "Q&A", "인터뷰", "를 만나다", "에게 듣다", "에게 묻다",
+  "[광고]", "[후원]", "[브랜디드]", "[스폰서]", "[협찬]",
+  "[독자투고]", "[서평]", "[리뷰]", "[체험기]",
+];
+
+function isExcludedContent(title: string): boolean {
+  const t = title.toLowerCase();
+  return EXCLUDE_PATTERNS.some((p) => t.includes(p.toLowerCase()));
+}
+
 /** 키워드 기반 폴백 관련성 필터 (AI 호출 실패 시 사용) */
 function isRelevantNewsFallback(title: string, description: string, searchKeyword: string): boolean {
   const text = (title + " " + (description || "")).replace(/<\/?b>/g, "");
@@ -678,9 +693,13 @@ export async function collectNews(): Promise<{ success: boolean; count: number; 
           const pubDate = new Date(a.pubDate);
           if (pubDate < sevenDaysAgo) continue;
         }
-        // 디코딩 후 후보에 추가
+        // 디코딩 후 칼럼/인터뷰 제외
+        const decodedTitle = decodeHtmlEntities(a.title);
+        if (isExcludedContent(decodedTitle)) continue;
+
+        // 후보에 추가
         candidates.push({
-          title: decodeHtmlEntities(a.title),
+          title: decodedTitle,
           description: decodeHtmlEntities(a.description ?? ""),
           link: a.link,
           keyword,
