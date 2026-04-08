@@ -39,6 +39,22 @@ export function markdownToHtml(text: string): string {
   // [IMAGE: ...] 마커 제거 (사용자가 직접 이미지 삽입)
   html = html.replace(/\[IMAGE:[^\]]+\]/g, "");
 
+  // 마크다운 테이블 → 텍스트 카드
+  html = html.replace(
+    /(?:^|\n)(\|.+\|)\n\|[-| :]+\|\n((?:\|.+\|\n?)+)/g,
+    (_match, headerLine: string, bodyLines: string) => {
+      const headers = headerLine.split("|").map((h: string) => h.trim()).filter(Boolean);
+      const rows = bodyLines.trim().split("\n").map((row: string) =>
+        row.split("|").map((c: string) => c.trim()).filter(Boolean)
+      );
+      const cards = rows.map((cells: string[]) => {
+        const parts = cells.map((cell, i) => `${headers[i] || ""}: ${cell}`).filter((p) => !p.startsWith(": "));
+        return `<p style="margin:6px 0;">▸ ${parts.join(" — ")}</p>`;
+      }).join("\n");
+      return `\n<div style="background:#F8F9FA;padding:16px 20px;border-radius:8px;margin:20px 0;">\n${cards}\n</div>\n`;
+    }
+  );
+
   // 리스트
   html = html.replace(/^[\s]*[-*+]\s+(.+)$/gm, '<li style="margin:4px 0;">$1</li>');
   html = html.replace(/^[\s]*(\d+)\.\s+(.+)$/gm, '<li style="margin:4px 0;">$2</li>');
@@ -55,6 +71,36 @@ export function markdownToHtml(text: string): string {
   }
 
   return html;
+}
+
+/**
+ * 마크다운에서 테이블을 추출하여 탭 구분 텍스트로 변환
+ * 네이버 에디터 표에 붙여넣기 가능한 형태
+ */
+export function extractTablesAsTabSeparated(markdown: string): string[] {
+  if (!markdown) return [];
+
+  const tables: string[] = [];
+  const tableRegex = /(?:^|\n)(\|.+\|)\n\|[-| :]+\|\n((?:\|.+\|\n?)+)/g;
+  let match;
+
+  while ((match = tableRegex.exec(markdown)) !== null) {
+    const headerLine = match[1];
+    const bodyLines = match[2].trim();
+
+    const headers = headerLine.split("|").map((h) => h.trim()).filter(Boolean);
+    const rows = bodyLines.split("\n").map((row) =>
+      row.split("|").map((c) => c.trim()).filter(Boolean)
+    );
+
+    const tsvLines = [headers.join("\t")];
+    for (const row of rows) {
+      tsvLines.push(row.join("\t"));
+    }
+    tables.push(tsvLines.join("\n"));
+  }
+
+  return tables;
 }
 
 /**

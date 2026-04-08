@@ -12,6 +12,7 @@ import { CopyButton } from "@/components/common/copy-button";
 import {
   stripMarkdown,
   markdownToHtml,
+  extractTablesAsTabSeparated,
   generateFormatGuide,
   enforceEmail,
   generateImageGuide,
@@ -140,6 +141,12 @@ export function PublishPrepClient({
       toast.success("텍스트 복사 완료 (서식 미지원 브라우저)");
     }
   }, [htmlBody, strippedBody]);
+
+  // 표 데이터 (탭 구분)
+  const tableTsvs = useMemo(
+    () => extractTablesAsTabSeparated(content.body ?? ""),
+    [content.body]
+  );
 
   // 포맷 가이드
   const formatGuide = useMemo(
@@ -278,6 +285,19 @@ export function PublishPrepClient({
               <p className="text-xs text-muted-foreground mt-2">
                 {strippedBody.length.toLocaleString()}자
               </p>
+              {tableTsvs.length > 0 && (
+                <div className="mt-3 pt-3 border-t">
+                  <CopyButton
+                    text={tableTsvs.join("\n\n")}
+                    label={`표 데이터 복사 (${tableTsvs.length}개)`}
+                    toastMessage="표 데이터가 복사되었습니다. 네이버 에디터에서 표 삽입 후 붙여넣기하세요."
+                    variant="outline"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    네이버 에디터에서 표 삽입 후 붙여넣기하세요
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
