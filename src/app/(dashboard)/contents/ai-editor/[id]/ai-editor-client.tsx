@@ -21,9 +21,9 @@ import {
   getGenerationPrompt,
   saveGenerationResult,
   markGenerationFailed,
+  saveAiDraftToContent,
 } from "@/actions/ai";
 import { clientGenerateDraft } from "@/lib/client-generate";
-import { createContent } from "@/actions/contents";
 import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
 import { ImageGenPanel } from "@/components/contents/image-gen-panel";
 import type { GenerationStatus, ImageMarker } from "@/lib/types/database";
@@ -376,17 +376,18 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     "<<IMAGE_MARKER>>$1<<END_MARKER>>"
   );
 
-  // 저장 (S1로 전이, 콘텐츠 생성)
+  // 저장 (S1로 전이, 콘텐츠 생성/업데이트)
   function handleSave() {
     startTransition(async () => {
-      const { error } = await createContent({
+      const result = await saveAiDraftToContent(currentGenerationId, {
         title: editTitle,
-        category_id: "CAT-A", // TODO: 생성 시 카테고리 정보 연동
-        target_keyword: keyword || undefined,
+        body: editText,
+        tags: editTags,
+        keyword: keyword || undefined,
       });
 
-      if (error) {
-        setGenError(error);
+      if (!result.success) {
+        setGenError(result.error || "저장에 실패했습니다.");
         return;
       }
 
