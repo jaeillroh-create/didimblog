@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/common/page-header";
+import { CopyButton } from "@/components/common/copy-button";
 import { CrossValidationPanel } from "@/components/contents/cross-validation-panel";
 import {
   getGenerationStatus,
@@ -640,7 +641,15 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                         >
                           IMG {i + 1}
                         </Badge>
-                        <span>{marker.description}</span>
+                        <span className="flex-1">{marker.description}</span>
+                        <CopyButton
+                          text={marker.rawText}
+                          label="복사"
+                          toastMessage="이미지 프롬프트가 복사되었습니다"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs shrink-0"
+                        />
                       </div>
                     )
                   )}
