@@ -34,7 +34,7 @@ export const CATEGORY_STATUSES = {
 // ── 디딤 공통 상수 ──
 
 export const DIDIM_EMAIL = 'admin@didimip.com' as const;
-export const DIDIM_PHONE = '000-0000-0000' as const;
+export const DIDIM_PHONE = '02-571-6613' as const;
 export const DIDIM_SIGNATURE = '특허그룹 디딤 | 기업을 아는 변리사' as const;
 
 // 카테고리 계층 구조 (1차 → 2차 매핑)
