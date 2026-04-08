@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/common/page-header";
 import { CrossValidationPanel } from "@/components/contents/cross-validation-panel";
-import { getGenerationStatus, executeGeneration } from "@/actions/ai";
+import { getGenerationStatus } from "@/actions/ai";
 import { createContent } from "@/actions/contents";
 import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
 import { ImageGenPanel } from "@/components/contents/image-gen-panel";
@@ -141,69 +141,134 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [generatedImageUrls, setGeneratedImageUrls] = useState<Record<number, string>>({});
   const [bulkGenerating, setBulkGenerating] = useState(false);
 
-  // 폴링으로 생성 상태 확인 + pending이면 executeGeneration 트리거
+  // 생성 트리거: pending이면 /api/generate 스트리밍 호출 → 완료 후 데이터 조회
   const [executionTriggered, setExecutionTriggered] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    const pollStart = Date.now();
-    const TIMEOUT_MS = 120_000; // 120초 타임아웃
 
-    async function poll() {
-      // 타임아웃 체크
-      if (Date.now() - pollStart > TIMEOUT_MS) {
-        setGenError("생성 시간이 초과되었습니다. 다시 시도해주세요.");
-        setStatus("failed");
-        return;
-      }
+    async function triggerAndWait() {
+      // pending 상태가 아니거나 이미 트리거했으면 스킵
+      if (status !== "pending" || executionTriggered) return;
 
-      const result = await getGenerationStatus(currentGenerationId);
-      if (cancelled) return;
+      setExecutionTriggered(true);
+      setStatus("generating");
 
-      if (!result.success) {
-        setGenError(result.error || "상태 조회 실패");
-        return;
-      }
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120_000);
 
-      // pending 상태이고 아직 실행 트리거 안 했으면 executeGeneration 호출
-      if (result.status === "pending" && !executionTriggered) {
-        setExecutionTriggered(true);
-        startTransition(() => {
-          executeGeneration(currentGenerationId);
+      try {
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ generationId: currentGenerationId }),
+          signal: controller.signal,
         });
-      }
 
-      setStatus(result.status!);
+        if (!res.ok || !res.body) {
+          setGenError(`서버 오류 (${res.status})`);
+          setStatus("failed");
+          return;
+        }
 
-      if (result.status === "completed") {
-        const text = result.generatedText || "";
-        const title = result.generatedTitle || "";
-        const tags = result.generatedTags || [];
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let lastStatus = "generating";
 
-        setGeneratedText(text);
-        setGeneratedTitle(title);
-        setGeneratedTags(tags);
-        setEditText(text);
-        setEditTitle(title);
-        setEditTags(tags);
-      } else if (result.status === "failed") {
-        setGenError(result.error || "AI 초안 생성에 실패했습니다.");
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done || cancelled) break;
+
+          const text = decoder.decode(value, { stream: true });
+          // SSE 파싱: "data: {...}\n\n"
+          for (const line of text.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const parsed = JSON.parse(line.slice(6));
+              lastStatus = parsed.status;
+              if (parsed.status === "failed") {
+                setGenError(parsed.message || "AI 초안 생성에 실패했습니다.");
+              }
+            } catch {
+              // 파싱 실패 무시
+            }
+          }
+        }
+
+        if (cancelled) return;
+
+        // 스트림 완료 후 최종 데이터 조회
+        if (lastStatus === "completed") {
+          const finalResult = await getGenerationStatus(currentGenerationId);
+          if (finalResult.success && finalResult.status === "completed") {
+            setGeneratedText(finalResult.generatedText || "");
+            setGeneratedTitle(finalResult.generatedTitle || "");
+            setGeneratedTags(finalResult.generatedTags || []);
+            setEditText(finalResult.generatedText || "");
+            setEditTitle(finalResult.generatedTitle || "");
+            setEditTags(finalResult.generatedTags || []);
+            setStatus("completed");
+          } else {
+            setStatus("completed");
+          }
+        } else if (lastStatus === "failed") {
+          setStatus("failed");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const msg = err instanceof Error && err.name === "AbortError"
+            ? "생성 시간이 초과되었습니다. 다시 시도해주세요."
+            : "생성 중 오류가 발생했습니다.";
+          setGenError(msg);
+          setStatus("failed");
+        }
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
-    poll();
+    // generating 상태면 폴링으로 완료 대기 (페이지 새로고침 등으로 진입 시)
+    async function pollGenerating() {
+      if (status !== "generating" || !executionTriggered) return;
 
-    // pending/generating 상태면 폴링 계속
-    if (status === "pending" || status === "generating") {
-      const interval = setInterval(poll, 2000);
-      return () => {
-        cancelled = true;
-        clearInterval(interval);
-      };
+      const pollStart = Date.now();
+      const interval = setInterval(async () => {
+        if (cancelled || Date.now() - pollStart > 120_000) {
+          clearInterval(interval);
+          if (!cancelled) {
+            setGenError("생성 시간이 초과되었습니다.");
+            setStatus("failed");
+          }
+          return;
+        }
+
+        const result = await getGenerationStatus(currentGenerationId);
+        if (cancelled) { clearInterval(interval); return; }
+
+        if (result.status === "completed") {
+          clearInterval(interval);
+          setGeneratedText(result.generatedText || "");
+          setGeneratedTitle(result.generatedTitle || "");
+          setGeneratedTags(result.generatedTags || []);
+          setEditText(result.generatedText || "");
+          setEditTitle(result.generatedTitle || "");
+          setEditTags(result.generatedTags || []);
+          setStatus("completed");
+        } else if (result.status === "failed") {
+          clearInterval(interval);
+          setGenError(result.error || "AI 초안 생성에 실패했습니다.");
+          setStatus("failed");
+        }
+      }, 2000);
+
+      return () => clearInterval(interval);
     }
+
+    triggerAndWait();
+    pollGenerating();
 
     return () => { cancelled = true; };
-  }, [status, currentGenerationId, executionTriggered, startTransition]);
+  }, [status, currentGenerationId, executionTriggered]);
 
   // 이미지 생성 가능 여부 + 기존 이미지 로드
   useEffect(() => {
