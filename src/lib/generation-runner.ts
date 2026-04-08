@@ -13,7 +13,6 @@ import {
   SYSTEM_PROMPTS,
   USER_PROMPTS,
 } from "@/lib/constants/prompts";
-import { getExistingContentContext, getCompetitorContext } from "@/actions/ai";
 
 // ── 헬퍼 (ai.ts의 private 함수 복제) ──
 
@@ -175,25 +174,8 @@ export async function runGeneration(
       ? await getPromptTemplate(supabase, effectiveCategoryId, "draft_generation")
       : null;
 
-    // 컨텍스트 수집 (3초 타임아웃)
-    let enrichedContext = gen.additional_context || "";
-    try {
-      function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-        return Promise.race([
-          promise,
-          new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
-        ]);
-      }
-
-      const [existingCtx, competitorCtx] = await Promise.all([
-        withTimeout(getExistingContentContext(effectiveCategoryId, gen.target_keyword || ""), 3000, ""),
-        withTimeout(getCompetitorContext(gen.target_keyword || ""), 3000, ""),
-      ]);
-      const parts = [enrichedContext, existingCtx, competitorCtx].filter(Boolean);
-      enrichedContext = parts.join("\n\n");
-    } catch (e) {
-      console.error("[runGeneration] 컨텍스트 수집 실패:", e);
-    }
+    // 컨텍스트: 사용자 입력만 사용 (외부 API 호출 제거로 시간 단축)
+    const enrichedContext = gen.additional_context || "";
 
     // 메시지 구성
     const messages: LLMMessage[] = [];
@@ -233,8 +215,8 @@ export async function runGeneration(
       provider: llmConfig.provider as LLMProvider,
       model: llmConfig.model_id,
       apiKey,
-      maxTokens: 4096,
-      temperature: 0.7,
+      maxTokens: 3000,
+      temperature: 0.5,
     };
 
     // 스트리밍으로 생성
