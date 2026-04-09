@@ -83,8 +83,8 @@ export function validateDraft(
     id: "summary-box",
     category: "본문구조",
     rule: "3줄 요약 포함",
-    passed: body.includes("📌") || body.includes("바쁜 대표님") || body.includes("3줄 요약"),
-    detail: (body.includes("📌") || body.includes("바쁜 대표님") || body.includes("3줄 요약")) ? "포함됨" : "요약 박스 없음",
+    passed: body.includes("📌") || body.includes("바쁜 대표님") || body.includes("3줄 요약") || body.includes("핵심 요약") || (body.includes("1.") && body.includes("2.") && body.includes("3.")),
+    detail: (body.includes("📌") || body.includes("바쁜 대표님") || body.includes("3줄 요약") || body.includes("핵심 요약") || (body.includes("1.") && body.includes("2.") && body.includes("3."))) ? "포함됨" : "요약 박스 없음",
   });
 
   const legalDirectRef = /(?:^|\s)(?:Lanham Act|Patent Act|35 U\.S\.C|§\d+)\s/m.test(body);

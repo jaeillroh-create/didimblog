@@ -100,12 +100,16 @@ function countImages(body: string): number {
  */
 function hasCta(body: string): boolean {
   if (!body) return false;
-  // CTA 패턴: 구분선 + 연락처 또는 이웃 추가
+  // CTA 패턴: 구분선, 연락처, 상담 유도 문구 등
   const ctaPatterns = [
     /━{3,}/, // 구분선
     /admin@didimip\.com/, // 이메일
     /이웃\s*추가/, // 이웃 추가
-    /Tel:\s*\d{3}-\d{4}-\d{4}/, // 전화번호
+    /02-571-6613/, // 전화번호
+    /Tel:\s*[\d-]+/, // 전화번호 (일반)
+    /재무제표/, // 절세 CTA
+    /시뮬레이션을?\s*만들어/, // 절세 CTA
+    /무료\s*진단/, // 인증/연구소 CTA
   ];
   return ctaPatterns.some((p) => p.test(body));
 }
