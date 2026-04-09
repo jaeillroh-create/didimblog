@@ -239,13 +239,12 @@ F. 퍼널/파이프라인: 단계별 전환, 흐름
 G. 구조도: 제도 구조, 관계도, 블록 다이어그램
 H. 수평 막대: 항목별 금액/비율 비교
 
-마커 형식 — 2개 버전 필수 생성
+마커 형식
 [IMAGE: 한국어 설명 | 유형(A~H)]
-(1) 한국어 버전: 삽입 위치 + 차트 설명 (사용자 확인용)
-(2) 영문 프롬프트: 이미지 생성 AI 입력용
+한국어로 레이아웃+데이터+강조점+출처+스타일을 구체적으로 작성
 
-프롬프트 필수 9요소 (한국어·영문 모두 포함)
-① 언어: 한국어 버전 — "한국어 인포그래픽" / 영문 버전 — "ALL text in image must be Korean. No English text anywhere."
+프롬프트 필수 9요소
+① 언어: "한국어 인포그래픽"
 ② 차트 유형: A~H 중 선택
 ③ 레이아웃: 구체적 배치 (축, 방향, 칸 수, 그리드 크기)
 ④ 데이터: 본문에서 추출한 구체적 숫자·라벨·연도 (추정치는 (E) 표기)
@@ -264,18 +263,15 @@ H. 수평 막대: 항목별 금액/비율 비교
 
 예시 1 — 비교 차트:
 [IMAGE: 직무발명보상금 절세 효과 — 적용 전/후 법인세 비교 | 비교 차트 (A)]
-(1) 한국어: 좌우 2분할 비교 차트. 왼쪽 "절세 미적용" — 법인세 2억 원, 실효세율 22%. 오른쪽 "절세 적용 후" — 법인세 1.2억 원, 실효세율 13%, 절감액 8,000만 원 강조(큰 폰트+볼드). 하단 출처: 조세특례제한법 제10조. 세련된 비즈니스 스타일, 흰색 배경, 16:9
-(2) English: Create a Korean infographic comparison chart. Split layout: left panel "Before" with gray tones showing corporate tax 200M KRW (22% effective rate), right panel "After" with accent color showing 120M KRW (13% rate), savings 80M KRW highlighted large bold. ALL text in image must be Korean. No English text anywhere. Bottom note: 조세특례제한법 제10조. Clean modern flat design, white background, high resolution, 16:9.
+좌우 2분할 비교 차트. 왼쪽 "절세 미적용" — 법인세 2억 원, 실효세율 22%. 오른쪽 "절세 적용 후" — 법인세 1.2억 원, 실효세율 13%, 절감액 8,000만 원 강조(큰 폰트+볼드). 하단 출처: 조세특례제한법 제10조. 세련된 비즈니스 스타일, 흰색 배경, 16:9
 
 예시 2 — 프로세스 플로우:
 [IMAGE: 기업부설연구소 설립 3단계 절차 | 프로세스 플로우 (B)]
-(1) 한국어: 좌→우 3단계 프로세스. Step 1: "요건 진단" — 연구전담요원 확인, 연구공간 확보. Step 2: "서류 준비" — 신청서, 연구시설 현황, 조직도. Step 3: "온라인 신청" — KOITA 접수, 심사 4~6주. 마지막 단계 강조. 하단: 출처 한국산업기술진흥협회. 깔끔한 비즈니스 스타일, 16:9
-(2) English: Create a Korean infographic process flow. 3 steps left-to-right with arrows. Step 1: "요건 진단" (icon: clipboard) — 연구전담요원 확인, 연구공간 확보. Step 2: "서류 준비" (icon: document) — 신청서, 연구시설 현황, 조직도. Step 3: "온라인 신청" (icon: computer) — KOITA 접수, 심사 4~6주. Last step highlighted with accent color. ALL text in image must be Korean. No English text anywhere. Bottom: 출처: 한국산업기술진흥협회. Clean modern flat design, white background, high resolution, 16:9.
+좌→우 3단계 프로세스. Step 1: "요건 진단" — 연구전담요원 확인, 연구공간 확보. Step 2: "서류 준비" — 신청서, 연구시설 현황, 조직도. Step 3: "온라인 신청" — KOITA 접수, 심사 4~6주. 마지막 단계 강조. 하단: 출처 한국산업기술진흥협회. 깔끔한 비즈니스 스타일, 16:9
 
 예시 3 — 숫자 카드:
 [IMAGE: 직무발명보상금 절세 핵심 수치 3가지 | 숫자 카드 (C)]
-(1) 한국어: 가로 3칸 카드 배치. 카드1: "25%" R&D 세액공제율. 카드2: "6,000만 원" 연간 절감액 (강조). 카드3: "4주" 설립 소요기간. 핵심 카드 1개만 강조색 배경, 나머지는 중립 톤. 16:9
-(2) English: Create a Korean infographic with 3 number cards in a row. Card 1: "25%" labeled "R&D 세액공제율". Card 2: "6,000만 원" labeled "연간 절감액" — this card highlighted with accent background. Card 3: "4주" labeled "설립 소요기간". ALL text in image must be Korean. No English text anywhere. Clean modern flat design, white background, high resolution, 16:9.
+가로 3칸 카드 배치. 카드1: "25%" R&D 세액공제율. 카드2: "6,000만 원" 연간 절감액 (강조). 카드3: "4주" 설립 소요기간. 핵심 카드 1개만 강조색 배경, 나머지는 중립 톤. 16:9
 `;
 
 const VISUAL_RULES_FIELD = `
@@ -691,27 +687,21 @@ export const USER_PROMPTS: Record<PromptKey, string> = {
 [독자 특정 1문장: "매출 ○○억 ○○업 대표님에게 특히 도움이 되는 내용입니다."]
 
 ━━ 📷 이미지 1 ━━
-[IMAGE: 한국어 설명 | 유형(A~H)]
-(1) 한국어: 레이아웃+데이터+강조점+출처+스타일 (시스템 프롬프트의 9요소 참조)
-(2) English: "Create a Korean infographic..." + "ALL text in image must be Korean." + 9요소
+[IMAGE: 한국어 설명 | 유형(A~H) | 레이아웃+데이터+강조점+출처+스타일 (시스템 프롬프트의 9요소 참조)]
 ━━━━━━━━━━━━━━
 
 [소제목1 — 호기심 유발형]
 [본문 2~3문단. 키워드 자연 배치. 신뢰 장치 1회.]
 
 ━━ 📷 이미지 2 ━━
-[IMAGE: 한국어 설명 | 유형(A~H)]
-(1) 한국어: ...
-(2) English: ...
+[IMAGE: 한국어 설명 | 유형(A~H) | 9요소 프롬프트]
 ━━━━━━━━━━━━━━
 
 [소제목2]
 [본문 2~3문단]
 
 ━━ 📷 이미지 3 ━━
-[IMAGE: 한국어 설명 | 유형(A~H)]
-(1) 한국어: ...
-(2) English: ...
+[IMAGE: 한국어 설명 | 유형(A~H) | 9요소 프롬프트]
 ━━━━━━━━━━━━━━
 
 📌 바쁜 대표님을 위한 3줄 요약
@@ -760,27 +750,21 @@ ${ALT_TEXT_RULES}`,
 [독자 특정 1문장]
 
 ━━ 📷 이미지 1 ━━
-[IMAGE: 한국어 설명 | 유형(A~H)]
-(1) 한국어: 레이아웃+데이터+강조점+출처+스타일
-(2) English: "Create a Korean infographic..." + "ALL text in image must be Korean." + 9요소
+[IMAGE: 한국어 설명 | 유형(A~H) | 레이아웃+데이터+강조점+출처+스타일]
 ━━━━━━━━━━━━━━
 
 [소제목1 — 호기심 유발형]
 [본문 2~3문단]
 
 ━━ 📷 이미지 2 ━━
-[IMAGE: 한국어 설명 | 유형(A~H)]
-(1) 한국어: ...
-(2) English: ...
+[IMAGE: 한국어 설명 | 유형(A~H) | 9요소 프롬프트]
 ━━━━━━━━━━━━━━
 
 [소제목2]
 [본문 2~3문단]
 
 ━━ 📷 이미지 3 ━━
-[IMAGE: 한국어 설명 | 유형(A~H)]
-(1) 한국어: ...
-(2) English: ...
+[IMAGE: 한국어 설명 | 유형(A~H) | 9요소 프롬프트]
 ━━━━━━━━━━━━━━
 
 📌 바쁜 대표님을 위한 3줄 요약
@@ -826,9 +810,7 @@ ${ALT_TEXT_RULES}`,
 [이슈 소개 — 무슨 일이 있었는지. 300~400자]
 
 ━━ 📷 이미지 1 ━━
-[IMAGE: 한국어 설명 | 유형(A~H)]
-(1) 한국어: ...
-(2) English: "Create a Korean infographic..." + "ALL text in image must be Korean." + 9요소
+[IMAGE: 한국어 설명 | 유형(A~H) | 9요소 프롬프트]
 ━━━━━━━━━━━━━━
 
 [시사점 — 대표님에게 의미하는 바 + 한 줄 결론. 500~800자]
