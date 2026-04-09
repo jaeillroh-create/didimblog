@@ -238,6 +238,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         throw new Error(promptResult.error || "프롬프트 조립 실패");
       }
 
+      // 키워드 자동 설정 (SEO 점수 계산용)
+      if (promptResult.targetKeyword && isMounted.current) {
+        setKeyword(promptResult.targetKeyword);
+      }
+
       // 3. Anthropic API 직접 호출
       console.log("[AI Editor] clientGenerateDraft 호출 직전");
       console.log("[AI Editor] apiKey:", apiKey ? `${apiKey.slice(0, 8)}...` : "없음");

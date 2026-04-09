@@ -19,7 +19,7 @@ export async function clientGenerateDraft(
 
   const body: Record<string, unknown> = {
     model: params.model,
-    max_tokens: 4096,
+    max_tokens: 6000,
     temperature: 0.7,
     stream: true,
     messages: userMessages,

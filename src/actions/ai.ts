@@ -405,6 +405,8 @@ export async function getGenerationPrompt(
 ): Promise<{
   success: boolean;
   messages?: { role: string; content: string }[];
+  targetKeyword?: string;
+  categoryId?: string;
   error?: string;
 }> {
   try {
@@ -460,7 +462,7 @@ export async function getGenerationPrompt(
       });
     }
 
-    return { success: true, messages };
+    return { success: true, messages, targetKeyword: gen.target_keyword || "", categoryId: gen.category_id || "" };
   } catch {
     return { success: false, error: "프롬프트 조립 실패" };
   }
