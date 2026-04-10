@@ -90,6 +90,8 @@ export interface FactCheckIssue {
   location: string;
   description: string;
   suggestion: string;
+  original_text?: string;
+  replacement_text?: string;
 }
 
 export interface FactCheckItem {

@@ -12,8 +12,11 @@ import {
   ChevronDown,
   ChevronRight,
   SkipForward,
+  Replace,
+  Check,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { toast } from "sonner";
 
 interface FactCheckPanelProps {
   status: "idle" | "checking" | "done" | "error" | "skipped";
@@ -21,6 +24,8 @@ interface FactCheckPanelProps {
   error?: string | null;
   onSkip?: () => void;
   onRetry?: () => void;
+  onApplyFix?: (originalText: string, replacementText: string) => boolean;
+  onApplyAllFixes?: () => void;
 }
 
 const SEVERITY_STYLE: Record<string, { color: string; label: string }> = {
@@ -41,9 +46,61 @@ const FACT_VERDICT_STYLE: Record<string, string> = {
   "오류": "var(--quality-critical)",
 };
 
-export function FactCheckPanel({ status, result, error, onSkip, onRetry }: FactCheckPanelProps) {
+export function FactCheckPanel({ status, result, error, onSkip, onRetry, onApplyFix, onApplyAllFixes }: FactCheckPanelProps) {
   const [issuesOpen, setIssuesOpen] = useState(true);
   const [factsOpen, setFactsOpen] = useState(false);
+  const [appliedIssues, setAppliedIssues] = useState<Set<number>>(new Set());
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleApplySingle = useCallback((index: number) => {
+    if (!result || !onApplyFix) return;
+    const issue = result.issues[index];
+    if (!issue?.original_text || !issue?.replacement_text) return;
+
+    const success = onApplyFix(issue.original_text, issue.replacement_text);
+    if (success) {
+      setAppliedIssues((prev) => new Set(prev).add(index));
+      toast.success("수정 반영 완료");
+    } else {
+      toast.error("원문 매칭 실패 — 수동 확인 필요");
+    }
+  }, [result, onApplyFix]);
+
+  const handleApplyAll = useCallback(() => {
+    if (!result || !onApplyFix) return;
+    setShowConfirm(false);
+
+    // severity high → medium → low 순서
+    const sortedIndices = result.issues
+      .map((_, i) => i)
+      .filter((i) => !appliedIssues.has(i))
+      .filter((i) => result.issues[i].original_text && result.issues[i].replacement_text)
+      .sort((a, b) => {
+        const order = { high: 0, medium: 1, low: 2 };
+        return (order[result.issues[a].severity] ?? 1) - (order[result.issues[b].severity] ?? 1);
+      });
+
+    let applied = 0;
+    let failed = 0;
+    const newApplied = new Set(appliedIssues);
+
+    for (const i of sortedIndices) {
+      const issue = result.issues[i];
+      const success = onApplyFix(issue.original_text!, issue.replacement_text!);
+      if (success) {
+        newApplied.add(i);
+        applied++;
+      } else {
+        failed++;
+      }
+    }
+
+    setAppliedIssues(newApplied);
+
+    if (applied > 0) toast.success(`${applied}건 수정 반영 완료`);
+    if (failed > 0) toast.info(`${failed}건 수동 확인 필요 (원문 매칭 실패)`);
+    if (applied === 0 && failed === 0) toast.info("반영할 수정 사항이 없습니다");
+  }, [result, onApplyFix, appliedIssues]);
 
   if (status === "idle" || status === "skipped") return null;
 
@@ -86,6 +143,7 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry }: FactC
 
   const verdictInfo = VERDICT_STYLE[result.verdict] ?? VERDICT_STYLE.fix_required;
   const VerdictIcon = verdictInfo.icon;
+  const fixableCount = result.issues.filter((issue, i) => !appliedIssues.has(i) && issue.original_text && issue.replacement_text).length;
 
   return (
     <Card>
@@ -110,6 +168,30 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry }: FactC
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* 전체 수정 반영 버튼 */}
+        {fixableCount > 0 && onApplyFix && (
+          <div>
+            {showConfirm ? (
+              <div className="rounded-md border p-3 space-y-2 bg-muted/30">
+                <p className="text-xs">팩트체크 지적 사항 {fixableCount}건을 본문에 자동 반영합니다. 반영 후에도 직접 확인해주세요.</p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="default" onClick={handleApplyAll}>
+                    반영
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowConfirm(false)}>
+                    취소
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button size="sm" variant="outline" className="w-full" onClick={() => setShowConfirm(true)}>
+                <Replace className="h-3.5 w-3.5 mr-1" />
+                전체 수정 반영 ({fixableCount}건)
+              </Button>
+            )}
+          </div>
+        )}
+
         {/* 잘된 점 */}
         {result.strengths.length > 0 && (
           <div className="space-y-1">
@@ -136,15 +218,35 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry }: FactC
               <div className="space-y-2 mt-1">
                 {result.issues.map((issue, i) => {
                   const sev = SEVERITY_STYLE[issue.severity] ?? SEVERITY_STYLE.medium;
+                  const isApplied = appliedIssues.has(i);
+                  const canApply = !!issue.original_text && !!issue.replacement_text && !isApplied;
+
                   return (
-                    <div key={i} className="rounded-md border p-2 text-xs space-y-1">
+                    <div key={i} className={`rounded-md border p-2 text-xs space-y-1 ${isApplied ? "opacity-50" : ""}`}>
                       <div className="flex items-center gap-1.5">
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: sev.color + "20", color: sev.color }}>
-                          {sev.label}
+                          {isApplied ? "반영됨" : sev.label}
                         </span>
                         <span className="font-medium">{issue.category}</span>
                         {issue.location && (
                           <span className="text-muted-foreground truncate max-w-[120px]">&ldquo;{issue.location}...&rdquo;</span>
+                        )}
+                        {canApply && onApplyFix && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ml-auto h-6 px-2 text-[10px]"
+                            onClick={() => handleApplySingle(i)}
+                          >
+                            <Replace className="h-3 w-3 mr-0.5" />
+                            반영
+                          </Button>
+                        )}
+                        {isApplied && (
+                          <Check className="ml-auto h-3.5 w-3.5 shrink-0" style={{ color: "var(--quality-excellent)" }} />
+                        )}
+                        {!canApply && !isApplied && !issue.original_text && (
+                          <span className="ml-auto text-[10px] text-muted-foreground">수동 확인</span>
                         )}
                       </div>
                       <p className="text-muted-foreground">{issue.description}</p>

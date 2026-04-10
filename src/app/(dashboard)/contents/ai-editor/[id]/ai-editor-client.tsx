@@ -758,6 +758,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             error={factCheckError}
             onSkip={() => setFactCheckStatus("skipped")}
             onRetry={() => startFactCheck(editTitle, editText, factCheckApiRef.current)}
+            onApplyFix={(originalText, replacementText) => {
+              if (!editText.includes(originalText)) return false;
+              setEditText((prev) => prev.replace(originalText, replacementText));
+              return true;
+            }}
           />
 
           {/* 교차검증 패널 */}
