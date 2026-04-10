@@ -345,6 +345,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
     if (res.success && res.result) {
       console.log("[AI Editor] 팩트체크 완료, 점수:", res.result.overall_score);
+      console.log("[AI Editor] 팩트체크 이슈 샘플:", JSON.stringify(res.result.issues?.[0], null, 2));
       setFactCheckResult(res.result);
       setFactCheckStatus("done");
     } else {
