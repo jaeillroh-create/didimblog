@@ -90,6 +90,8 @@ export interface FactCheckIssue {
   location: string;
   description: string;
   suggestion: string;
+  original_text?: string;
+  replacement_text?: string;
 }
 
 export interface FactCheckItem {
@@ -222,7 +224,24 @@ export async function clientFactCheck(params: {
       return { success: false, error: "팩트체크 결과를 파싱할 수 없습니다. 수동으로 검토해주세요." };
     }
 
-    return { success: true, result: parsed as FactCheckResult };
+    // original_text/replacement_text 폴백 생성
+    const result = parsed as FactCheckResult;
+    if (result.issues) {
+      const bodyLines = params.body.split("\n");
+      for (const issue of result.issues) {
+        if (!issue.original_text && issue.location) {
+          const matchLine = bodyLines.find((line) => line.includes(issue.location));
+          if (matchLine) {
+            issue.original_text = matchLine.trim();
+          }
+        }
+        if (!issue.replacement_text && issue.suggestion) {
+          issue.replacement_text = issue.suggestion;
+        }
+      }
+    }
+
+    return { success: true, result };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "팩트체크 실패" };
   }

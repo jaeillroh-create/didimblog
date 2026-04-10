@@ -345,6 +345,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
     if (res.success && res.result) {
       console.log("[AI Editor] 팩트체크 완료, 점수:", res.result.overall_score);
+      console.log("[AI Editor] 팩트체크 이슈 샘플:", JSON.stringify(res.result.issues?.[0], null, 2));
       setFactCheckResult(res.result);
       setFactCheckStatus("done");
     } else {
@@ -758,6 +759,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             error={factCheckError}
             onSkip={() => setFactCheckStatus("skipped")}
             onRetry={() => startFactCheck(editTitle, editText, factCheckApiRef.current)}
+            onApplyFix={(originalText, replacementText) => {
+              if (!editText.includes(originalText)) return false;
+              setEditText((prev) => prev.replace(originalText, replacementText));
+              return true;
+            }}
           />
 
           {/* 교차검증 패널 */}
