@@ -294,20 +294,25 @@ export function calculateSeoScore(
     maxPossibleScore += rubric.imageCount.weight;
   }
 
-  // 7. 태그 개수
+  // 7. 태그 (네이버 태그 100자 미만 + 개수 체크)
   if (activeChecks.includes("tagCount")) {
     const tagLen = tags.length;
-    const score = calcPartialScore(tagLen, rubric.tagCount);
-    const passed = tagLen >= rubric.tagCount.min;
+    const tagChars = tags.join("").length;
+    const passed = tagLen >= rubric.tagCount.min && tagChars < 100;
+    const score = passed ? rubric.tagCount.weight : calcPartialScore(tagLen, rubric.tagCount);
     items.push({
       key: "tagCount",
-      label: "태그 개수",
+      label: "네이버 태그",
       score,
       maxScore: rubric.tagCount.weight,
-      actual: `${tagLen}개`,
-      expected: `${rubric.tagCount.min}개`,
+      actual: `${tagLen}개 / ${tagChars}자`,
+      expected: `${rubric.tagCount.min}개 이상, 100자 미만`,
       passed,
-      hint: passed ? "" : `태그를 ${rubric.tagCount.min}개로 채워주세요 (현재 ${tagLen}개)`,
+      hint: tagChars >= 100
+        ? `태그 총 글자수가 100자를 초과합니다 (${tagChars}자). 핵심 태그만 남기세요.`
+        : tagLen < rubric.tagCount.min
+          ? `태그를 ${rubric.tagCount.min}개로 채워주세요 (현재 ${tagLen}개)`
+          : "",
     });
     totalScore += score;
     maxPossibleScore += rubric.tagCount.weight;
