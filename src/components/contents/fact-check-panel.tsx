@@ -63,7 +63,8 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry, onApply
 
   const handleApplySingle = useCallback((index: number) => {
     if (!result || !onApplyFix) return;
-    const issue = result.issues[index];
+    const issues = result.issues ?? [];
+    const issue = issues[index];
     if (!issue?.original_text || !issue?.replacement_text) return;
 
     const success = onApplyFix(issue.original_text, issue.replacement_text);
@@ -79,14 +80,15 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry, onApply
     if (!result || !onApplyFix) return;
     setShowConfirm(false);
 
+    const issues = result.issues ?? [];
     // severity high → medium → low 순서
-    const sortedIndices = result.issues
+    const sortedIndices = issues
       .map((_, i) => i)
       .filter((i) => !appliedIssues.has(i))
-      .filter((i) => result.issues[i].original_text && result.issues[i].replacement_text)
+      .filter((i) => issues[i].original_text && issues[i].replacement_text)
       .sort((a, b) => {
         const order = { high: 0, medium: 1, low: 2 };
-        return (order[result.issues[a].severity] ?? 1) - (order[result.issues[b].severity] ?? 1);
+        return (order[issues[a].severity] ?? 1) - (order[issues[b].severity] ?? 1);
       });
 
     let applied = 0;
@@ -94,7 +96,7 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry, onApply
     const newApplied = new Set(appliedIssues);
 
     for (const i of sortedIndices) {
-      const issue = result.issues[i];
+      const issue = issues[i];
       const success = onApplyFix(issue.original_text!, issue.replacement_text!);
       if (success) {
         newApplied.add(i);
@@ -150,9 +152,13 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry, onApply
 
   if (!result) return null;
 
+  const issues = result.issues ?? [];
+  const strengths = result.strengths ?? [];
+  const factCheckItems = result.fact_check_items ?? [];
+
   const verdictInfo = VERDICT_STYLE[result.verdict] ?? VERDICT_STYLE.fix_required;
   const VerdictIcon = verdictInfo.icon;
-  const fixableCount = result.issues.filter((issue, i) => !appliedIssues.has(i) && issue.original_text && issue.replacement_text).length;
+  const fixableCount = issues.filter((issue, i) => !appliedIssues.has(i) && issue.original_text && issue.replacement_text).length;
 
   return (
     <Card>
@@ -202,9 +208,9 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry, onApply
         )}
 
         {/* 잘된 점 */}
-        {result.strengths.length > 0 && (
+        {strengths.length > 0 && (
           <div className="space-y-1">
-            {result.strengths.map((s, i) => (
+            {strengths.map((s, i) => (
               <p key={i} className="text-xs flex items-start gap-1.5">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" style={{ color: "var(--quality-excellent)" }} />
                 {s}
@@ -214,18 +220,18 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry, onApply
         )}
 
         {/* 이슈 */}
-        {result.issues.length > 0 && (
+        {issues.length > 0 && (
           <div>
             <button
               onClick={() => setIssuesOpen(!issuesOpen)}
               className="flex items-center gap-1 text-xs font-medium w-full text-left py-1"
             >
               {issuesOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              지적 사항 ({result.issues.length}개)
+              지적 사항 ({issues.length}개)
             </button>
             {issuesOpen && (
               <div className="space-y-2 mt-1">
-                {result.issues.map((issue, i) => {
+                {issues.map((issue, i) => {
                   const sev = SEVERITY_STYLE[issue.severity] ?? SEVERITY_STYLE.medium;
                   const isApplied = appliedIssues.has(i);
                   const canApply = !!issue.original_text && !!issue.replacement_text && !isApplied;
@@ -269,18 +275,18 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry, onApply
         )}
 
         {/* 팩트체크 항목 */}
-        {result.fact_check_items.length > 0 && (
+        {factCheckItems.length > 0 && (
           <div>
             <button
               onClick={() => setFactsOpen(!factsOpen)}
               className="flex items-center gap-1 text-xs font-medium w-full text-left py-1"
             >
               {factsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              팩트체크 ({result.fact_check_items.length}개)
+              팩트체크 ({factCheckItems.length}개)
             </button>
             {factsOpen && (
               <div className="space-y-1 mt-1">
-                {result.fact_check_items.map((item, i) => (
+                {factCheckItems.map((item, i) => (
                   <div key={i} className="flex items-start gap-1.5 text-xs">
                     <span
                       className="shrink-0 mt-0.5 w-2 h-2 rounded-full"
