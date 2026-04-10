@@ -15,7 +15,7 @@ import {
   Replace,
   Check,
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 
 interface FactCheckPanelProps {
@@ -51,6 +51,15 @@ export function FactCheckPanel({ status, result, error, onSkip, onRetry, onApply
   const [factsOpen, setFactsOpen] = useState(false);
   const [appliedIssues, setAppliedIssues] = useState<Set<number>>(new Set());
   const [showConfirm, setShowConfirm] = useState(false);
+
+  useEffect(() => {
+    if (result?.issues?.length) {
+      console.log("[FactCheckPanel] 이슈 수:", result.issues.length);
+      console.log("[FactCheckPanel] 첫 이슈:", JSON.stringify(result.issues[0], null, 2));
+      console.log("[FactCheckPanel] original_text 있는 이슈 수:",
+        result.issues.filter((i) => !!i.original_text).length);
+    }
+  }, [result]);
 
   const handleApplySingle = useCallback((index: number) => {
     if (!result || !onApplyFix) return;
