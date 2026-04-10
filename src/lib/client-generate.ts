@@ -226,7 +226,10 @@ export async function clientFactCheck(params: {
 
     // original_text/replacement_text 폴백 생성
     const result = parsed as FactCheckResult;
-    if (result.issues) {
+    result.issues = result.issues ?? [];
+    result.strengths = result.strengths ?? [];
+    result.fact_check_items = result.fact_check_items ?? [];
+    if (result.issues.length > 0) {
       const bodyLines = params.body.split("\n");
       for (const issue of result.issues) {
         if (!issue.original_text && issue.location) {
