@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { DraftQualityPanel } from "@/components/contents/draft-quality-panel";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { calcDraftScore, validateDraft } from "@/lib/draft-validator";
-import { CrossValidationPanel } from "@/components/contents/cross-validation-panel";
+import { CrossLLMValidationPanel } from "@/components/contents/cross-llm-validation-panel";
 import { FactCheckPanel } from "@/components/contents/fact-check-panel";
 import { PROMPT_FACT_CHECK } from "@/lib/constants/prompts";
 import {
@@ -29,7 +29,12 @@ import {
   markGenerationFailed,
   saveAiDraftToContent,
 } from "@/actions/ai";
-import { clientGenerateDraft, clientFactCheck, type FactCheckResult } from "@/lib/client-generate";
+import {
+  clientGenerateDraft,
+  clientFactCheck,
+  type FactCheckResult,
+  type ClientLLMProvider,
+} from "@/lib/client-generate";
 import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
 import { ImageGenPanel } from "@/components/contents/image-gen-panel";
 import type { GenerationStatus, ImageMarker } from "@/lib/types/database";
@@ -166,7 +171,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [factCheckStatus, setFactCheckStatus] = useState<"idle" | "checking" | "done" | "error" | "skipped">("idle");
   const [factCheckResult, setFactCheckResult] = useState<FactCheckResult | null>(null);
   const [factCheckError, setFactCheckError] = useState<string | null>(null);
-  const factCheckApiRef = useRef<{ apiKey: string; model: string } | null>(null);
+  const factCheckApiRef = useRef<{ apiKey: string; model: string; provider: ClientLLMProvider } | null>(null);
 
   // 클라이언트 사이드 생성 — useRef로 한 번만 트리거
   const generationTriggered = useRef(false);
@@ -228,7 +233,8 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       const selected = configData.models?.find((m: LLMModelOption) => String(m.id) === selectedModelId);
       const apiKey = selected?.apiKey ?? configData.apiKey;
       const model = selected?.model ?? configData.model;
-      factCheckApiRef.current = { apiKey, model };
+      const provider = (selected?.provider ?? configData.provider ?? "claude") as ClientLLMProvider;
+      factCheckApiRef.current = { apiKey, model, provider };
 
       // 2. 프롬프트 조립
       console.log("[AI Editor] getGenerationPrompt 호출 시작, generationId:", genId);
@@ -253,6 +259,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         messages: promptResult.messages,
         model,
         apiKey,
+        provider,
         onProgress: (text) => {
           if (isMounted.current) {
             setStreamingText(text);
@@ -326,18 +333,19 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   async function startFactCheck(
     title: string,
     body: string,
-    apiConfig: { apiKey: string; model: string } | null
+    apiConfig: { apiKey: string; model: string; provider: ClientLLMProvider } | null
   ) {
     if (!apiConfig || !isMounted.current) return;
 
     setFactCheckStatus("checking");
-    console.log("[AI Editor] 팩트체크 시작");
+    console.log("[AI Editor] 팩트체크 시작 — provider:", apiConfig.provider, "model:", apiConfig.model);
 
     const res = await clientFactCheck({
       title,
       body,
       model: apiConfig.model,
       apiKey: apiConfig.apiKey,
+      provider: apiConfig.provider,
       systemPrompt: PROMPT_FACT_CHECK,
     });
 
@@ -766,12 +774,20 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             }}
           />
 
-          {/* 교차검증 패널 */}
-          {showValidation && (
-            <CrossValidationPanel
-              generationId={currentGenerationId}
-              onRegenerate={handleRegenerate}
-              onProceed={() => setShowValidation(false)}
+          {/* 교차검증 패널 (멀티 LLM, 클라이언트 직접 호출) */}
+          {showValidation && factCheckApiRef.current && (
+            <CrossLLMValidationPanel
+              title={editTitle}
+              body={editText}
+              availableModels={availableModels}
+              baseProvider={factCheckApiRef.current.provider}
+              baseModel={factCheckApiRef.current.model}
+              baseApiKey={factCheckApiRef.current.apiKey}
+              onApplyRewrite={(newBody) => {
+                setEditText(newBody);
+                setShowValidation(false);
+              }}
+              onClose={() => setShowValidation(false)}
             />
           )}
         </div>
