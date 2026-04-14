@@ -94,6 +94,7 @@ interface SaveLLMConfigResult {
   success: boolean;
   configId?: number;
   testResult?: "success" | "failed";
+  testError?: string;
   error?: string;
 }
 
@@ -1001,13 +1002,25 @@ export async function saveLLMConfig(
     const { createAdminClient } = await import("@/lib/supabase/admin");
     const dbClient = createAdminClient() ?? supabase;
 
-    // 연결 테스트
+    // 연결 테스트 — 사용자가 입력한 modelId 로 정확히 테스트하고
+    // 실패 시 상세 에러를 testError 에 보존해서 UI 에 전달한다
     let testResult: "success" | "failed" = "failed";
+    let testError: string | undefined;
     try {
-      const success = await testConnection(input.provider, input.apiKey);
-      testResult = success ? "success" : "failed";
-    } catch {
+      const result = await testConnection(input.provider, input.apiKey, input.modelId);
+      testResult = result.success ? "success" : "failed";
+      testError = result.error;
+      if (!result.success) {
+        console.error("[saveLLMConfig] 연결 테스트 실패:", {
+          provider: input.provider,
+          modelId: input.modelId,
+          error: result.error,
+        });
+      }
+    } catch (err) {
       testResult = "failed";
+      testError = err instanceof Error ? `예외: ${err.message}` : `예외: ${String(err)}`;
+      console.error("[saveLLMConfig] 연결 테스트 예외:", err);
     }
 
     // API 키 암호화
@@ -1079,7 +1092,7 @@ export async function saveLLMConfig(
       configId = data.id;
     }
 
-    return { success: true, configId, testResult };
+    return { success: true, configId, testResult, testError };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류";
     return { success: false, error: errorMessage };
@@ -1112,11 +1125,12 @@ export async function testLLMConnection(
     const apiKey = await decryptApiKey(config.api_key_encrypted);
     const result = await testConnection(
       config.provider as LLMProvider,
-      apiKey
+      apiKey,
+      config.model_id
     );
 
     // 테스트 결과 저장
-    const testResult = result ? "success" : "failed";
+    const testResult = result.success ? "success" : "failed";
     await supabase
       .from("llm_configs")
       .update({
@@ -1125,7 +1139,19 @@ export async function testLLMConnection(
       })
       .eq("id", configId);
 
-    return { success: result, error: result ? undefined : "연결 테스트에 실패했습니다. API 키와 모델 설정을 확인해주세요." };
+    if (!result.success) {
+      console.error("[testLLMConnection] 실패:", {
+        configId,
+        provider: config.provider,
+        model: config.model_id,
+        error: result.error,
+      });
+    }
+
+    return {
+      success: result.success,
+      error: result.success ? undefined : (result.error ?? "연결 테스트에 실패했습니다."),
+    };
   } catch (err) {
     let errorMessage = "연결 테스트에 실패했습니다.";
     if (err instanceof Error) {

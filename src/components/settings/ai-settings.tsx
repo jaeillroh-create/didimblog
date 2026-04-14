@@ -85,7 +85,9 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
   const [editIsDefault, setEditIsDefault] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [testResult, setTestResult] = useState<"success" | "failed" | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<number | null>(null);
+  const [testingError, setTestingError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // 뉴스 API 편집 다이얼로그
@@ -112,6 +114,7 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
     setEditIsDefault(existing?.is_default || false);
     setShowApiKey(false);
     setTestResult(null);
+    setTestError(null);
     setSaveError(null);
   }
 
@@ -134,6 +137,7 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
       }
 
       setTestResult(result.testResult || null);
+      setTestError(result.testError || null);
 
       // 로컬 상태 업데이트
       if (result.configId) {
@@ -165,6 +169,7 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
         });
       }
 
+      // 성공 시에만 자동 닫기 — 실패면 사용자가 에러 메시지를 읽고 직접 닫도록 유지
       if (result.testResult === "success") {
         setTimeout(() => setEditProvider(null), 1500);
       }
@@ -173,6 +178,7 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
 
   function handleTestConnection(configId: number) {
     setTestingId(configId);
+    setTestingError(null);
     startTransition(async () => {
       const result = await testLLMConnection(configId);
       setConfigs((prev) =>
@@ -186,6 +192,9 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
             : c
         )
       );
+      if (!result.success) {
+        setTestingError(result.error || "연결 테스트에 실패했습니다.");
+      }
       setTestingId(null);
     });
   }
@@ -341,6 +350,15 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
               </div>
             );
           })}
+          {testingError && (
+            <div
+              className="ucl-alert alert-danger mt-2"
+              style={{ alignItems: "flex-start", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "monospace" }}
+            >
+              <XCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <div className="t-xs">{testingError}</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -657,17 +675,28 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
                   style={{
                     background: testResult === "success" ? "var(--success-light)" : "var(--danger-light)",
                     color: testResult === "success" ? "var(--success)" : "var(--danger)",
+                    alignItems: "flex-start",
                   }}
                 >
                   {testResult === "success" ? (
                     <>
-                      <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
                       <span>연결 테스트 성공</span>
                     </>
                   ) : (
                     <>
-                      <XCircle className="h-4 w-4 shrink-0" />
-                      <span>연결 테스트 실패</span>
+                      <XCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <div style={{ fontWeight: 600 }}>연결 테스트 실패</div>
+                        {testError && (
+                          <div
+                            className="t-xs"
+                            style={{ wordBreak: "break-word", whiteSpace: "pre-wrap", fontFamily: "monospace" }}
+                          >
+                            {testError}
+                          </div>
+                        )}
+                      </div>
                     </>
                   )}
                 </div>

@@ -27,17 +27,21 @@ export async function* generateStream(
 
 /**
  * LLM 연결 테스트
+ * - provider 별 어댑터에 위임
+ * - model 을 받아 사용자가 지정한 모델로 정확히 테스트
+ * - 실패 시 상세 에러 메시지 반환 ({ success, error })
  */
 export async function testConnection(
   provider: LLMProvider,
-  apiKey: string
-): Promise<boolean> {
+  apiKey: string,
+  model: string
+): Promise<{ success: boolean; error?: string }> {
   const providerModule = providers[provider];
   if (!providerModule) {
-    throw new Error(`지원하지 않는 LLM 프로바이더: ${provider}`);
+    return { success: false, error: `지원하지 않는 LLM 프로바이더: ${provider}` };
   }
 
-  return providerModule.testConnection(apiKey);
+  return providerModule.testConnection(apiKey, model);
 }
 
 /**
