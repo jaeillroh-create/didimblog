@@ -1,26 +1,31 @@
 /**
- * 클라이언트 사이드에서 Anthropic API를 직접 스트리밍 호출
+ * 클라이언트 사이드에서 LLM API를 직접 스트리밍 호출 (Claude/OpenAI/Gemini)
  * Vercel 서버리스 타임아웃과 무관하게 동작
  */
+
+export type ClientLLMProvider = "claude" | "openai" | "gemini";
 
 export interface ClientGenerateParams {
   messages: { role: string; content: string }[];
   model: string;
   apiKey: string;
+  provider?: ClientLLMProvider; // 기본 claude (하위호환)
+  maxTokens?: number;
+  temperature?: number;
   onProgress?: (text: string) => void;
 }
 
-export async function clientGenerateDraft(
-  params: ClientGenerateParams
-): Promise<string> {
-  // messages에서 system 메시지 분리 (Anthropic API는 system을 top-level로 받음)
+/**
+ * Claude(Anthropic) Messages API 스트리밍 호출
+ */
+async function streamClaude(params: ClientGenerateParams): Promise<string> {
   const systemMessage = params.messages.find((m) => m.role === "system");
   const userMessages = params.messages.filter((m) => m.role !== "system");
 
   const body: Record<string, unknown> = {
     model: params.model,
-    max_tokens: 6000,
-    temperature: 0.7,
+    max_tokens: params.maxTokens ?? 6000,
+    temperature: params.temperature ?? 0.7,
     stream: true,
     messages: userMessages,
   };
@@ -57,16 +62,13 @@ export async function clientGenerateDraft(
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-
-    // SSE 이벤트 파싱
     const lines = buffer.split("\n");
-    buffer = lines.pop() || ""; // 마지막 불완전한 줄은 버퍼에 유지
+    buffer = lines.pop() || "";
 
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
       const data = line.slice(6).trim();
       if (data === "[DONE]") continue;
-
       try {
         const parsed = JSON.parse(data);
         if (parsed.type === "content_block_delta" && parsed.delta?.text) {
@@ -74,12 +76,166 @@ export async function clientGenerateDraft(
           params.onProgress?.(fullText);
         }
       } catch {
-        // JSON 파싱 실패 무시
+        // 무시
       }
     }
   }
 
   return fullText;
+}
+
+/**
+ * OpenAI Chat Completions API 스트리밍 호출
+ */
+async function streamOpenAI(params: ClientGenerateParams): Promise<string> {
+  const body = {
+    model: params.model,
+    max_tokens: params.maxTokens ?? 6000,
+    temperature: params.temperature ?? 0.7,
+    stream: true,
+    messages: params.messages.map((m) => ({
+      role: m.role === "system" ? "system" : m.role === "assistant" ? "assistant" : "user",
+      content: m.content,
+    })),
+  };
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${params.apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new Error(`OpenAI API 오류 (${response.status}): ${errorBody.slice(0, 200)}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("스트림을 읽을 수 없습니다.");
+
+  const decoder = new TextDecoder();
+  let fullText = "";
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (data === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(data);
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullText += delta;
+          params.onProgress?.(fullText);
+        }
+      } catch {
+        // 무시
+      }
+    }
+  }
+
+  return fullText;
+}
+
+/**
+ * Google Gemini API 스트리밍 호출 (streamGenerateContent + alt=sse)
+ */
+async function streamGemini(params: ClientGenerateParams): Promise<string> {
+  const systemMessage = params.messages.find((m) => m.role === "system");
+  const nonSystemMessages = params.messages.filter((m) => m.role !== "system");
+
+  const contents = nonSystemMessages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
+  const body: Record<string, unknown> = {
+    contents,
+    generationConfig: {
+      maxOutputTokens: params.maxTokens ?? 6000,
+      temperature: params.temperature ?? 0.7,
+    },
+  };
+
+  if (systemMessage) {
+    body.systemInstruction = { parts: [{ text: systemMessage.content }] };
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${params.model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(params.apiKey)}`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new Error(`Gemini API 오류 (${response.status}): ${errorBody.slice(0, 200)}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("스트림을 읽을 수 없습니다.");
+
+  const decoder = new TextDecoder();
+  let fullText = "";
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (!data) continue;
+      try {
+        const parsed = JSON.parse(data);
+        const text = parsed.candidates?.[0]?.content?.parts
+          ?.map((p: { text?: string }) => p.text || "")
+          .join("");
+        if (text) {
+          fullText += text;
+          params.onProgress?.(fullText);
+        }
+      } catch {
+        // 무시
+      }
+    }
+  }
+
+  return fullText;
+}
+
+/**
+ * provider별 스트리밍 호출 라우터
+ */
+async function streamLLM(params: ClientGenerateParams): Promise<string> {
+  const provider = params.provider ?? "claude";
+  if (provider === "openai") return streamOpenAI(params);
+  if (provider === "gemini") return streamGemini(params);
+  return streamClaude(params);
+}
+
+export async function clientGenerateDraft(
+  params: ClientGenerateParams
+): Promise<string> {
+  return streamLLM(params);
 }
 
 // ── 팩트체크 ──
@@ -151,72 +307,34 @@ function parseFactCheckJson(text: string): object | null {
   }
 }
 
-export async function clientFactCheck(params: {
+export interface ClientFactCheckParams {
   title: string;
   body: string;
   model: string;
   apiKey: string;
   systemPrompt: string;
+  provider?: ClientLLMProvider; // 기본 claude
   onProgress?: (text: string) => void;
-}): Promise<{ success: boolean; result?: FactCheckResult; error?: string }> {
+}
+
+export async function clientFactCheck(
+  params: ClientFactCheckParams
+): Promise<{ success: boolean; result?: FactCheckResult; error?: string }> {
   try {
     const userMessage = `제목: ${params.title}\n\n본문:\n${params.body}`;
 
-    const body: Record<string, unknown> = {
+    const fullText = await streamLLM({
+      messages: [
+        { role: "system", content: params.systemPrompt },
+        { role: "user", content: userMessage },
+      ],
       model: params.model,
-      max_tokens: 4096,
+      apiKey: params.apiKey,
+      provider: params.provider ?? "claude",
+      maxTokens: 4096,
       temperature: 0.3,
-      stream: true,
-      messages: [{ role: "user", content: userMessage }],
-      system: params.systemPrompt,
-    };
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": params.apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify(body),
+      onProgress: params.onProgress,
     });
-
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => "");
-      return { success: false, error: `API 오류 (${response.status}): ${errorBody.slice(0, 200)}` };
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) return { success: false, error: "스트림을 읽을 수 없습니다." };
-
-    const decoder = new TextDecoder();
-    let fullText = "";
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") continue;
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-            fullText += parsed.delta.text;
-            params.onProgress?.(fullText);
-          }
-        } catch {
-          // 무시
-        }
-      }
-    }
 
     // JSON 파싱 (3단계 + 잘린 JSON 복구)
     const parsed = parseFactCheckJson(fullText);
@@ -247,5 +365,146 @@ export async function clientFactCheck(params: {
     return { success: true, result };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "팩트체크 실패" };
+  }
+}
+
+// ── 교차검증 (Cross-Validation) ──
+
+export interface CrossValidationProviderConfig {
+  provider: ClientLLMProvider;
+  model: string;
+  apiKey: string;
+  displayName: string;
+}
+
+export interface CrossValidationProviderResult {
+  provider: ClientLLMProvider;
+  displayName: string;
+  success: boolean;
+  result?: FactCheckResult;
+  error?: string;
+}
+
+/**
+ * 여러 LLM에 동시에 팩트체크를 요청해서 결과 목록 반환
+ * 각 결과는 독립적으로 성공/실패할 수 있음
+ */
+export async function clientCrossValidate(params: {
+  title: string;
+  body: string;
+  systemPrompt: string;
+  providers: CrossValidationProviderConfig[];
+  onProviderDone?: (result: CrossValidationProviderResult) => void;
+}): Promise<CrossValidationProviderResult[]> {
+  const promises = params.providers.map(async (cfg): Promise<CrossValidationProviderResult> => {
+    const res = await clientFactCheck({
+      title: params.title,
+      body: params.body,
+      model: cfg.model,
+      apiKey: cfg.apiKey,
+      provider: cfg.provider,
+      systemPrompt: params.systemPrompt,
+    });
+    const out: CrossValidationProviderResult = {
+      provider: cfg.provider,
+      displayName: cfg.displayName,
+      success: res.success,
+      result: res.result,
+      error: res.error,
+    };
+    params.onProviderDone?.(out);
+    return out;
+  });
+
+  return Promise.all(promises);
+}
+
+// ── 피드백 반영 재작성 ──
+
+export interface SelectedIssue {
+  category: string;
+  description: string;
+  suggestion: string;
+  original_text?: string;
+  replacement_text?: string;
+  provider: string; // 어느 LLM이 지적했는지
+}
+
+/**
+ * 사용자가 선택한 교차검증 이슈들을 반영하여 본문을 재작성
+ * 원본 LLM(=초안 생성 LLM)을 사용
+ */
+export async function clientRewriteWithFeedback(params: {
+  title: string;
+  body: string;
+  selectedIssues: SelectedIssue[];
+  model: string;
+  apiKey: string;
+  provider: ClientLLMProvider;
+  onProgress?: (text: string) => void;
+}): Promise<{ success: boolean; rewrittenBody?: string; error?: string }> {
+  try {
+    if (params.selectedIssues.length === 0) {
+      return { success: false, error: "반영할 항목이 선택되지 않았습니다." };
+    }
+
+    const feedbackBlock = params.selectedIssues
+      .map((it, i) => {
+        const lines = [
+          `${i + 1}. [${it.category}] (${it.provider})`,
+          `   - 지적: ${it.description}`,
+          `   - 제안: ${it.suggestion}`,
+        ];
+        if (it.original_text) lines.push(`   - 원문: "${it.original_text}"`);
+        if (it.replacement_text) lines.push(`   - 수정안: "${it.replacement_text}"`);
+        return lines.join("\n");
+      })
+      .join("\n\n");
+
+    const systemPrompt = `당신은 한국어 블로그 글 편집 전문가입니다.
+사용자가 제공한 원본 본문을, 아래 지적 사항들을 모두 반영하여 다시 작성합니다.
+
+작성 지침:
+- 원본의 카테고리·톤·구조·이미지 마커([IMAGE: ...])·CTA·태그를 그대로 유지하세요.
+- 지적 사항만 정확히 반영하고, 그 외 부분은 가능한 한 원문 그대로 두세요.
+- 마크다운 형식, 줄바꿈, 단락 구분을 원본과 동일하게 유지하세요.
+- 응답에는 어떠한 설명·서문·코드펜스도 붙이지 말고, 오직 수정된 전체 본문만 출력하세요.`;
+
+    const userPrompt = `[원본 제목]
+${params.title}
+
+[원본 본문]
+${params.body}
+
+[반영해야 할 지적 사항]
+${feedbackBlock}
+
+위 지적 사항을 모두 반영한 새 본문을 출력해주세요. 본문 외 다른 텍스트는 출력하지 마세요.`;
+
+    const rewritten = await streamLLM({
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      model: params.model,
+      apiKey: params.apiKey,
+      provider: params.provider,
+      maxTokens: 8000,
+      temperature: 0.5,
+      onProgress: params.onProgress,
+    });
+
+    // 코드펜스가 섞여 들어오면 제거
+    let cleaned = rewritten.trim();
+    const fenceMatch = cleaned.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/);
+    if (fenceMatch) cleaned = fenceMatch[1].trim();
+
+    if (!cleaned) {
+      return { success: false, error: "재작성 결과가 비어있습니다." };
+    }
+
+    return { success: true, rewrittenBody: cleaned };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "재작성 실패" };
   }
 }
