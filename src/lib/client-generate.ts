@@ -954,6 +954,62 @@ const DEFAULT_TAGS_BY_CATEGORY: Record<PromptKey, string[]> = {
 };
 
 /**
+ * 최종 본문에서 "(확인 필요)" / "(미확인)" 같은 불확실성 마커를 제거하는 안전망.
+ *
+ * Phase 3 LLM 이 PHASE3_PROMPT 의 9번 항목(우회 표현으로 바꾸기) 을 대체로
+ * 잘 따르지만, 가끔 본문에 그대로 남는 경우가 있어서 후처리에서 마지막으로 정리.
+ *
+ * 전략:
+ * - "조특법 제○조 (확인 필요)" 같은 패턴 → "조세특례제한법 관련 규정"
+ * - "별지 제○호 서식 (확인 필요)" → "관련 별지 서식"
+ * - "시행령 제○조 (확인 필요)" → "관련 시행령 규정"
+ * - 단독 "(확인 필요)" / "(확인필요)" / "(미확인)" → 빈 문자열로 제거
+ * - 연속된 공백 정리
+ *
+ * 이 함수는 비파괴적이지 않다 — 호출 측이 의도해서 부르는 경우에만 사용한다
+ * (Phase 3 후처리에서 appendCtaAndSignature 직전에 호출).
+ */
+export function cleanFinalText(body: string): string {
+  let t = body;
+
+  // 1) 구체적 법령 번호 + (확인 필요) → 일반화
+  t = t.replace(
+    /조\s*특\s*법\s*제\s*\d+\s*조(?:\s*의\s*\d+)?\s*\(\s*확인\s*필요[^)]*\)/g,
+    "조세특례제한법 관련 규정"
+  );
+  t = t.replace(
+    /조세\s*특례\s*제한\s*법\s*제\s*\d+\s*조(?:\s*의\s*\d+)?\s*\(\s*확인\s*필요[^)]*\)/g,
+    "조세특례제한법 관련 규정"
+  );
+  t = t.replace(
+    /시행령\s*제\s*\d+\s*조(?:\s*의\s*\d+)?\s*\(\s*확인\s*필요[^)]*\)/g,
+    "관련 시행령 규정"
+  );
+  t = t.replace(
+    /시행규칙\s*제\s*\d+\s*조(?:\s*의\s*\d+)?\s*\(\s*확인\s*필요[^)]*\)/g,
+    "관련 시행규칙"
+  );
+  t = t.replace(
+    /별지\s*제\s*[0-9]+\s*호\s*서식\s*\(\s*확인\s*필요[^)]*\)/g,
+    "관련 별지 서식 (관할 세무서/홈택스에서 최신본 확인 권장)"
+  );
+
+  // 2) 단독 "(확인 필요)" / "(확인필요)" / "(미확인)" / "(확정 아님)" 제거
+  t = t.replace(/\s*\(\s*확인\s*필요[^)]*\)\s*/g, " ");
+  t = t.replace(/\s*\(\s*미확인[^)]*\)\s*/g, " ");
+  t = t.replace(/\s*\(\s*확정\s*아님[^)]*\)\s*/g, " ");
+
+  // 3) 연속 공백/탭 정리 (줄바꿈은 보존)
+  t = t.replace(/[ \t]{2,}/g, " ");
+  // 줄 끝의 trailing space 제거
+  t = t.replace(/[ \t]+\n/g, "\n");
+  // 3+ 연속 줄바꿈은 2개로 정리
+  t = t.replace(/\n{3,}/g, "\n\n");
+
+  return t;
+}
+
+/**
  * Phase 3 종료 후 후처리 — CTA / 서명 / 태그 한 줄을 본문 끝에 append.
  * 다이어리 카테고리는 그대로 반환 (CTA 금지).
  *
@@ -962,6 +1018,8 @@ const DEFAULT_TAGS_BY_CATEGORY: Record<PromptKey, string[]> = {
  *   2. LLM 이 [TAGS]...[/TAGS] 로 출력했으면 그 태그들
  *   3. 카테고리별 DEFAULT_TAGS (부족분 채움)
  *   4. 브랜드 태그 (특허그룹디딤, 디딤변리사) — 항상 마지막에 보장
+ *
+ * 본문은 cleanFinalText 로 한 번 더 정리 후 CTA 블록을 append.
  */
 export function appendCtaAndSignature(params: {
   body: string;
@@ -971,19 +1029,23 @@ export function appendCtaAndSignature(params: {
   targetKeyword?: string;
 }): string {
   if (params.promptKey === "PROMPT_DIARY") {
-    return params.body;
+    // 다이어리도 (확인 필요) 표기 안전망은 적용 (CTA / 태그는 건너뜀)
+    return cleanFinalText(params.body);
   }
+
+  // 안전망: PHASE3 가 우회 처리하지 못한 (확인 필요) 마커를 정리
+  const cleaned = cleanFinalText(params.body);
 
   // [TAGS] ... [/TAGS] 가 있으면 추출
   let llmTags: string[] = [];
-  const tagsMatch = params.body.match(/\[TAGS\]([\s\S]*?)\[\/TAGS\]/);
-  let bodyWithoutTagsBlock = params.body;
+  const tagsMatch = cleaned.match(/\[TAGS\]([\s\S]*?)\[\/TAGS\]/);
+  let bodyWithoutTagsBlock = cleaned;
   if (tagsMatch) {
     llmTags = tagsMatch[1]
       .split(/[,\n#]/)
       .map((t) => t.replace(/^\d+\.\s*/, "").trim())
       .filter(Boolean);
-    bodyWithoutTagsBlock = params.body.replace(tagsMatch[0], "").trimEnd();
+    bodyWithoutTagsBlock = cleaned.replace(tagsMatch[0], "").trimEnd();
   }
 
   const normalize = (t: string) => t.replace(/\s+/g, "").replace(/^#/, "");
