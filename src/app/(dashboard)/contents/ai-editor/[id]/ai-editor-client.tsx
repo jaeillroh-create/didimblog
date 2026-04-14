@@ -20,8 +20,6 @@ import { DraftQualityPanel } from "@/components/contents/draft-quality-panel";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { calcDraftScore, validateDraft } from "@/lib/draft-validator";
 import { CrossLLMValidationPanel } from "@/components/contents/cross-llm-validation-panel";
-import { FactCheckPanel } from "@/components/contents/fact-check-panel";
-import { PROMPT_FACT_CHECK } from "@/lib/constants/prompts";
 import {
   getGenerationStatus,
   getGenerationPrompt,
@@ -31,8 +29,6 @@ import {
 } from "@/actions/ai";
 import {
   clientGenerateDraft,
-  clientFactCheck,
-  type FactCheckResult,
   type ClientLLMProvider,
 } from "@/lib/client-generate";
 import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
@@ -167,11 +163,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [generatedImageUrls, setGeneratedImageUrls] = useState<Record<number, string>>({});
   const [bulkGenerating, setBulkGenerating] = useState(false);
 
-  // 팩트체크
-  const [factCheckStatus, setFactCheckStatus] = useState<"idle" | "checking" | "done" | "error" | "skipped">("idle");
-  const [factCheckResult, setFactCheckResult] = useState<FactCheckResult | null>(null);
-  const [factCheckError, setFactCheckError] = useState<string | null>(null);
-  const factCheckApiRef = useRef<{ apiKey: string; model: string; provider: ClientLLMProvider } | null>(null);
+  // 교차검증 — 베이스 LLM 정보 (생성에 사용된 LLM. 나중에 재작성 시에도 사용)
+  const baseLLMRef = useRef<{ apiKey: string; model: string; provider: ClientLLMProvider } | null>(null);
+
+  // 본문 textarea hydration mismatch 방지용 highlight (교차검증 반영 시 잠깐 강조)
+  const [bodyHighlight, setBodyHighlight] = useState(false);
 
   // 클라이언트 사이드 생성 — useRef로 한 번만 트리거
   const generationTriggered = useRef(false);
@@ -234,7 +230,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       const apiKey = selected?.apiKey ?? configData.apiKey;
       const model = selected?.model ?? configData.model;
       const provider = (selected?.provider ?? configData.provider ?? "claude") as ClientLLMProvider;
-      factCheckApiRef.current = { apiKey, model, provider };
+      baseLLMRef.current = { apiKey, model, provider };
 
       // 2. 프롬프트 조립
       console.log("[AI Editor] getGenerationPrompt 호출 시작, generationId:", genId);
@@ -313,9 +309,6 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         setEditTitle(title);
         setEditTags(tags);
         setStatus("completed");
-
-        // 7. 자동 팩트체크 시작
-        startFactCheck(title, fullText, factCheckApiRef.current);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "생성 중 오류가 발생했습니다.";
@@ -329,38 +322,17 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     }
   }
 
-  // 팩트체크 실행
-  async function startFactCheck(
-    title: string,
-    body: string,
-    apiConfig: { apiKey: string; model: string; provider: ClientLLMProvider } | null
-  ) {
-    if (!apiConfig || !isMounted.current) return;
-
-    setFactCheckStatus("checking");
-    console.log("[AI Editor] 팩트체크 시작 — provider:", apiConfig.provider, "model:", apiConfig.model);
-
-    const res = await clientFactCheck({
-      title,
-      body,
-      model: apiConfig.model,
-      apiKey: apiConfig.apiKey,
-      provider: apiConfig.provider,
-      systemPrompt: PROMPT_FACT_CHECK,
-    });
-
-    if (!isMounted.current) return;
-
-    if (res.success && res.result) {
-      console.log("[AI Editor] 팩트체크 완료, 점수:", res.result.overall_score);
-      console.log("[AI Editor] 팩트체크 이슈 샘플:", JSON.stringify(res.result.issues?.[0], null, 2));
-      setFactCheckResult(res.result);
-      setFactCheckStatus("done");
-    } else {
-      console.error("[AI Editor] 팩트체크 실패:", res.error);
-      setFactCheckError(res.error || "팩트체크 실패");
-      setFactCheckStatus("error");
-    }
+  /**
+   * 교차검증 패널에서 개별 issue 반영 시 호출.
+   * 본문에서 originalText → replacementText 교체.
+   * 매칭 성공하면 textarea 를 잠깐 강조해서 사용자에게 시각적 피드백.
+   */
+  function applyFixToBody(originalText: string, replacementText: string): boolean {
+    if (!editText.includes(originalText)) return false;
+    setEditText((prev) => prev.replace(originalText, replacementText));
+    setBodyHighlight(true);
+    setTimeout(() => setBodyHighlight(false), 3000);
+    return true;
   }
 
   // 이미지 생성 가능 여부 + 기존 이미지 로드
@@ -652,9 +624,20 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           {/* 본문 편집 */}
           <Card>
             <CardContent className="pt-6">
-              <label className="text-sm font-medium mb-2 block">본문</label>
+              <label className="text-sm font-medium mb-2 block flex items-center gap-2">
+                본문
+                {bodyHighlight && (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: "#dcfce7", color: "var(--quality-excellent)" }}>
+                    ✓ 본문에 반영됨
+                  </span>
+                )}
+              </label>
               <textarea
-                className="w-full min-h-[500px] rounded-md border border-input bg-background px-4 py-3 text-sm leading-relaxed font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring whitespace-pre-wrap"
+                className={`w-full min-h-[500px] rounded-md border bg-background px-4 py-3 text-sm leading-relaxed font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring whitespace-pre-wrap transition-all duration-300 ${
+                  bodyHighlight
+                    ? "border-[var(--quality-excellent)] shadow-[0_0_0_3px_rgba(34,197,94,0.15)]"
+                    : "border-input"
+                }`}
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
               />
@@ -760,32 +743,20 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             </Card>
           )}
 
-          {/* 팩트체크 패널 */}
-          <FactCheckPanel
-            status={factCheckStatus}
-            result={factCheckResult}
-            error={factCheckError}
-            onSkip={() => setFactCheckStatus("skipped")}
-            onRetry={() => startFactCheck(editTitle, editText, factCheckApiRef.current)}
-            onApplyFix={(originalText, replacementText) => {
-              if (!editText.includes(originalText)) return false;
-              setEditText((prev) => prev.replace(originalText, replacementText));
-              return true;
-            }}
-          />
-
-          {/* 교차검증 패널 (멀티 LLM, 클라이언트 직접 호출) */}
-          {showValidation && factCheckApiRef.current && (
+          {/* 교차검증 패널 — 헤더 "교차검증" 버튼이 유일한 트리거 */}
+          {showValidation && baseLLMRef.current && (
             <CrossLLMValidationPanel
               title={editTitle}
               body={editText}
               availableModels={availableModels}
-              baseProvider={factCheckApiRef.current.provider}
-              baseModel={factCheckApiRef.current.model}
-              baseApiKey={factCheckApiRef.current.apiKey}
+              baseProvider={baseLLMRef.current.provider}
+              baseModel={baseLLMRef.current.model}
+              baseApiKey={baseLLMRef.current.apiKey}
+              onApplyFix={applyFixToBody}
               onApplyRewrite={(newBody) => {
                 setEditText(newBody);
-                setShowValidation(false);
+                setBodyHighlight(true);
+                setTimeout(() => setBodyHighlight(false), 3000);
               }}
               onClose={() => setShowValidation(false)}
             />
