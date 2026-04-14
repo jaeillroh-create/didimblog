@@ -106,12 +106,15 @@ function extractImageMarkers(text: string): ExtractedImageMarker[] {
   // 1) 박스 형식: [IMAGE: ...] 다음에 ━━ 가 오는 multi-line 매칭
   // ([\s\S]*?) 로 줄바꿈 포함 + 닫는 ] 직후 ━━ 구분선이 와야 함
   // (description 안의 임의의 [type] 같은 nested ] 와 충돌하지 않음)
+  // ⚠️ description 은 절대 slice 하지 말 것 — 한국어 + 영문 풀 프롬프트가 들어 있고,
+  // slice 가 한글/이모지 character boundary 를 깨면 unpaired surrogate 가 생겨
+  // PostgREST 가 PGRST102 (Empty or invalid json) 로 INSERT 를 거부함.
   const boxRe = /\[IMAGE:\s*([\s\S]*?)\]\s*\n\s*━━/g;
   let m: RegExpExecArray | null;
   while ((m = boxRe.exec(text)) !== null) {
     markers.push({
       position: m.index,
-      description: m[1].trim().slice(0, 200),
+      description: m[1].trim(),
       // rawText 는 [IMAGE:..] 까지만 (구분선 제외) — 이후 본문에서 indexOf 로 찾기 위함
       rawText: text.slice(m.index, m.index + m[0].length).replace(/\s*\n\s*━━$/, ""),
     });
@@ -944,6 +947,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                         markerIndex={i}
                         generationId={currentGenerationId}
                         blogTopic={editTitle}
+                        rawText={marker.rawText}
                         onImageGenerated={handleImageGenerated}
                       />
                     ) : (

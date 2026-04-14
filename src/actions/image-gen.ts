@@ -75,6 +75,36 @@ function buildImagePrompt(description: string, blogTopic: string): string {
     .replace("{{blog_topic}}", blogTopic);
 }
 
+/**
+ * 문자열에서 unpaired UTF-16 surrogate 를 제거.
+ *
+ * 배경: ai-editor 의 extractImageMarkers 가 description 을 codeunit 단위로
+ * slice 했을 때 surrogate pair 가운데에서 잘려 unpaired surrogate (\uD800-\uDFFF)
+ * 가 남는 경우가 있었음. 이 상태로 supabase-js .insert() 에 전달하면
+ * JSON.stringify 가 invalid UTF-8 을 만들고 PostgREST 가
+ * "PGRST102: Empty or invalid json" 으로 INSERT 를 거부함.
+ *
+ * 슬라이스 자체는 제거했지만, 다른 경로(예: LLM 출력 자체에 깨진 surrogate)
+ * 에서도 동일 증상이 날 수 있으므로 INSERT 직전에 sanitize 안전망을 둔다.
+ * 추가로 너무 긴 텍스트는 12,000 character 로 제한 (PG TEXT 컬럼은 무제한이지만
+ * 안정적인 fetch body 크기 유지).
+ */
+function sanitizeForInsert(s: string, maxChars = 12_000): string {
+  if (!s) return "";
+  // 1) unpaired surrogate 제거
+  let cleaned = s.replace(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+    ""
+  );
+  // 2) NULL byte 제거 (Postgres TEXT 컬럼이 거부)
+  cleaned = cleaned.replace(/\u0000/g, "");
+  // 3) 길이 제한 — character-safe (Array.from 으로 codepoint 단위)
+  if (cleaned.length > maxChars) {
+    cleaned = Array.from(cleaned).slice(0, maxChars).join("");
+  }
+  return cleaned;
+}
+
 // ── Server Actions ──
 
 export async function checkImageGenAvailable(): Promise<boolean> {
@@ -130,13 +160,18 @@ export async function generateInfographic(
     const dbClient = createAdminClient() ?? supabase;
     const usingServiceRole = dbClient !== supabase;
 
+    // PGRST102 방지: description / prompt 의 unpaired surrogate / NULL byte 제거
+    // + character-safe 길이 제한
+    const safeDescription = sanitizeForInsert(input.description, 12_000);
+    const safePrompt = sanitizeForInsert(prompt, 12_000);
+
     const { data: imageRecord, error: insertError } = await dbClient
       .from("generated_images")
       .insert({
         generation_id: input.generationId,
         marker_index: input.markerIndex,
-        description: input.description,
-        prompt_used: prompt,
+        description: safeDescription,
+        prompt_used: safePrompt,
         image_provider: "openai",
         image_model: "dall-e-3",
         status: "generating",
