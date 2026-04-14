@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -546,10 +547,21 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
             <DialogTitle>
               {editProvider ? PROVIDER_INFO[editProvider].label : ""} 설정
             </DialogTitle>
+            <DialogDescription>
+              모델을 선택하고 API 키를 입력하세요. 저장 시 연결 테스트를 자동으로 수행합니다.
+            </DialogDescription>
           </DialogHeader>
 
           {editProvider && (
-            <div className="space-y-4">
+            <form
+              id="llm-config-form"
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSaveConfig();
+              }}
+              autoComplete="off"
+            >
               <div>
                 <label className="input-label">모델</label>
                 <Select
@@ -584,6 +596,8 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
                     placeholder="API 키를 입력하세요"
                     value={editApiKey}
                     onChange={(e) => setEditApiKey(e.target.value)}
+                    autoComplete="new-password"
+                    name="llm-api-key"
                   />
                   <button
                     type="button"
@@ -653,16 +667,17 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
                   {saveError}
                 </div>
               )}
-            </div>
+            </form>
           )}
 
           <DialogFooter>
-            <button className="btn btn-secondary btn-md" onClick={() => setEditProvider(null)}>
+            <button type="button" className="btn btn-secondary btn-md" onClick={() => setEditProvider(null)}>
               취소
             </button>
             <button
+              type="submit"
+              form="llm-config-form"
               className="btn btn-primary btn-md"
-              onClick={handleSaveConfig}
               disabled={isPending || !editApiKey.trim()}
             >
               {isPending ? (
@@ -685,9 +700,22 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
             <DialogTitle>
               {editSearchProvider === "naver" ? "네이버 검색 API 설정" : "구글 Custom Search API 설정"}
             </DialogTitle>
+            <DialogDescription>
+              {editSearchProvider === "naver"
+                ? "네이버 개발자 센터에서 발급받은 Client ID와 Client Secret을 입력하세요."
+                : "Google Cloud Console에서 발급받은 Search Engine ID와 API Key를 입력하세요."}
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <form
+            id="search-api-form"
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSaveSearchConfig();
+            }}
+            autoComplete="off"
+          >
             <div className="ucl-alert alert-info">
               <span className="t-xs">
               {editSearchProvider === "naver"
@@ -704,6 +732,8 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
                   placeholder={editSearchProvider === "naver" ? "네이버 API Client ID" : "Google Search Engine ID"}
                   value={searchClientId}
                   onChange={(e) => setSearchClientId(e.target.value)}
+                  autoComplete="off"
+                  name="search-client-id"
                 />
               </div>
             </div>
@@ -717,6 +747,8 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
                   placeholder={editSearchProvider === "naver" ? "네이버 API Client Secret" : "Google API Key"}
                   value={searchClientSecret}
                   onChange={(e) => setSearchClientSecret(e.target.value)}
+                  autoComplete="new-password"
+                  name="search-client-secret"
                 />
                 <button
                   type="button"
@@ -734,15 +766,16 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
                 {searchSaveError}
               </div>
             )}
-          </div>
+          </form>
 
           <DialogFooter>
-            <button className="btn btn-secondary btn-md" onClick={() => setEditSearchProvider(null)}>
+            <button type="button" className="btn btn-secondary btn-md" onClick={() => setEditSearchProvider(null)}>
               취소
             </button>
             <button
+              type="submit"
+              form="search-api-form"
               className="btn btn-primary btn-md"
-              onClick={handleSaveSearchConfig}
               disabled={isPending || !searchClientId.trim() || !searchClientSecret.trim()}
             >
               {isPending ? (
@@ -763,6 +796,9 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
         <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>프롬프트 템플릿 편집: {editTemplate?.name}</DialogTitle>
+            <DialogDescription>
+              시스템 프롬프트와 사용자 프롬프트 템플릿을 확인합니다 (읽기 전용).
+            </DialogDescription>
           </DialogHeader>
 
           {editTemplate && (

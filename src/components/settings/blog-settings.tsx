@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { saveBlogStartDate } from "@/actions/ai";
 import { Calendar, Loader2, CheckCircle2 } from "lucide-react";
 
@@ -30,12 +30,16 @@ export function BlogSettings({ initialStartDate }: BlogSettingsProps) {
     });
   }
 
-  // 현재 주차 계산 — suppressHydrationWarning으로 서버/클라이언트 차이 허용
-  const currentWeek = useMemo(() => {
+  // 현재 주차 계산 — new Date()는 서버/클라이언트 간 시점 차이로 hydration mismatch를
+  // 일으키므로 마운트 후에만 계산. 초기값은 null 로 동일하게 렌더됨.
+  const [currentWeek, setCurrentWeek] = useState<number | null>(null);
+
+  useEffect(() => {
     const today = new Date();
     const start = new Date(startDate);
     const diffDays = (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-    return Math.ceil(diffDays / 7);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCurrentWeek(Math.ceil(diffDays / 7));
   }, [startDate]);
 
   return (
@@ -83,15 +87,22 @@ export function BlogSettings({ initialStartDate }: BlogSettingsProps) {
 
           <div className="p-3 space-y-1" style={{ background: "var(--g50)", borderRadius: "var(--r-md)" }}>
             <p className="t-sm" style={{ fontWeight: 600, color: "var(--g900)" }}>현재 상태</p>
-            <div className="flex items-center gap-4 t-xs" style={{ color: "var(--g400)" }} suppressHydrationWarning>
+            <div className="flex items-center gap-4 t-xs" style={{ color: "var(--g400)" }}>
               <span>시작일: {startDate}</span>
-              <span>현재 주차: <span className="font-num" style={{ fontWeight: 700 }}>W{currentWeek > 0 ? currentWeek : "-"}</span></span>
               <span>
-                {currentWeek > 12
-                  ? "Phase 1 완료"
-                  : currentWeek > 0
-                    ? `Phase 1 진행 중 (${Math.round((currentWeek / 12) * 100)}%)`
-                    : "시작 전"}
+                현재 주차:{" "}
+                <span className="font-num" style={{ fontWeight: 700 }}>
+                  W{currentWeek !== null && currentWeek > 0 ? currentWeek : "-"}
+                </span>
+              </span>
+              <span>
+                {currentWeek === null
+                  ? ""
+                  : currentWeek > 12
+                    ? "Phase 1 완료"
+                    : currentWeek > 0
+                      ? `Phase 1 진행 중 (${Math.round((currentWeek / 12) * 100)}%)`
+                      : "시작 전"}
               </span>
             </div>
           </div>

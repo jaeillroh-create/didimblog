@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { ensureAdmin } from "@/lib/auth/ensure-admin";
 import { generateStream, generateFull, testConnection } from "@/lib/llm";
 import type {
   LLMProvider,
@@ -986,23 +987,19 @@ export async function saveLLMConfig(
   try {
     const supabase = await createClient();
 
-    // admin 권한 확인
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return { success: false, error: "로그인이 필요합니다." };
+    // admin 권한 확인 (다층 폴백 + 상세 로깅)
+    const adminCheck = await ensureAdmin(supabase);
+    if (!adminCheck.success) {
+      return { success: false, error: adminCheck.error };
     }
+    console.log("[saveLLMConfig] admin 검증 통과 (source:", adminCheck.source, ")");
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+    const userId = adminCheck.userId;
 
-    if (profile?.role !== "admin") {
-      return { success: false, error: "관리자 권한이 필요합니다." };
-    }
+    // llm_configs 쓰기 — RLS(admin 전용) 우회를 위해 service-role 클라이언트가
+    // 있으면 그걸 사용, 없으면 세션 클라이언트로 폴백
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const dbClient = createAdminClient() ?? supabase;
 
     // 연결 테스트
     let testResult: "success" | "failed" = "failed";
@@ -1018,25 +1015,25 @@ export async function saveLLMConfig(
 
     // is_default 설정 시 기존 default 해제
     if (input.isDefault) {
-      await supabase
+      await dbClient
         .from("llm_configs")
         .update({ is_default: false })
         .eq("is_default", true);
     }
 
     // 기존 동일 provider 설정 확인
-    const { data: existing } = await supabase
+    const { data: existing } = await dbClient
       .from("llm_configs")
       .select("id")
       .eq("provider", input.provider)
       .limit(1)
-      .single();
+      .maybeSingle();
 
     let configId: number;
 
     if (existing) {
       // 업데이트
-      const { data, error } = await supabase
+      const { data, error } = await dbClient
         .from("llm_configs")
         .update({
           display_name: input.displayName,
@@ -1053,12 +1050,13 @@ export async function saveLLMConfig(
         .single();
 
       if (error || !data) {
+        console.error("[saveLLMConfig] 업데이트 실패:", error);
         return { success: false, error: `설정 업데이트 실패: ${error?.message}` };
       }
       configId = data.id;
     } else {
       // 신규 생성
-      const { data, error } = await supabase
+      const { data, error } = await dbClient
         .from("llm_configs")
         .insert({
           provider: input.provider,
@@ -1069,12 +1067,13 @@ export async function saveLLMConfig(
           monthly_token_limit: input.monthlyTokenLimit ?? null,
           last_tested_at: new Date().toISOString(),
           test_result: testResult,
-          created_by: user.id,
+          created_by: userId,
         })
         .select("id")
         .single();
 
       if (error || !data) {
+        console.error("[saveLLMConfig] 신규 저장 실패:", error);
         return { success: false, error: `설정 저장 실패: ${error?.message}` };
       }
       configId = data.id;
