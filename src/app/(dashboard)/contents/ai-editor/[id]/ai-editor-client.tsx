@@ -522,6 +522,19 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     return true;
   }
 
+  /**
+   * "반영됨" 항목을 되돌릴 때 호출되는 역치환.
+   * 본문에서 replacementText → originalText 로 되돌림.
+   * 사용자가 본문을 수동 편집해서 replacementText 가 더 이상 본문에 없으면 false 반환.
+   */
+  function undoFixInBody(originalText: string, replacementText: string): boolean {
+    if (!editText.includes(replacementText)) return false;
+    setEditText((prev) => prev.replace(replacementText, originalText));
+    setBodyHighlight(true);
+    setTimeout(() => setBodyHighlight(false), 3000);
+    return true;
+  }
+
   // 이미지 생성 가능 여부 + 기존 이미지 로드
   useEffect(() => {
     checkImageGenAvailable().then(setImageGenAvailable);
@@ -1178,6 +1191,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
               categoryName={pipelineCategoryName}
               targetKeyword={keyword}
               onApplyFix={applyFixToBody}
+              onUndoFix={undoFixInBody}
               onProceedToPhase3={() => {
                 setCrossValidationDone(true);
                 setShowValidation(false);

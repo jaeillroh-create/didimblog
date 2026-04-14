@@ -15,6 +15,7 @@ import {
   Check,
   X,
   ArrowRight,
+  RotateCcw,
   Settings as SettingsIcon,
 } from "lucide-react";
 import {
@@ -48,6 +49,8 @@ interface CrossLLMValidationPanelProps {
   targetKeyword: string;
   /** 개별 issue 반영 — true 반환 시 본문 교체 성공 */
   onApplyFix: (originalText: string, replacementText: string) => boolean;
+  /** "반영됨" 항목 되돌리기 — 본문에서 replacement → original 로 역치환. true 반환 시 성공 */
+  onUndoFix?: (originalText: string, replacementText: string) => boolean;
   /** "Phase 3 진행" 버튼 — 모든 항목 처리 후 활성화. 호출 시 Phase 3 SEO 최적화 시작 */
   onProceedToPhase3: () => void;
   onClose?: () => void;
@@ -130,6 +133,7 @@ export function CrossLLMValidationPanel({
   categoryName,
   targetKeyword,
   onApplyFix,
+  onUndoFix,
   onProceedToPhase3,
   onClose,
 }: CrossLLMValidationPanelProps) {
@@ -282,6 +286,46 @@ export function CrossLLMValidationPanel({
     setGroupStatus((prev) => ({ ...prev, [group.groupKey]: "ignored" }));
   }
 
+  /**
+   * 처리된 항목(반영됨/무시됨) 을 다시 pending 으로 되돌림.
+   * - 무시됨 → 단순히 status 만 pending 으로 (본문 변경 없음)
+   * - 반영됨 → 본문에서도 replacement_text → original_text 로 역치환
+   */
+  function handleUndoGroup(group: IssueGroup) {
+    const current = groupStatus[group.groupKey];
+    if (current === "applied") {
+      const iss = group.primary.issue;
+      if (!iss.original_text || !iss.replacement_text) {
+        toast.error("원문/교체문이 없어 되돌릴 수 없습니다");
+        return;
+      }
+      if (!onUndoFix) {
+        toast.error("되돌리기 기능이 활성화되지 않았습니다");
+        return;
+      }
+      const ok = onUndoFix(iss.original_text, iss.replacement_text);
+      if (!ok) {
+        toast.error("본문에서 교체된 문장을 찾지 못했습니다 (수동 편집됨?)");
+        return;
+      }
+      setGroupStatus((prev) => {
+        const next = { ...prev };
+        delete next[group.groupKey];
+        return next;
+      });
+      toast.success("반영 취소 — 본문이 되돌려졌습니다");
+      return;
+    }
+    if (current === "ignored") {
+      setGroupStatus((prev) => {
+        const next = { ...prev };
+        delete next[group.groupKey];
+        return next;
+      });
+      toast.success("무시 취소 — 다시 처리할 수 있습니다");
+    }
+  }
+
   function handleProceed() {
     startTransition(() => {
       onProceedToPhase3();
@@ -431,6 +475,7 @@ export function CrossLLMValidationPanel({
               status={groupStatus[g.groupKey] ?? "pending"}
               onApply={() => handleApplyGroup(g)}
               onIgnore={() => handleIgnoreGroup(g)}
+              onUndo={() => handleUndoGroup(g)}
             />
           ))}
         </div>
@@ -482,9 +527,10 @@ interface IssueGroupCardProps {
   status: ItemStatus;
   onApply: () => void;
   onIgnore: () => void;
+  onUndo: () => void;
 }
 
-function IssueGroupCard({ group, status, onApply, onIgnore }: IssueGroupCardProps) {
+function IssueGroupCard({ group, status, onApply, onIgnore, onUndo }: IssueGroupCardProps) {
   const sev = SEVERITY_STYLES[group.effectiveSeverity];
   const iss = group.primary.issue;
   const canApply = !!iss.original_text && !!iss.replacement_text;
@@ -520,14 +566,38 @@ function IssueGroupCard({ group, status, onApply, onIgnore }: IssueGroupCardProp
         )}
         <div className="ml-auto flex items-center gap-1">
           {status === "applied" ? (
-            <Badge style={{ backgroundColor: "#16a34a", color: "white" }} className="text-xs">
-              <Check className="mr-0.5 h-3.5 w-3.5" />
-              반영됨
-            </Badge>
+            <>
+              <Badge style={{ backgroundColor: "#16a34a", color: "white" }} className="text-xs">
+                <Check className="mr-0.5 h-3.5 w-3.5" />
+                반영됨
+              </Badge>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={onUndo}
+                title="본문에서 되돌리고 다시 처리할 수 있게 합니다"
+              >
+                <RotateCcw className="mr-0.5 h-3.5 w-3.5" />
+                되돌리기
+              </Button>
+            </>
           ) : status === "ignored" ? (
-            <Badge variant="outline" className="text-xs text-muted-foreground">
-              무시됨
-            </Badge>
+            <>
+              <Badge variant="outline" className="text-xs text-muted-foreground">
+                무시됨
+              </Badge>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={onUndo}
+                title="다시 [반영] / [무시] 를 선택할 수 있게 합니다"
+              >
+                <RotateCcw className="mr-0.5 h-3.5 w-3.5" />
+                되돌리기
+              </Button>
+            </>
           ) : (
             <>
               <Button
