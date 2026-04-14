@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useState, useTransition, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,25 +12,19 @@ import {
   Sparkles,
   CheckCircle2,
   AlertTriangle,
-  XCircle,
-  RefreshCw,
-  ChevronDown,
-  ChevronRight,
   Check,
   X,
-  Zap,
+  ArrowRight,
   Settings as SettingsIcon,
 } from "lucide-react";
 import {
-  clientCrossValidate,
-  clientRewriteWithFeedback,
+  clientCrossValidateV2,
   type ClientLLMProvider,
   type CrossValidationProviderConfig,
   type CrossValidationProviderResult,
   type FactCheckIssue,
-  type SelectedIssue,
 } from "@/lib/client-generate";
-import { PROMPT_FACT_CHECK, PROMPT_FACT_CHECK_QUICK } from "@/lib/constants/prompts";
+import { PROMPT_CROSS_VALIDATION } from "@/lib/constants/prompts";
 
 interface LLMModelOption {
   id: number;
@@ -46,79 +40,118 @@ interface CrossLLMValidationPanelProps {
   body: string;
   availableModels: LLMModelOption[];
   baseProvider: ClientLLMProvider;
-  baseModel: string;
-  baseApiKey: string;
+  /** Phase 1 outline 에서 추출한 법령 목록. PROMPT_CROSS_VALIDATION 의 legal_references 에 주입 */
+  legalReferences: string[];
+  /** Phase 1 outline 의 category_name (한국어, 없으면 빈 문자열) */
+  categoryName: string;
+  /** SEO 키워드 */
+  targetKeyword: string;
   /** 개별 issue 반영 — true 반환 시 본문 교체 성공 */
   onApplyFix: (originalText: string, replacementText: string) => boolean;
-  /** 선택 항목들을 베이스 LLM 으로 한꺼번에 재작성 */
-  onApplyRewrite: (newBody: string) => void;
+  /** "Phase 3 진행" 버튼 — 모든 항목 처리 후 활성화. 호출 시 Phase 3 SEO 최적화 시작 */
+  onProceedToPhase3: () => void;
   onClose?: () => void;
 }
 
-const SEVERITY_STYLES: Record<string, { color: string; bg: string; label: string }> = {
-  high: { color: "#dc2626", bg: "#fee2e2", label: "심각" },
-  medium: { color: "#d97706", bg: "#fef3c7", label: "주의" },
-  low: { color: "#6b7280", bg: "#f3f4f6", label: "경미" },
+const SEVERITY_STYLES: Record<string, { color: string; bg: string; label: string; weight: number }> = {
+  high: { color: "#dc2626", bg: "#fee2e2", label: "심각", weight: 3 },
+  medium: { color: "#d97706", bg: "#fef3c7", label: "주의", weight: 2 },
+  low: { color: "#6b7280", bg: "#f3f4f6", label: "경미", weight: 1 },
 };
 
+type SeverityLevel = "high" | "medium" | "low";
+
+function upgradeSeverity(s: SeverityLevel): SeverityLevel {
+  if (s === "low") return "medium";
+  if (s === "medium") return "high";
+  return "high";
+}
+
+/** issue 한 건 (한 LLM 의 지적) */
 interface IssueRow {
   key: string;
-  stage: 1 | 2;
   provider: ClientLLMProvider;
   providerLabel: string;
   index: number;
   issue: FactCheckIssue;
 }
 
+/** 같은 original_text 를 여러 LLM 이 지적한 묶음 */
+interface IssueGroup {
+  groupKey: string;
+  primary: IssueRow; // 그룹의 대표 행 (가장 높은 severity)
+  rows: IssueRow[]; // 같은 이슈를 지적한 모든 LLM
+  effectiveSeverity: SeverityLevel; // 중복 지적 시 1단계 상향
+  providers: string[]; // 지적한 LLM 표시명 목록
+}
+
 type ItemStatus = "pending" | "applied" | "ignored";
 
-/**
- * 1단계 빠른 검증에 사용할 LLM 선정.
- * 모델 ID 에 mini/flash/haiku/lite/nano 가 있으면 우선 (저렴/빠름).
- */
-function pickFastProvider(
-  configs: CrossValidationProviderConfig[]
-): CrossValidationProviderConfig | null {
-  if (configs.length === 0) return null;
-  const fast = configs.find((c) => /mini|flash|haiku|lite|nano/i.test(c.model));
-  return fast ?? configs[0];
+function normalizeKey(text: string | undefined): string {
+  if (!text) return "";
+  // 화이트스페이스 정규화 + 처음 60자 — 같은 이슈를 다른 표현으로 지적해도 어느 정도 묶음
+  return text.replace(/\s+/g, " ").trim().slice(0, 60).toLowerCase();
+}
+
+function groupRows(rows: IssueRow[]): IssueGroup[] {
+  const map = new Map<string, IssueRow[]>();
+  for (const r of rows) {
+    const k = normalizeKey(r.issue.original_text) || `noref-${r.key}`;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(r);
+  }
+
+  return Array.from(map.entries()).map(([k, arr]) => {
+    // primary = 가장 높은 severity 의 행
+    const sorted = [...arr].sort(
+      (a, b) =>
+        SEVERITY_STYLES[b.issue.severity].weight - SEVERITY_STYLES[a.issue.severity].weight
+    );
+    const primary = sorted[0];
+    const baseSeverity = primary.issue.severity as SeverityLevel;
+    const effectiveSeverity: SeverityLevel = arr.length >= 2 ? upgradeSeverity(baseSeverity) : baseSeverity;
+    const providers = Array.from(new Set(arr.map((r) => r.providerLabel)));
+    return {
+      groupKey: k,
+      primary,
+      rows: arr,
+      effectiveSeverity,
+      providers,
+    };
+  });
 }
 
 export function CrossLLMValidationPanel({
-  title,
+  title: _title,
   body,
   availableModels,
   baseProvider,
-  baseModel,
-  baseApiKey,
+  legalReferences,
+  categoryName,
+  targetKeyword,
   onApplyFix,
-  onApplyRewrite,
+  onProceedToPhase3,
   onClose,
 }: CrossLLMValidationPanelProps) {
-  const [isPending, startTransition] = useTransition();
+  void _title;
+  const [, startTransition] = useTransition();
 
-  // 단계별 상태
-  const [stage1Result, setStage1Result] = useState<CrossValidationProviderResult | null>(null);
-  const [stage1Loading, setStage1Loading] = useState(false);
-  const [stage2Results, setStage2Results] = useState<CrossValidationProviderResult[] | null>(null);
-  const [stage2Loading, setStage2Loading] = useState(false);
-
+  const [results, setResults] = useState<CrossValidationProviderResult[] | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 각 issue 의 상태 (pending / applied / ignored)
-  const [itemStatus, setItemStatus] = useState<Record<string, ItemStatus>>({});
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  // group key 별 처리 상태 (반영/무시)
+  const [groupStatus, setGroupStatus] = useState<Record<string, ItemStatus>>({});
 
-  // 통합 재작성 상태
-  const [isRewriting, setIsRewriting] = useState(false);
-  const [rewriteProgress, setRewriteProgress] = useState(0);
+  // Phase 2 본문이 변하면 자동 재검증 방지를 위해 한 번만 시작하는 ref
+  const startedRef = useRef(false);
 
-  // base provider 를 제외한 등록 LLM 목록
+  // 베이스 provider 를 제외한 외부 LLM 목록
   const otherProviderConfigs = useMemo<CrossValidationProviderConfig[]>(() => {
     const byProvider: Record<string, LLMModelOption> = {};
     for (const m of availableModels) {
       if (!m.apiKey) continue;
-      if (m.provider === baseProvider) continue; // base 제외
+      if (m.provider === baseProvider) continue;
       const existing = byProvider[m.provider];
       if (!existing || (m.isDefault && !existing.isDefault)) {
         byProvider[m.provider] = m;
@@ -132,154 +165,106 @@ export function CrossLLMValidationPanel({
     }));
   }, [availableModels, baseProvider]);
 
-  const stage1Provider = useMemo(() => pickFastProvider(otherProviderConfigs), [otherProviderConfigs]);
-  const stage2Providers = useMemo(
-    () => otherProviderConfigs.filter((c) => c.provider !== stage1Provider?.provider),
-    [otherProviderConfigs, stage1Provider]
-  );
-
-  // 모든 이슈 평탄화 (stage1 + stage2)
-  const allRows = useMemo<IssueRow[]>(() => {
-    const rows: IssueRow[] = [];
-    if (stage1Result?.success && stage1Result.result?.issues) {
-      stage1Result.result.issues.forEach((iss, idx) => {
-        rows.push({
-          key: `s1:${stage1Result.provider}:${idx}`,
-          stage: 1,
-          provider: stage1Result.provider,
-          providerLabel: stage1Result.displayName,
-          index: idx,
-          issue: iss,
-        });
-      });
-    }
-    if (stage2Results) {
-      for (const pr of stage2Results) {
-        if (!pr.success || !pr.result?.issues) continue;
-        pr.result.issues.forEach((iss, idx) => {
-          rows.push({
-            key: `s2:${pr.provider}:${idx}`,
-            stage: 2,
-            provider: pr.provider,
-            providerLabel: pr.displayName,
-            index: idx,
-            issue: iss,
-          });
-        });
-      }
-    }
-    return rows;
-  }, [stage1Result, stage2Results]);
-
-  // severity 별 카운트 (pending 만)
-  const severityCounts = useMemo(() => {
-    const c = { high: 0, medium: 0, low: 0 };
-    for (const r of allRows) {
-      if (itemStatus[r.key] === "applied" || itemStatus[r.key] === "ignored") continue;
-      const sev = r.issue.severity;
-      if (sev === "high") c.high++;
-      else if (sev === "medium") c.medium++;
-      else if (sev === "low") c.low++;
-    }
-    return c;
-  }, [allRows, itemStatus]);
-
-  /** 단일 provider 검증 호출 */
-  async function runSingleStage(
-    config: CrossValidationProviderConfig,
-    systemPrompt: string
-  ): Promise<CrossValidationProviderResult> {
-    const arr = await clientCrossValidate({
-      title,
-      body,
-      systemPrompt,
-      providers: [config],
-    });
-    return arr[0];
-  }
-
-  /** 1단계 시작 */
-  async function startStage1() {
-    if (!stage1Provider) {
+  // ── 검증 시작 ──
+  async function runValidation() {
+    if (otherProviderConfigs.length === 0) {
       setError("교차검증을 위해 다른 LLM을 최소 1개 이상 등록해주세요.");
       return;
     }
 
+    setIsValidating(true);
     setError(null);
-    setStage1Loading(true);
-    setStage1Result(null);
-    setStage2Results(null);
-    setItemStatus({});
-    setSelectedKeys(new Set());
+    setResults(null);
+    setGroupStatus({});
 
-    try {
-      const result = await runSingleStage(stage1Provider, PROMPT_FACT_CHECK_QUICK);
-      setStage1Result(result);
-
-      if (!result.success) {
-        toast.error(`1단계 검증 실패: ${result.error}`);
-        return;
-      }
-
-      const highCount = result.result?.issues?.filter((i) => i.severity === "high").length ?? 0;
-      toast.success(`1단계 빠른 검증 완료 (${result.displayName})`);
-
-      // 자동 트리거: high 2건 이상이면 2단계 자동 진행
-      if (highCount >= 2 && stage2Providers.length > 0) {
-        toast.info(`심각 이슈 ${highCount}건 발견 — 정밀 검증 자동 시작`);
-        await runStage2();
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "1단계 검증 실패";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setStage1Loading(false);
-    }
-  }
-
-  /** 2단계 시작 — 1단계는 그대로 두고 추가 LLM 으로 정밀 검증 */
-  async function runStage2() {
-    if (stage2Providers.length === 0) {
-      toast.info("정밀 검증할 추가 LLM이 없습니다. 다른 LLM을 등록하세요.");
-      return;
-    }
-
-    setStage2Loading(true);
-
-    // 진행 표시용 placeholder
-    const placeholder: CrossValidationProviderResult[] = stage2Providers.map((c) => ({
+    // 진행 상황 placeholder
+    const placeholder: CrossValidationProviderResult[] = otherProviderConfigs.map((c) => ({
       provider: c.provider,
       displayName: c.displayName,
       success: false,
       error: undefined,
     }));
-    setStage2Results(placeholder);
+    setResults(placeholder);
 
     try {
-      const final = await clientCrossValidate({
-        title,
+      const final = await clientCrossValidateV2({
+        title: _title,
         body,
-        systemPrompt: PROMPT_FACT_CHECK,
-        providers: stage2Providers,
+        promptTemplate: PROMPT_CROSS_VALIDATION,
+        legalReferences,
+        categoryName,
+        targetKeyword,
+        providers: otherProviderConfigs,
         onProviderDone: (one) => {
-          setStage2Results((prev) => prev?.map((r) => (r.provider === one.provider ? one : r)) ?? null);
+          setResults((prev) => prev?.map((r) => (r.provider === one.provider ? one : r)) ?? null);
         },
       });
-      setStage2Results(final);
+      setResults(final);
       const successCount = final.filter((r) => r.success).length;
-      toast.success(`2단계 정밀 검증 완료 (${successCount}/${final.length})`);
+      toast.success(`교차검증 완료 — ${successCount}/${final.length}개 LLM 응답`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "2단계 검증 실패";
+      const msg = err instanceof Error ? err.message : "교차검증 실패";
       setError(msg);
       toast.error(msg);
     } finally {
-      setStage2Loading(false);
+      setIsValidating(false);
     }
   }
 
-  function handleApplyOne(row: IssueRow) {
-    const iss = row.issue;
+  // 자동 시작: 패널이 마운트되고 외부 LLM 이 있으면 한 번만 검증 실행
+  // (Phase 2 직후 ai-editor 가 패널을 열어주므로 사용자에게 별도 시작 클릭 부담 X)
+  useEffect(() => {
+    if (startedRef.current) return;
+    if (otherProviderConfigs.length === 0) return;
+    startedRef.current = true;
+    runValidation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 모든 issue 평탄화
+  const allRows = useMemo<IssueRow[]>(() => {
+    const rows: IssueRow[] = [];
+    if (!results) return rows;
+    for (const pr of results) {
+      if (!pr.success || !pr.result?.issues) continue;
+      pr.result.issues.forEach((iss, idx) => {
+        rows.push({
+          key: `${pr.provider}:${idx}`,
+          provider: pr.provider,
+          providerLabel: pr.displayName,
+          index: idx,
+          issue: iss,
+        });
+      });
+    }
+    return rows;
+  }, [results]);
+
+  const groups = useMemo(() => groupRows(allRows), [allRows]);
+
+  // 카운트
+  const counts = useMemo(() => {
+    const c = { high: 0, medium: 0, low: 0, applied: 0, ignored: 0, pending: 0 };
+    for (const g of groups) {
+      const s = groupStatus[g.groupKey] ?? "pending";
+      if (s === "applied") c.applied++;
+      else if (s === "ignored") c.ignored++;
+      else {
+        c.pending++;
+        if (g.effectiveSeverity === "high") c.high++;
+        else if (g.effectiveSeverity === "medium") c.medium++;
+        else c.low++;
+      }
+    }
+    return c;
+  }, [groups, groupStatus]);
+
+  // 모든 그룹이 처리(반영/무시)되었으면 Phase 3 진행 활성화
+  const allHandled = groups.length > 0 && counts.pending === 0;
+  const hasNoIssues = !isValidating && groups.length === 0 && results !== null;
+
+  function handleApplyGroup(group: IssueGroup) {
+    const iss = group.primary.issue;
     if (!iss.original_text || !iss.replacement_text) {
       toast.error("원문/교체문이 누락된 항목입니다 — 수동 확인 필요");
       return;
@@ -289,90 +274,21 @@ export function CrossLLMValidationPanel({
       toast.error("본문에서 원문을 찾지 못했습니다 — 수동 확인 필요");
       return;
     }
-    setItemStatus((prev) => ({ ...prev, [row.key]: "applied" }));
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      next.delete(row.key);
-      return next;
-    });
-    toast.success(`${row.issue.category} 반영 완료`);
+    setGroupStatus((prev) => ({ ...prev, [group.groupKey]: "applied" }));
+    toast.success(`${iss.category} 반영 완료`);
   }
 
-  function handleIgnoreOne(row: IssueRow) {
-    setItemStatus((prev) => ({ ...prev, [row.key]: "ignored" }));
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      next.delete(row.key);
-      return next;
-    });
+  function handleIgnoreGroup(group: IssueGroup) {
+    setGroupStatus((prev) => ({ ...prev, [group.groupKey]: "ignored" }));
   }
 
-  function toggleSelect(key: string) {
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  function handleApplyAndRewrite() {
-    const selected: SelectedIssue[] = allRows
-      .filter((r) => selectedKeys.has(r.key))
-      .filter((r) => itemStatus[r.key] !== "applied" && itemStatus[r.key] !== "ignored")
-      .map((r) => ({
-        category: r.issue.category,
-        description: r.issue.description,
-        suggestion: r.issue.suggestion,
-        original_text: r.issue.original_text,
-        replacement_text: r.issue.replacement_text,
-        provider: r.providerLabel,
-      }));
-
-    if (selected.length === 0) {
-      toast.error("재작성할 항목을 1개 이상 선택해주세요.");
-      return;
-    }
-
+  function handleProceed() {
     startTransition(() => {
-      setIsRewriting(true);
-      setRewriteProgress(0);
-      setError(null);
-
-      (async () => {
-        try {
-          const res = await clientRewriteWithFeedback({
-            title,
-            body,
-            selectedIssues: selected,
-            model: baseModel,
-            apiKey: baseApiKey,
-            provider: baseProvider,
-            onProgress: (txt) => setRewriteProgress(txt.length),
-          });
-
-          if (!res.success || !res.rewrittenBody) {
-            setError(res.error || "재작성 실패");
-            toast.error(res.error || "재작성 실패");
-            return;
-          }
-
-          onApplyRewrite(res.rewrittenBody);
-          toast.success(`${selected.length}건 반영하여 본문을 재작성했습니다`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "재작성 실패";
-          setError(msg);
-          toast.error(msg);
-        } finally {
-          setIsRewriting(false);
-        }
-      })();
+      onProceedToPhase3();
     });
   }
 
-  // ── 렌더 ──
-
-  // 0) 다른 LLM 이 등록되지 않은 경우 — 안내 + 설정 링크
+  // ── 등록된 외부 LLM 이 0개 ──
   if (otherProviderConfigs.length === 0) {
     return (
       <Card>
@@ -380,7 +296,7 @@ export function CrossLLMValidationPanel({
           <CardTitle className="text-base flex items-center justify-between">
             <span className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" style={{ color: "var(--brand-accent)" }} />
-              교차검증
+              교차검증 (Phase 2 → Phase 3 사이)
             </span>
             {onClose && (
               <button
@@ -396,10 +312,11 @@ export function CrossLLMValidationPanel({
         <CardContent>
           <div className="rounded-md bg-amber-50 border border-amber-200 p-3 space-y-2">
             <p className="text-sm text-amber-900">
-              교차검증을 위해 <strong>기본 모델({baseProvider})과 다른 LLM</strong>을 최소 1개 이상 등록해주세요.
+              교차검증을 위해 <strong>설정 &gt; AI 설정</strong>에서 다른 LLM을 1개 이상 등록해주세요.
             </p>
             <p className="text-xs text-amber-800">
-              기본 모델이 자기 자신의 출력을 검증하면 의미가 없으므로, 반드시 다른 LLM이 필요합니다.
+              초안 생성 LLM(<strong>{baseProvider}</strong>)이 자기 자신의 출력을 검증하면 의미가 없으므로,
+              반드시 다른 LLM이 필요합니다.
             </p>
             <Link
               href="/settings"
@@ -409,82 +326,26 @@ export function CrossLLMValidationPanel({
               설정 → AI 설정으로 이동
             </Link>
           </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // 1) 검증 아직 시작 전 — 자동으로 시작
-  // 첫 마운트 직후 stage1 시작을 위한 useEffect-less 트리거. 사용자가 헤더의
-  // "교차검증" 버튼으로 이 패널을 열었으므로, 패널이 표시되면 즉시 1단계 시작.
-  // useEffect 대신 첫 렌더에서 lazy 시작 — pending 상태로 안내를 표시하면서
-  // 사용자가 명시적으로 시작 버튼을 누르도록 한다.
-
-  const hasAnyResult = stage1Result !== null || stage2Results !== null;
-  const isAnyLoading = stage1Loading || stage2Loading;
-
-  // 2) 결과 없음 + 로딩 아님 → 시작 화면 (헤더 버튼 후 첫 표시)
-  if (!hasAnyResult && !isAnyLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" style={{ color: "var(--brand-accent)" }} />
-              교차검증
-            </span>
-            {onClose && (
-              <button
-                onClick={onClose}
-                className="text-xs text-muted-foreground hover:text-foreground"
-                aria-label="닫기"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="rounded-md bg-muted/30 p-3 text-xs space-y-1">
-            <p>
-              <strong>1단계 빠른 검증</strong>: {stage1Provider?.displayName ?? "-"} (팩트체크·논리·톤만)
-            </p>
-            <p>
-              <strong>2단계 정밀 검증</strong>:{" "}
-              {stage2Providers.length > 0
-                ? stage2Providers.map((c) => c.displayName).join(", ") + " (전체 항목)"
-                : "추가 LLM 없음 (1단계만 실행)"}
-            </p>
-            <p className="text-muted-foreground">
-              심각 이슈 2건 이상이면 2단계 자동 시작. 그 외에는 수동 트리거.
-            </p>
+          <div className="mt-3 flex gap-2">
+            <Button onClick={handleProceed} className="flex-1" variant="outline">
+              <ArrowRight className="mr-1 h-4 w-4" />
+              교차검증 건너뛰고 Phase 3 진행
+            </Button>
           </div>
-          {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 border border-red-200">{error}</div>
-          )}
-          <Button onClick={startStage1} className="w-full" disabled={!stage1Provider}>
-            <Zap className="mr-1 h-4 w-4" />
-            1단계 빠른 검증 시작
-          </Button>
         </CardContent>
       </Card>
     );
   }
 
-  // 3) 결과 + 검증 중 통합 화면
-  const stage1Verdict = stage1Result?.success ? stage1Result.result?.verdict : undefined;
-  const allHighZero = severityCounts.high === 0;
-  const summaryBg = allHighZero ? "#dcfce7" : "#fee2e2";
-  const summaryColor = allHighZero ? "var(--quality-excellent)" : "var(--quality-critical)";
-
+  // ── 결과 + 검증 화면 ──
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base flex items-center justify-between">
           <span className="flex items-center gap-2">
             <Sparkles className="h-4 w-4" style={{ color: "var(--brand-accent)" }} />
-            교차검증 결과
-            {isAnyLoading && (
+            교차검증 (Phase 2 → Phase 3)
+            {isValidating && (
               <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "var(--brand-accent)" }} />
             )}
           </span>
@@ -492,7 +353,6 @@ export function CrossLLMValidationPanel({
             <button
               onClick={onClose}
               className="text-xs text-muted-foreground hover:text-foreground"
-              disabled={isRewriting}
               aria-label="닫기"
             >
               <X className="h-4 w-4" />
@@ -501,246 +361,134 @@ export function CrossLLMValidationPanel({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* 요약 배지 */}
-        <div
-          className="rounded-md p-3 space-y-2"
-          style={{ backgroundColor: summaryBg }}
-        >
-          <div className="flex items-center gap-2 flex-wrap">
-            {stage1Loading ? (
-              <Badge variant="outline" className="text-xs">
-                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                1단계 검증 중...
-              </Badge>
-            ) : stage1Result?.success ? (
-              <Badge
-                style={{ backgroundColor: "white", color: summaryColor, borderColor: summaryColor }}
-                variant="outline"
-                className="text-xs"
-              >
-                ✓ 1단계 완료 ({stage1Result.displayName})
-                {stage1Result.result?.overall_score !== undefined &&
-                  ` · ${stage1Result.result.overall_score}점`}
-              </Badge>
-            ) : stage1Result?.error ? (
-              <Badge variant="outline" className="text-xs text-red-600 border-red-200">
-                ✗ 1단계 실패: {stage1Result.error.slice(0, 60)}
-              </Badge>
-            ) : null}
-
-            {stage2Loading ? (
-              <Badge variant="outline" className="text-xs">
-                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                2단계 검증 중...
-              </Badge>
-            ) : stage2Results ? (
-              <Badge
-                style={{ backgroundColor: "white", color: summaryColor, borderColor: summaryColor }}
-                variant="outline"
-                className="text-xs"
-              >
-                ✓ 2단계 완료 ({stage2Results.filter((r) => r.success).length}/{stage2Results.length})
-              </Badge>
-            ) : null}
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap text-xs" style={{ color: summaryColor }}>
-            {allHighZero ? (
-              <span className="flex items-center gap-1 font-semibold">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                심각 이슈 없음
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 font-semibold">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                심각 {severityCounts.high}건
-              </span>
-            )}
-            <span style={{ color: "#d97706" }}>· 주의 {severityCounts.medium}건</span>
-            <span style={{ color: "#6b7280" }}>· 경미 {severityCounts.low}건</span>
-            <span className="text-muted-foreground ml-auto">총 {allRows.length}건 (반영/무시 제외)</span>
-          </div>
-
-          {/* 정밀 검증 추가 버튼 */}
-          {stage1Result?.success && !stage2Results && !stage2Loading && stage2Providers.length > 0 && (
-            <Button size="sm" variant="outline" onClick={runStage2} className="w-full bg-white">
-              <Sparkles className="mr-1 h-3.5 w-3.5" />
-              정밀 검증 추가 실행 ({stage2Providers.map((c) => c.displayName).join(", ")})
-            </Button>
-          )}
+        {/* 진행 중 LLM 배지 */}
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          {results?.map((pr) => (
+            <Badge
+              key={pr.provider}
+              variant="outline"
+              className="text-xs"
+              style={
+                pr.success
+                  ? { backgroundColor: "#dcfce7", color: "#16a34a", borderColor: "#86efac" }
+                  : pr.error
+                    ? { backgroundColor: "#fee2e2", color: "#dc2626", borderColor: "#fca5a5" }
+                    : {}
+              }
+            >
+              {pr.success ? (
+                <Check className="mr-1 h-3 w-3 inline" />
+              ) : pr.error ? (
+                <X className="mr-1 h-3 w-3 inline" />
+              ) : (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin inline" />
+              )}
+              {pr.displayName}
+              {pr.success && pr.result && ` · ${pr.result.overall_score}점`}
+              {pr.error && ` · 실패`}
+            </Badge>
+          ))}
         </div>
 
-        {/* 이슈 목록 — provider 별로 그룹화 */}
-        <IssueListGrouped
-          rows={allRows}
-          itemStatus={itemStatus}
-          selectedKeys={selectedKeys}
-          onApplyOne={handleApplyOne}
-          onIgnoreOne={handleIgnoreOne}
-          onToggleSelect={toggleSelect}
-        />
+        {/* 요약 카운트 */}
+        {!isValidating && groups.length > 0 && (
+          <div
+            className="rounded-md p-3 text-xs flex items-center gap-3 flex-wrap"
+            style={{
+              backgroundColor: counts.high > 0 ? "#fee2e2" : counts.medium > 0 ? "#fef3c7" : "#dcfce7",
+              color: counts.high > 0 ? "#dc2626" : counts.medium > 0 ? "#d97706" : "var(--quality-excellent)",
+            }}
+          >
+            <span className="flex items-center gap-1 font-semibold">
+              {counts.high === 0 ? (
+                <CheckCircle2 className="h-3.5 w-3.5" />
+              ) : (
+                <AlertTriangle className="h-3.5 w-3.5" />
+              )}
+              심각 {counts.high}건
+            </span>
+            <span style={{ color: "#d97706" }}>· 주의 {counts.medium}건</span>
+            <span style={{ color: "#6b7280" }}>· 경미 {counts.low}건</span>
+            <span className="text-muted-foreground ml-auto">
+              {counts.applied}건 반영 · {counts.ignored}건 무시 · {counts.pending}건 대기
+            </span>
+          </div>
+        )}
+
+        {hasNoIssues && (
+          <div className="rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4" />
+            모든 LLM이 사실/논리 측면에서 통과로 판정했습니다.
+          </div>
+        )}
+
+        {/* 이슈 그룹 리스트 */}
+        <div className="space-y-2">
+          {groups.map((g) => (
+            <IssueGroupCard
+              key={g.groupKey}
+              group={g}
+              status={groupStatus[g.groupKey] ?? "pending"}
+              onApply={() => handleApplyGroup(g)}
+              onIgnore={() => handleIgnoreGroup(g)}
+            />
+          ))}
+        </div>
 
         {error && (
           <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 border border-red-200">{error}</div>
         )}
 
-        {isRewriting && (
-          <div className="rounded-md border p-3 bg-muted/30 flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--brand-accent)" }} />
-            <span className="text-sm">
-              {baseProvider}으로 본문 재작성 중... ({rewriteProgress.toLocaleString()}자)
-            </span>
-          </div>
-        )}
-
         <Separator />
 
-        {/* 액션 버튼 */}
-        <div className="flex flex-wrap gap-2">
-          {selectedKeys.size > 0 && (
-            <Button
-              onClick={handleApplyAndRewrite}
-              disabled={isAnyLoading || isPending || isRewriting}
-              style={{ backgroundColor: "var(--brand-accent)" }}
-              className="flex-1 min-w-[200px]"
-            >
-              <RefreshCw className={`mr-1 h-4 w-4 ${isRewriting ? "animate-spin" : ""}`} />
-              선택 {selectedKeys.size}건 반영 후 재작성
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            onClick={startStage1}
-            disabled={isAnyLoading || isRewriting}
-          >
+        {/* 모달 footer: 좌측 = 다시 검증(회색), 우측 = 선택 반영 후 Phase 3 진행(파란 primary) */}
+        <div className="flex items-center justify-between gap-2">
+          <Button variant="outline" onClick={runValidation} disabled={isValidating}>
+            <Sparkles className="mr-1 h-4 w-4" />
             다시 검증
           </Button>
-          {stage1Result?.success && stage2Providers.length > 0 && !stage2Results && !stage2Loading && (
-            <Button variant="outline" onClick={runStage2} disabled={isRewriting}>
-              <Sparkles className="mr-1 h-3.5 w-3.5" />
-              정밀 검증
-            </Button>
-          )}
+          <Button
+            onClick={handleProceed}
+            disabled={isValidating || (!allHandled && !hasNoIssues)}
+            style={{ backgroundColor: "var(--brand-accent)" }}
+            className="min-w-[260px]"
+            title={
+              !allHandled && !hasNoIssues
+                ? "모든 지적 사항을 반영 또는 무시한 뒤 진행할 수 있습니다"
+                : "선택한 수정사항을 적용하고 Phase 3 SEO 최적화로 진행"
+            }
+          >
+            <ArrowRight className="mr-1 h-4 w-4" />
+            {hasNoIssues
+              ? "Phase 3 진행 (지적 사항 없음)"
+              : allHandled
+                ? "선택 반영 후 Phase 3 진행"
+                : `${counts.pending}건 처리 후 Phase 3 진행`}
+          </Button>
         </div>
 
-        <p suppressHydrationWarning className="text-[11px] text-muted-foreground">
-          반영 = 본문에 즉시 적용 / 무시 = 카드 닫기 / 체크 = 묶어서 LLM 재작성
+        <p className="text-[11px] text-muted-foreground">
+          반영 = 본문에 즉시 적용 / 무시 = 카드 닫기 / 2개 이상 LLM이 같은 이슈를 지적하면 severity 자동 상향됨
         </p>
       </CardContent>
     </Card>
   );
 }
 
-// ── 이슈 목록 — provider 별 그룹화 ──
+// ── 이슈 그룹 카드 (한 묶음 = 같은 original_text 를 지적한 1~N개 LLM) ──
 
-interface IssueListGroupedProps {
-  rows: IssueRow[];
-  itemStatus: Record<string, ItemStatus>;
-  selectedKeys: Set<string>;
-  onApplyOne: (row: IssueRow) => void;
-  onIgnoreOne: (row: IssueRow) => void;
-  onToggleSelect: (key: string) => void;
-}
-
-function IssueListGrouped({
-  rows,
-  itemStatus,
-  selectedKeys,
-  onApplyOne,
-  onIgnoreOne,
-  onToggleSelect,
-}: IssueListGroupedProps) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-  // group key = stage:provider
-  const groups = useMemo(() => {
-    const map = new Map<string, { stage: 1 | 2; provider: ClientLLMProvider; label: string; rows: IssueRow[] }>();
-    for (const r of rows) {
-      const k = `${r.stage}:${r.provider}`;
-      if (!map.has(k)) {
-        map.set(k, { stage: r.stage, provider: r.provider, label: r.providerLabel, rows: [] });
-      }
-      map.get(k)!.rows.push(r);
-    }
-    return Array.from(map.entries()).map(([k, v]) => ({ key: k, ...v }));
-  }, [rows]);
-
-  // 처음에 모두 펼침
-  if (expanded.size === 0 && groups.length > 0) {
-    setExpanded(new Set(groups.map((g) => g.key)));
-  }
-
-  if (groups.length === 0) {
-    return <p className="text-xs text-muted-foreground py-2">지적 사항이 없습니다.</p>;
-  }
-
-  function toggleGroup(key: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  return (
-    <div className="space-y-2">
-      {groups.map((g) => {
-        const isOpen = expanded.has(g.key);
-        const pendingCount = g.rows.filter((r) => itemStatus[r.key] !== "applied" && itemStatus[r.key] !== "ignored").length;
-        return (
-          <div key={g.key} className="rounded-lg border">
-            <button
-              type="button"
-              onClick={() => toggleGroup(g.key)}
-              className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/30 text-left"
-            >
-              <div className="flex items-center gap-2">
-                {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                <Badge variant="outline" className="text-[10px]">
-                  {g.stage === 1 ? "1단계" : "2단계"}
-                </Badge>
-                <span className="text-sm font-medium">{g.label}</span>
-                <span className="text-xs text-muted-foreground">
-                  {pendingCount}/{g.rows.length}건
-                </span>
-              </div>
-            </button>
-            {isOpen && (
-              <div className="border-t px-3 py-2 space-y-2 bg-muted/10">
-                {g.rows.map((r) => (
-                  <IssueCard
-                    key={r.key}
-                    row={r}
-                    status={itemStatus[r.key] ?? "pending"}
-                    selected={selectedKeys.has(r.key)}
-                    onApply={() => onApplyOne(r)}
-                    onIgnore={() => onIgnoreOne(r)}
-                    onToggleSelect={() => onToggleSelect(r.key)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-interface IssueCardProps {
-  row: IssueRow;
+interface IssueGroupCardProps {
+  group: IssueGroup;
   status: ItemStatus;
-  selected: boolean;
   onApply: () => void;
   onIgnore: () => void;
-  onToggleSelect: () => void;
 }
 
-function IssueCard({ row, status, selected, onApply, onIgnore, onToggleSelect }: IssueCardProps) {
-  const iss = row.issue;
-  const sev = SEVERITY_STYLES[iss.severity] ?? SEVERITY_STYLES.medium;
+function IssueGroupCard({ group, status, onApply, onIgnore }: IssueGroupCardProps) {
+  const sev = SEVERITY_STYLES[group.effectiveSeverity];
+  const iss = group.primary.issue;
   const canApply = !!iss.original_text && !!iss.replacement_text;
+  const isMultiLLM = group.providers.length >= 2;
 
   return (
     <div
@@ -749,30 +497,30 @@ function IssueCard({ row, status, selected, onApply, onIgnore, onToggleSelect }:
           ? "bg-green-50 border-green-200 opacity-70"
           : status === "ignored"
             ? "bg-muted/30 opacity-50"
-            : selected
-              ? "border-[var(--brand-accent)] bg-[var(--brand-accent)]/5"
-              : "bg-background"
+            : "bg-background"
       }`}
     >
       <div className="flex items-center gap-1.5 flex-wrap">
         <span
-          className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+          className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
           style={{ backgroundColor: sev.bg, color: sev.color }}
         >
           {sev.label}
+          {isMultiLLM && ` ⬆`}
         </span>
         <span className="font-medium">{iss.category}</span>
-        {iss.location && (
-          <span className="text-muted-foreground truncate max-w-[160px]">
-            &ldquo;{iss.location}…&rdquo;
-          </span>
+        {/* provider 배지 */}
+        {group.providers.map((p) => (
+          <Badge key={p} variant="outline" className="text-[9px] py-0">
+            {p}
+          </Badge>
+        ))}
+        {isMultiLLM && (
+          <span className="text-[10px] text-muted-foreground">· {group.providers.length}개 LLM 지적</span>
         )}
         <div className="ml-auto flex items-center gap-1">
           {status === "applied" ? (
-            <Badge
-              style={{ backgroundColor: "#16a34a", color: "white" }}
-              className="text-[10px]"
-            >
+            <Badge style={{ backgroundColor: "#16a34a", color: "white" }} className="text-[10px]">
               <Check className="mr-0.5 h-3 w-3" />
               반영됨
             </Badge>
@@ -802,17 +550,6 @@ function IssueCard({ row, status, selected, onApply, onIgnore, onToggleSelect }:
                 <X className="mr-0.5 h-3 w-3" />
                 무시
               </Button>
-              <button
-                type="button"
-                onClick={onToggleSelect}
-                className={`h-6 w-6 rounded border flex items-center justify-center text-[10px] ${
-                  selected ? "bg-[var(--brand-accent)] text-white border-[var(--brand-accent)]" : "border-input"
-                }`}
-                title="LLM 재작성에 묶기"
-                aria-label="LLM 재작성 선택"
-              >
-                {selected ? "✓" : ""}
-              </button>
             </>
           )}
         </div>
@@ -823,10 +560,18 @@ function IssueCard({ row, status, selected, onApply, onIgnore, onToggleSelect }:
       )}
       {canApply && (
         <div className="mt-1 rounded bg-background border p-1.5 space-y-0.5">
-          <p className="text-[10px] text-muted-foreground line-through truncate">
+          <p
+            className={`text-[10px] truncate ${status === "applied" ? "" : "line-through"}`}
+            style={{
+              color: status === "applied" ? "#dc2626" : "var(--neutral-text-muted)",
+            }}
+          >
             {iss.original_text}
           </p>
-          <p className="text-[10px] text-foreground truncate">
+          <p
+            className="text-[10px] truncate"
+            style={{ color: status === "applied" ? "#16a34a" : "var(--foreground)" }}
+          >
             → {iss.replacement_text}
           </p>
         </div>

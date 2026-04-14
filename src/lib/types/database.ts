@@ -194,6 +194,43 @@ export interface GeneratedImage {
   created_at: string;
 }
 
+/**
+ * 3-Phase 파이프라인의 현재 단계.
+ * - phase1: 구조 설계 진행 중 또는 진행 전
+ * - phase2: 본문 생성 진행 중
+ * - phase3: SEO 최적화 진행 중
+ * - completed: 모든 단계 종료 (Phase 3 를 건너뛴 경우 phase2 직후 completed 로도 진입 가능)
+ * - failed: 어느 단계든 실패
+ */
+export type PipelinePhase = "phase1" | "phase2" | "phase3" | "completed" | "failed";
+
+/**
+ * Phase 1 구조 설계 결과 — PHASE1_PROMPT 의 JSON 응답 스키마.
+ */
+export interface Phase1Outline {
+  title: string;
+  hook_type: string;
+  hook_summary: string;
+  sections: Array<{
+    heading: string;
+    content_summary: string;
+    has_infographic: boolean;
+    infographic_type?: string;
+  }>;
+  keyword_plan: {
+    total_count: string | number;
+    positions: string[];
+  };
+  legal_references: string[];
+  infographic_plan: Array<{
+    position: string;
+    type: string;
+    data_source: string;
+    emotion: string;
+  }>;
+  content_type: string;
+}
+
 export interface AIGeneration {
   id: number;
   content_id: string | null;
@@ -218,6 +255,10 @@ export interface AIGeneration {
   feedback: string | null;
   created_at: string;
   created_by: string | null;
+  // 3-Phase 파이프라인 (009 마이그레이션)
+  phase1_output: Phase1Outline | null;
+  phase2_output: string | null;
+  phase: PipelinePhase;
 }
 
 // LLM 메시지 인터페이스 (프록시 유틸리티용)

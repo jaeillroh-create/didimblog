@@ -3,6 +3,9 @@
  * Vercel 서버리스 타임아웃과 무관하게 동작
  */
 
+import type { Phase1Outline } from "@/lib/types/database";
+import type { PromptKey } from "@/lib/constants/prompts";
+
 export type ClientLLMProvider = "claude" | "openai" | "gemini";
 
 export interface ClientGenerateParams {
@@ -509,4 +512,470 @@ ${feedbackBlock}
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "재작성 실패" };
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 3-Phase 파이프라인 — Phase 1 (구조) / Phase 2 (본문) / Phase 3 (SEO)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 코드펜스 / 앞뒤 텍스트 / 부분 잘림에 모두 견디는 JSON 추출 파서.
+ * Phase 1 응답이 LLM 별로 형식이 다를 수 있어 다층 시도.
+ */
+function parsePhase1Json(text: string): Phase1Outline | null {
+  let cleaned = text.trim();
+
+  // 1. ```json ... ``` 블록 추출
+  if (cleaned.includes("```")) {
+    const match = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (match) cleaned = match[1].trim();
+  }
+
+  // 2. 첫 { 부터 마지막 } 까지 추출
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace < firstBrace) {
+    return null;
+  }
+  const candidate = cleaned.slice(firstBrace, lastBrace + 1);
+
+  try {
+    const parsed = JSON.parse(candidate);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    if (typeof parsed.title !== "string") return null;
+    return parsed as Phase1Outline;
+  } catch {
+    // 잘린 JSON 복구 시도
+    let partial = candidate;
+    const openBraces = (partial.match(/\{/g) || []).length;
+    const closeBraces = (partial.match(/\}/g) || []).length;
+    const openBrackets = (partial.match(/\[/g) || []).length;
+    const closeBrackets = (partial.match(/\]/g) || []).length;
+    for (let i = 0; i < openBrackets - closeBrackets; i++) partial += "]";
+    for (let i = 0; i < openBraces - closeBraces; i++) partial += "}";
+    try {
+      return JSON.parse(partial) as Phase1Outline;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function replaceTemplate(template: string, vars: Record<string, string>): string {
+  let out = template;
+  for (const [k, v] of Object.entries(vars)) {
+    out = out.split(`{{${k}}}`).join(v);
+  }
+  return out;
+}
+
+export interface ClientPhaseLLMConfig {
+  provider: ClientLLMProvider;
+  model: string;
+  apiKey: string;
+}
+
+/**
+ * Phase 1 — 구조 설계
+ * PHASE1_PROMPT 의 placeholder 를 채워서 user 메시지로 보냄.
+ * JSON 파싱 실패 시 1회 재시도 (system 강화).
+ */
+export async function clientRunPhase1(params: {
+  llm: ClientPhaseLLMConfig;
+  phase1Prompt: string; // PHASE1_PROMPT 원문
+  categoryName: string;
+  topic: string;
+  targetKeyword: string;
+}): Promise<{ success: boolean; outline?: Phase1Outline; rawText?: string; error?: string }> {
+  const userMessage = replaceTemplate(params.phase1Prompt, {
+    category_name: params.categoryName,
+    topic: params.topic,
+    target_keyword: params.targetKeyword,
+  });
+
+  const baseSystem =
+    "당신은 JSON 출력 전용 어시스턴트입니다. 마크다운, 코드펜스, 설명, 서문 없이 오직 JSON 객체 한 개만 출력합니다.";
+
+  async function callOnce(systemPrompt: string): Promise<string> {
+    return streamLLM({
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      model: params.llm.model,
+      apiKey: params.llm.apiKey,
+      provider: params.llm.provider,
+      maxTokens: 1500,
+      temperature: 0.4,
+    });
+  }
+
+  // 1차 시도
+  let raw = "";
+  try {
+    raw = await callOnce(baseSystem);
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Phase 1 호출 실패" };
+  }
+
+  let parsed = parsePhase1Json(raw);
+  if (parsed) {
+    return { success: true, outline: parsed, rawText: raw };
+  }
+
+  // 2차 재시도 — 더 강한 system + 짧은 user 트리거
+  const stricter =
+    baseSystem +
+    "\n\n위 지시를 어기면 글 전체가 실패합니다. 절대로 마크다운 코드펜스(```) 를 출력하지 마세요. " +
+    "반드시 { 로 시작해서 } 로 끝나는 JSON 객체 하나만 출력합니다.";
+  try {
+    raw = await callOnce(stricter);
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Phase 1 재시도 실패" };
+  }
+
+  parsed = parsePhase1Json(raw);
+  if (parsed) {
+    return { success: true, outline: parsed, rawText: raw };
+  }
+
+  return {
+    success: false,
+    rawText: raw,
+    error: "Phase 1 JSON 파싱 실패 (1회 재시도까지 모두 실패). LLM 응답을 수동으로 확인해주세요.",
+  };
+}
+
+/**
+ * Phase 2 — 본문 생성 (스트리밍).
+ * PHASE2_PROMPT 의 placeholder 4개 채워서 user 메시지로 보냄.
+ */
+export async function clientRunPhase2(params: {
+  llm: ClientPhaseLLMConfig;
+  phase2Prompt: string; // PHASE2_PROMPT 원문
+  categoryToneRules: string;
+  commonWritingRules: string;
+  visualRules: string;
+  phase1Outline: Phase1Outline;
+  onProgress?: (text: string) => void;
+}): Promise<{ success: boolean; body?: string; error?: string }> {
+  const phase1Json = JSON.stringify(params.phase1Outline, null, 2);
+  const userMessage = replaceTemplate(params.phase2Prompt, {
+    category_tone_rules: params.categoryToneRules,
+    common_writing_rules: params.commonWritingRules,
+    visual_rules: params.visualRules,
+    phase1_output: phase1Json,
+  });
+
+  try {
+    const body = await streamLLM({
+      messages: [
+        {
+          role: "system",
+          content:
+            "당신은 한국어 블로그 콘텐츠 작성자입니다. 사용자가 제공한 아웃라인을 그대로 따라 본문을 마크다운으로 작성합니다. 본문 외 메타 설명/코드펜스를 출력하지 마세요.",
+        },
+        { role: "user", content: userMessage },
+      ],
+      model: params.llm.model,
+      apiKey: params.llm.apiKey,
+      provider: params.llm.provider,
+      maxTokens: 4000,
+      temperature: 0.7,
+      onProgress: params.onProgress,
+    });
+
+    let cleaned = body.trim();
+    const fence = cleaned.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/);
+    if (fence) cleaned = fence[1].trim();
+    if (!cleaned) {
+      return { success: false, error: "Phase 2 응답이 비어있습니다." };
+    }
+    return { success: true, body: cleaned };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Phase 2 호출 실패" };
+  }
+}
+
+/**
+ * Phase 3 — SEO 정량 체크 + 마무리 (스트리밍).
+ * PHASE3_PROMPT 또는 PHASE3_PROMPT_DIARY 의 placeholder 채워서 user 메시지로 보냄.
+ */
+export async function clientRunPhase3(params: {
+  llm: ClientPhaseLLMConfig;
+  phase3Prompt: string; // PHASE3_PROMPT_BY_KEY[promptKey]
+  targetKeyword: string;
+  categoryName: string;
+  phase2Body: string;
+  onProgress?: (text: string) => void;
+}): Promise<{ success: boolean; body?: string; error?: string }> {
+  const userMessage = replaceTemplate(params.phase3Prompt, {
+    target_keyword: params.targetKeyword,
+    category_name: params.categoryName,
+    phase2_output: params.phase2Body,
+  });
+
+  try {
+    const body = await streamLLM({
+      messages: [
+        {
+          role: "system",
+          content:
+            "당신은 한국어 블로그 SEO 편집자입니다. 사용자가 제공한 초안을 지시 항목만 정확히 수정해 출력합니다. 본문 외 설명을 출력하지 마세요.",
+        },
+        { role: "user", content: userMessage },
+      ],
+      model: params.llm.model,
+      apiKey: params.llm.apiKey,
+      provider: params.llm.provider,
+      maxTokens: 5000,
+      temperature: 0.4,
+      onProgress: params.onProgress,
+    });
+
+    let cleaned = body.trim();
+    const fence = cleaned.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/);
+    if (fence) cleaned = fence[1].trim();
+    if (!cleaned) {
+      return { success: false, error: "Phase 3 응답이 비어있습니다." };
+    }
+    return { success: true, body: cleaned };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Phase 3 호출 실패" };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Phase 2 ↔ Phase 3 사이 — 사실 검증 (cross-LLM)
+// PROMPT_CROSS_VALIDATION 전용. 한국어 severity / problem / suggested_text
+// 를 받아 기존 FactCheckIssue 인터페이스 (high/medium/low + description +
+// replacement_text) 로 정규화해 기존 UI 와 호환되게 한다.
+// ─────────────────────────────────────────────────────────────
+
+const SEVERITY_KO_TO_EN: Record<string, "high" | "medium" | "low"> = {
+  심각: "high",
+  주의: "medium",
+  경미: "low",
+  high: "high",
+  medium: "medium",
+  low: "low",
+};
+
+interface RawCrossValidationIssue {
+  category?: string;
+  severity?: string;
+  original_text?: string;
+  problem?: string;
+  description?: string;
+  suggestion?: string;
+  suggested_text?: string;
+  replacement_text?: string;
+  location?: string;
+}
+
+function normalizeCrossValidationIssue(raw: RawCrossValidationIssue): FactCheckIssue {
+  const original = raw.original_text ?? "";
+  return {
+    category: raw.category ?? "기타",
+    severity: SEVERITY_KO_TO_EN[raw.severity ?? "medium"] ?? "medium",
+    location: raw.location ?? original.slice(0, 20),
+    description: raw.problem ?? raw.description ?? "",
+    suggestion: raw.suggestion ?? "",
+    original_text: original || undefined,
+    replacement_text: raw.suggested_text ?? raw.replacement_text,
+  };
+}
+
+function parseCrossValidationJson(text: string): FactCheckResult | null {
+  let cleaned = text.trim();
+
+  if (cleaned.includes("```")) {
+    const m = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (m) cleaned = m[1].trim();
+  }
+
+  const first = cleaned.indexOf("{");
+  const last = cleaned.lastIndexOf("}");
+  if (first === -1 || last === -1 || last < first) return null;
+  let candidate = cleaned.slice(first, last + 1);
+
+  let parsed: { overall_score?: number; issues?: RawCrossValidationIssue[] } | null = null;
+  try {
+    parsed = JSON.parse(candidate);
+  } catch {
+    // 잘린 JSON 복구 시도
+    const openBraces = (candidate.match(/\{/g) || []).length;
+    const closeBraces = (candidate.match(/\}/g) || []).length;
+    const openBrackets = (candidate.match(/\[/g) || []).length;
+    const closeBrackets = (candidate.match(/\]/g) || []).length;
+    for (let i = 0; i < openBrackets - closeBrackets; i++) candidate += "]";
+    for (let i = 0; i < openBraces - closeBraces; i++) candidate += "}";
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const score = typeof parsed.overall_score === "number" ? parsed.overall_score : 0;
+  const issues = Array.isArray(parsed.issues) ? parsed.issues.map(normalizeCrossValidationIssue) : [];
+
+  // verdict 는 score 기준으로 자동 추론 (PROMPT_CROSS_VALIDATION 응답에 verdict 필드 없음)
+  const verdict: FactCheckResult["verdict"] =
+    score >= 80 ? "pass" : score >= 60 ? "fix_required" : "major_issues";
+
+  return {
+    overall_score: score,
+    verdict,
+    issues,
+    strengths: [],
+    fact_check_items: [],
+  };
+}
+
+export interface CrossValidateV2Params {
+  title: string;
+  body: string;
+  promptTemplate: string; // PROMPT_CROSS_VALIDATION 원문
+  legalReferences: string[]; // Phase 1 outline 의 legal_references
+  categoryName: string;
+  targetKeyword: string;
+  providers: CrossValidationProviderConfig[]; // base 제외된 외부 LLM 목록
+  onProviderDone?: (result: CrossValidationProviderResult) => void;
+}
+
+/**
+ * 새 교차검증 — PROMPT_CROSS_VALIDATION 을 사용해 등록된 외부 LLM 전부에
+ * 동시 호출. 각 결과를 기존 FactCheckResult 형태로 정규화.
+ */
+export async function clientCrossValidateV2(
+  params: CrossValidateV2Params
+): Promise<CrossValidationProviderResult[]> {
+  const legalRefBlock =
+    params.legalReferences.length > 0
+      ? params.legalReferences.map((r) => `- ${r}`).join("\n")
+      : "(Phase 1 에서 legal_references 가 추출되지 않음)";
+
+  const userMessage = params.promptTemplate
+    .split("{{legal_references}}").join(legalRefBlock)
+    .split("{{category_name}}").join(params.categoryName || "")
+    .split("{{target_keyword}}").join(params.targetKeyword || "")
+    .split("{{phase2_output}}").join(params.body);
+
+  const promises = params.providers.map(async (cfg): Promise<CrossValidationProviderResult> => {
+    try {
+      const raw = await streamLLM({
+        messages: [
+          {
+            role: "system",
+            content:
+              "당신은 JSON 출력 전용 팩트체커입니다. 마크다운/설명/코드펜스 없이 오직 JSON 객체 한 개만 출력합니다.",
+          },
+          { role: "user", content: userMessage },
+        ],
+        model: cfg.model,
+        apiKey: cfg.apiKey,
+        provider: cfg.provider,
+        maxTokens: 4096,
+        temperature: 0.3,
+      });
+
+      const result = parseCrossValidationJson(raw);
+      if (!result) {
+        const out: CrossValidationProviderResult = {
+          provider: cfg.provider,
+          displayName: cfg.displayName,
+          success: false,
+          error: "응답 JSON 파싱 실패",
+        };
+        params.onProviderDone?.(out);
+        return out;
+      }
+
+      const out: CrossValidationProviderResult = {
+        provider: cfg.provider,
+        displayName: cfg.displayName,
+        success: true,
+        result,
+      };
+      params.onProviderDone?.(out);
+      return out;
+    } catch (err) {
+      const out: CrossValidationProviderResult = {
+        provider: cfg.provider,
+        displayName: cfg.displayName,
+        success: false,
+        error: err instanceof Error ? err.message : "검증 실패",
+      };
+      params.onProviderDone?.(out);
+      return out;
+    }
+  });
+
+  return Promise.all(promises);
+}
+
+/**
+ * Phase 3 종료 후 후처리 — CTA / 서명 / 태그 한 줄을 본문 끝에 append.
+ * 다이어리 카테고리는 그대로 반환 (CTA 금지).
+ *
+ * LLM 이 [TAGS] ... [/TAGS] 블록을 출력하면 그걸 파싱하고, 없으면
+ * target_keyword 와 브랜드 태그만으로 한 줄을 만든다. 항상 #특허그룹디딤
+ * #디딤변리사 두 브랜드 태그가 포함되도록 보장.
+ */
+export function appendCtaAndSignature(params: {
+  body: string;
+  promptKey: PromptKey;
+  ctaText?: string;
+  emailSubject?: string;
+  targetKeyword?: string;
+}): string {
+  if (params.promptKey === "PROMPT_DIARY") {
+    return params.body;
+  }
+
+  // [TAGS] ... [/TAGS] 가 있으면 추출
+  let llmTags: string[] = [];
+  const tagsMatch = params.body.match(/\[TAGS\]([\s\S]*?)\[\/TAGS\]/);
+  let bodyWithoutTagsBlock = params.body;
+  if (tagsMatch) {
+    llmTags = tagsMatch[1]
+      .split(/[,\n#]/)
+      .map((t) => t.replace(/^\d+\.\s*/, "").trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    bodyWithoutTagsBlock = params.body.replace(tagsMatch[0], "").trimEnd();
+  }
+
+  // 키워드 + 브랜드 태그 머지
+  const keyword = (params.targetKeyword ?? "").replace(/\s+/g, "");
+  const fixedTags = ["특허그룹디딤", "디딤변리사"];
+  const merged = Array.from(
+    new Set([
+      ...(keyword ? [keyword] : []),
+      ...llmTags.map((t) => t.replace(/\s+/g, "")),
+      ...fixedTags,
+    ])
+  ).slice(0, 12);
+
+  const tagLine = merged.map((t) => `#${t}`).join(" ");
+
+  const cta = params.ctaText?.trim() ||
+    "관련해서 궁금하신 점이 있다면 admin@didimip.com 으로 편하게 연락주세요.";
+  const subject = params.emailSubject?.trim() || "상담 문의";
+
+  const block = `
+
+━━━━━━━━━━━━━━━━━━
+${cta}
+
+특허그룹 디딤 | 기업을 아는 변리사
+📞 02-571-6613
+📧 admin@didimip.com (메일 제목: '${subject}')
+
+${tagLine}`;
+
+  return bodyWithoutTagsBlock.trimEnd() + block;
 }

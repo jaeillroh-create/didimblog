@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { generateImage } from "@/lib/llm/providers/image-gen";
 import { PROMPT_IMAGE_INFOGRAPHIC } from "@/lib/constants/prompts";
 import type { LLMConfig } from "@/lib/types/database";
@@ -103,8 +104,33 @@ export async function generateInfographic(
     const apiKey = await decryptApiKey(openaiConfig.api_key_encrypted);
     const prompt = buildImagePrompt(input.description, input.blogTopic);
 
+    // 사전 검증: ai_generations row 존재 확인 (FK 위반 방지)
+    const { data: parentGen, error: parentError } = await supabase
+      .from("ai_generations")
+      .select("id, status")
+      .eq("id", input.generationId)
+      .maybeSingle();
+
+    if (parentError) {
+      console.error("[generateInfographic] ai_generations 조회 실패:", parentError);
+      return {
+        success: false,
+        error: `상위 생성 레코드 조회 실패: ${parentError.message} (code=${parentError.code})`,
+      };
+    }
+    if (!parentGen) {
+      return {
+        success: false,
+        error: `상위 생성 레코드(id=${input.generationId})를 찾을 수 없습니다. 초안을 먼저 저장한 뒤 이미지를 생성해주세요.`,
+      };
+    }
+
     // generated_images 레코드 생성 (generating)
-    const { data: imageRecord, error: insertError } = await supabase
+    // RLS(authenticated) 가 끊긴 세션에서 거부할 수 있으므로 service-role 우선
+    const dbClient = createAdminClient() ?? supabase;
+    const usingServiceRole = dbClient !== supabase;
+
+    const { data: imageRecord, error: insertError } = await dbClient
       .from("generated_images")
       .insert({
         generation_id: input.generationId,
@@ -118,9 +144,22 @@ export async function generateInfographic(
       .select("id")
       .single();
 
-    if (insertError) {
-      console.error("이미지 레코드 생성 실패:", insertError);
-      return { success: false, error: "이미지 레코드 저장에 실패했습니다." };
+    if (insertError || !imageRecord) {
+      console.error("[generateInfographic] 이미지 레코드 INSERT 실패:", {
+        error: insertError,
+        usingServiceRole,
+        generationId: input.generationId,
+        markerIndex: input.markerIndex,
+      });
+      const detail = insertError?.message ?? "(no message)";
+      const code = insertError?.code ? ` code=${insertError.code}` : "";
+      const hint = !usingServiceRole
+        ? " — SUPABASE_SERVICE_ROLE_KEY 가 환경변수에 설정되어 있지 않으면 RLS 정책으로 거부되었을 수 있습니다."
+        : "";
+      return {
+        success: false,
+        error: `이미지 레코드 저장 실패${code}: ${detail}${hint}`,
+      };
     }
 
     const startTime = Date.now();
@@ -135,7 +174,7 @@ export async function generateInfographic(
       const isPolicyViolation =
         errMsg.includes("content_policy") || errMsg.includes("safety");
 
-      await supabase
+      await dbClient
         .from("generated_images")
         .update({
           status: "failed",
@@ -168,17 +207,17 @@ export async function generateInfographic(
       });
 
     if (uploadError) {
-      console.error("이미지 업로드 실패:", uploadError);
-      await supabase
+      console.error("[generateInfographic] Storage 업로드 실패:", uploadError);
+      await dbClient
         .from("generated_images")
         .update({
           status: "failed",
-          error_message: "이미지 저장에 실패했습니다.",
+          error_message: `Storage 업로드 실패: ${uploadError.message}`,
           generation_time_ms: genTimeMs,
         })
         .eq("id", imageRecord.id);
 
-      return { success: false, error: "이미지 저장에 실패했습니다. 다시 시도해주세요." };
+      return { success: false, error: `이미지 Storage 업로드 실패: ${uploadError.message}` };
     }
 
     // Public URL 생성
@@ -189,7 +228,7 @@ export async function generateInfographic(
     const publicUrl = publicUrlData.publicUrl;
 
     // DB 업데이트 (completed)
-    await supabase
+    await dbClient
       .from("generated_images")
       .update({
         status: "completed",
