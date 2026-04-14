@@ -190,6 +190,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [phase1Outline, setPhase1Outline] = useState<Phase1Outline | null>(null);
   const [phase3Loading, setPhase3Loading] = useState(false);
   const [phase3Error, setPhase3Error] = useState<string | null>(null);
+  const [pipelineCategoryName, setPipelineCategoryName] = useState<string>("");
 
   // 클라이언트 사이드 생성 — useRef로 한 번만 트리거
   const generationTriggered = useRef(false);
@@ -263,6 +264,9 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
       if (targetKeyword && isMounted.current) {
         setKeyword(targetKeyword);
+      }
+      if (isMounted.current) {
+        setPipelineCategoryName(categoryName);
       }
 
       // ── Phase 1: 구조 설계 ──
@@ -339,6 +343,10 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         setEditTitle(title);
         setStatus("completed");
         setPipelinePhase("phase3"); // Phase 3 트리거 가능 상태
+        // Phase 2 완료 직후 교차검증 패널 자동 오픈 — 사용자가 검증/반영/Phase 3 흐름을
+        // 즉시 진행할 수 있도록 함. 닫기 버튼으로 언제든 닫을 수 있고, Phase 3 는
+        // 패널의 "Phase 3 진행" 버튼 또는 헤더의 "🔍 SEO 최적화" 버튼으로 트리거.
+        setShowValidation(true);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "생성 중 오류가 발생했습니다.";
@@ -886,20 +894,21 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             </Card>
           )}
 
-          {/* 교차검증 패널 — 헤더 "교차검증" 버튼이 유일한 트리거 */}
+          {/* 교차검증 패널 — Phase 2 완료 후 자동 표시 + Phase 3 진입 게이트 역할 */}
           {showValidation && baseLLMRef.current && (
             <CrossLLMValidationPanel
               title={editTitle}
               body={editText}
               availableModels={availableModels}
               baseProvider={baseLLMRef.current.provider}
-              baseModel={baseLLMRef.current.model}
-              baseApiKey={baseLLMRef.current.apiKey}
+              legalReferences={phase1Outline?.legal_references ?? []}
+              categoryName={pipelineCategoryName}
+              targetKeyword={keyword}
               onApplyFix={applyFixToBody}
-              onApplyRewrite={(newBody) => {
-                setEditText(newBody);
-                setBodyHighlight(true);
-                setTimeout(() => setBodyHighlight(false), 3000);
+              onProceedToPhase3={() => {
+                // 교차검증 처리 완료 → 패널 닫고 Phase 3 시작
+                setShowValidation(false);
+                runPhase3();
               }}
               onClose={() => setShowValidation(false)}
             />

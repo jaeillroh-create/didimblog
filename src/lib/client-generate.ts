@@ -745,6 +745,178 @@ export async function clientRunPhase3(params: {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// Phase 2 ↔ Phase 3 사이 — 사실 검증 (cross-LLM)
+// PROMPT_CROSS_VALIDATION 전용. 한국어 severity / problem / suggested_text
+// 를 받아 기존 FactCheckIssue 인터페이스 (high/medium/low + description +
+// replacement_text) 로 정규화해 기존 UI 와 호환되게 한다.
+// ─────────────────────────────────────────────────────────────
+
+const SEVERITY_KO_TO_EN: Record<string, "high" | "medium" | "low"> = {
+  심각: "high",
+  주의: "medium",
+  경미: "low",
+  high: "high",
+  medium: "medium",
+  low: "low",
+};
+
+interface RawCrossValidationIssue {
+  category?: string;
+  severity?: string;
+  original_text?: string;
+  problem?: string;
+  description?: string;
+  suggestion?: string;
+  suggested_text?: string;
+  replacement_text?: string;
+  location?: string;
+}
+
+function normalizeCrossValidationIssue(raw: RawCrossValidationIssue): FactCheckIssue {
+  const original = raw.original_text ?? "";
+  return {
+    category: raw.category ?? "기타",
+    severity: SEVERITY_KO_TO_EN[raw.severity ?? "medium"] ?? "medium",
+    location: raw.location ?? original.slice(0, 20),
+    description: raw.problem ?? raw.description ?? "",
+    suggestion: raw.suggestion ?? "",
+    original_text: original || undefined,
+    replacement_text: raw.suggested_text ?? raw.replacement_text,
+  };
+}
+
+function parseCrossValidationJson(text: string): FactCheckResult | null {
+  let cleaned = text.trim();
+
+  if (cleaned.includes("```")) {
+    const m = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (m) cleaned = m[1].trim();
+  }
+
+  const first = cleaned.indexOf("{");
+  const last = cleaned.lastIndexOf("}");
+  if (first === -1 || last === -1 || last < first) return null;
+  let candidate = cleaned.slice(first, last + 1);
+
+  let parsed: { overall_score?: number; issues?: RawCrossValidationIssue[] } | null = null;
+  try {
+    parsed = JSON.parse(candidate);
+  } catch {
+    // 잘린 JSON 복구 시도
+    const openBraces = (candidate.match(/\{/g) || []).length;
+    const closeBraces = (candidate.match(/\}/g) || []).length;
+    const openBrackets = (candidate.match(/\[/g) || []).length;
+    const closeBrackets = (candidate.match(/\]/g) || []).length;
+    for (let i = 0; i < openBrackets - closeBrackets; i++) candidate += "]";
+    for (let i = 0; i < openBraces - closeBraces; i++) candidate += "}";
+    try {
+      parsed = JSON.parse(candidate);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const score = typeof parsed.overall_score === "number" ? parsed.overall_score : 0;
+  const issues = Array.isArray(parsed.issues) ? parsed.issues.map(normalizeCrossValidationIssue) : [];
+
+  // verdict 는 score 기준으로 자동 추론 (PROMPT_CROSS_VALIDATION 응답에 verdict 필드 없음)
+  const verdict: FactCheckResult["verdict"] =
+    score >= 80 ? "pass" : score >= 60 ? "fix_required" : "major_issues";
+
+  return {
+    overall_score: score,
+    verdict,
+    issues,
+    strengths: [],
+    fact_check_items: [],
+  };
+}
+
+export interface CrossValidateV2Params {
+  title: string;
+  body: string;
+  promptTemplate: string; // PROMPT_CROSS_VALIDATION 원문
+  legalReferences: string[]; // Phase 1 outline 의 legal_references
+  categoryName: string;
+  targetKeyword: string;
+  providers: CrossValidationProviderConfig[]; // base 제외된 외부 LLM 목록
+  onProviderDone?: (result: CrossValidationProviderResult) => void;
+}
+
+/**
+ * 새 교차검증 — PROMPT_CROSS_VALIDATION 을 사용해 등록된 외부 LLM 전부에
+ * 동시 호출. 각 결과를 기존 FactCheckResult 형태로 정규화.
+ */
+export async function clientCrossValidateV2(
+  params: CrossValidateV2Params
+): Promise<CrossValidationProviderResult[]> {
+  const legalRefBlock =
+    params.legalReferences.length > 0
+      ? params.legalReferences.map((r) => `- ${r}`).join("\n")
+      : "(Phase 1 에서 legal_references 가 추출되지 않음)";
+
+  const userMessage = params.promptTemplate
+    .split("{{legal_references}}").join(legalRefBlock)
+    .split("{{category_name}}").join(params.categoryName || "")
+    .split("{{target_keyword}}").join(params.targetKeyword || "")
+    .split("{{phase2_output}}").join(params.body);
+
+  const promises = params.providers.map(async (cfg): Promise<CrossValidationProviderResult> => {
+    try {
+      const raw = await streamLLM({
+        messages: [
+          {
+            role: "system",
+            content:
+              "당신은 JSON 출력 전용 팩트체커입니다. 마크다운/설명/코드펜스 없이 오직 JSON 객체 한 개만 출력합니다.",
+          },
+          { role: "user", content: userMessage },
+        ],
+        model: cfg.model,
+        apiKey: cfg.apiKey,
+        provider: cfg.provider,
+        maxTokens: 4096,
+        temperature: 0.3,
+      });
+
+      const result = parseCrossValidationJson(raw);
+      if (!result) {
+        const out: CrossValidationProviderResult = {
+          provider: cfg.provider,
+          displayName: cfg.displayName,
+          success: false,
+          error: "응답 JSON 파싱 실패",
+        };
+        params.onProviderDone?.(out);
+        return out;
+      }
+
+      const out: CrossValidationProviderResult = {
+        provider: cfg.provider,
+        displayName: cfg.displayName,
+        success: true,
+        result,
+      };
+      params.onProviderDone?.(out);
+      return out;
+    } catch (err) {
+      const out: CrossValidationProviderResult = {
+        provider: cfg.provider,
+        displayName: cfg.displayName,
+        success: false,
+        error: err instanceof Error ? err.message : "검증 실패",
+      };
+      params.onProviderDone?.(out);
+      return out;
+    }
+  });
+
+  return Promise.all(promises);
+}
+
 /**
  * Phase 3 종료 후 후처리 — CTA / 서명 / 태그 한 줄을 본문 끝에 append.
  * 다이어리 카테고리는 그대로 반환 (CTA 금지).
