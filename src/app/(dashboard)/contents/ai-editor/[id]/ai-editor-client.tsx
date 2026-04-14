@@ -403,6 +403,8 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [phase3Loading, setPhase3Loading] = useState(false);
   const [phase3Error, setPhase3Error] = useState<string | null>(null);
   const [pipelineCategoryName, setPipelineCategoryName] = useState<string>("");
+  // Phase 1/2 실행 중 계산된 promptKey — categoryToneRules 주입용
+  const [pipelinePromptKey, setPipelinePromptKey] = useState<import("@/lib/constants/prompts").PromptKey>("PROMPT_FIELD");
   // 교차검증 단계 — stepper 의 ✅ 표시용
   const [crossValidationDone, setCrossValidationDone] = useState(false);
   // Phase 2 직후 SEO 점수 (Phase 3 와 비교하기 위해 보존)
@@ -483,6 +485,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       }
       if (isMounted.current) {
         setPipelineCategoryName(categoryName);
+        setPipelinePromptKey(promptKey);
       }
 
       // ── Phase 1: 구조 설계 ──
@@ -677,6 +680,38 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           : "원문이 정확히 일치하지 않아 근사 위치로 반영했습니다 — 본문을 확인해주세요"
       );
     }
+    return true;
+  }
+
+  /**
+   * 문단 재작성 반영 — originalParagraph 를 rewrittenParagraph 로 교체.
+   * original_text 대신 문단 전체를 한 단위로 교체하므로 문맥 일관성 유지.
+   */
+  function applyParagraphToBody(originalParagraph: string, rewrittenParagraph: string): boolean {
+    if (!originalParagraph || !rewrittenParagraph) return false;
+    if (!editText.includes(originalParagraph)) {
+      // fuzzy 한 번 시도 — whitespace 정규화만
+      const result = fuzzyApplyFix(editText, originalParagraph, rewrittenParagraph);
+      if (!result.matched) return false;
+      setEditText(result.body);
+      setBodyHighlight(true);
+      setTimeout(() => setBodyHighlight(false), 3000);
+      return true;
+    }
+    setEditText((prev) => prev.replace(originalParagraph, rewrittenParagraph));
+    setBodyHighlight(true);
+    setTimeout(() => setBodyHighlight(false), 3000);
+    return true;
+  }
+
+  /**
+   * 문단 재작성 [원래대로] 버튼 — rewritten 을 다시 original 로 되돌림.
+   */
+  function undoParagraphInBody(originalParagraph: string, rewrittenParagraph: string): boolean {
+    if (!editText.includes(rewrittenParagraph)) return false;
+    setEditText((prev) => prev.replace(rewrittenParagraph, originalParagraph));
+    setBodyHighlight(true);
+    setTimeout(() => setBodyHighlight(false), 3000);
     return true;
   }
 
@@ -1395,11 +1430,14 @@ ${koreanInfographics}`;
               title={editTitle}
               body={editText}
               availableModels={availableModels}
-              baseProvider={baseLLMRef.current.provider}
+              baseLLM={baseLLMRef.current}
               legalReferences={phase1Outline?.legal_references ?? []}
               categoryName={pipelineCategoryName}
+              categoryToneRules={CATEGORY_TONE_RULES[pipelinePromptKey] ?? ""}
               targetKeyword={keyword}
               onApplyFix={applyFixToBody}
+              onApplyParagraph={applyParagraphToBody}
+              onUndoParagraph={undoParagraphInBody}
               onUndoFix={undoFixInBody}
               onProceedToPhase3={() => {
                 setCrossValidationDone(true);

@@ -20,7 +20,9 @@ import {
 } from "lucide-react";
 import {
   clientCrossValidateV2,
+  clientRewriteParagraph,
   type ClientLLMProvider,
+  type ClientPhaseLLMConfig,
   type CrossValidationProviderConfig,
   type CrossValidationProviderResult,
   type FactCheckIssue,
@@ -40,15 +42,22 @@ interface CrossLLMValidationPanelProps {
   title: string;
   body: string;
   availableModels: LLMModelOption[];
-  baseProvider: ClientLLMProvider;
+  /** 초안 생성에 사용한 베이스 LLM — 문단 재작성은 교차검증 LLM 이 아닌 베이스 LLM 이 담당 */
+  baseLLM: ClientPhaseLLMConfig;
   /** Phase 1 outline 에서 추출한 법령 목록. PROMPT_CROSS_VALIDATION 의 legal_references 에 주입 */
   legalReferences: string[];
   /** Phase 1 outline 의 category_name (한국어, 없으면 빈 문자열) */
   categoryName: string;
+  /** 카테고리별 톤 규칙 — 문단 재작성 프롬프트에 주입 */
+  categoryToneRules: string;
   /** SEO 키워드 */
   targetKeyword: string;
-  /** 개별 issue 반영 — true 반환 시 본문 교체 성공 */
+  /** 개별 issue 반영 — original_text → replacement_text 단순 치환. true 반환 시 본문 교체 성공 */
   onApplyFix: (originalText: string, replacementText: string) => boolean;
+  /** 문단 재작성 반영 — originalParagraph → rewrittenParagraph 통째 교체 */
+  onApplyParagraph?: (originalParagraph: string, rewrittenParagraph: string) => boolean;
+  /** 문단 재작성 되돌리기 */
+  onUndoParagraph?: (originalParagraph: string, rewrittenParagraph: string) => boolean;
   /** "반영됨" 항목 되돌리기 — 본문에서 replacement → original 로 역치환. true 반환 시 성공 */
   onUndoFix?: (originalText: string, replacementText: string) => boolean;
   /** "Phase 3 진행" 버튼 — 모든 항목 처리 후 활성화. 호출 시 Phase 3 SEO 최적화 시작 */
@@ -90,6 +99,65 @@ interface IssueGroup {
 
 type ItemStatus = "pending" | "applied" | "ignored";
 
+/**
+ * 이 이슈가 "단순 치환" 이 아니라 "문단 재작성" 을 필요로 하는지 결정.
+ *
+ * 단순 치환 조건: category in (숫자, 법률팩트) AND severity === "low"
+ * 그 외에는 모두 재작성 필요:
+ *   - severity 가 high 또는 medium
+ *   - category 가 논리 / 단정 / 출처
+ *   - suggested_text 길이가 original_text 대비 50% 이상 차이
+ */
+function needsParagraphRewrite(issue: FactCheckIssue): boolean {
+  if (issue.severity === "high" || issue.severity === "medium") return true;
+  const cat = issue.category ?? "";
+  if (cat.includes("논리") || cat.includes("단정") || cat.includes("출처")) return true;
+  const orig = issue.original_text ?? "";
+  const repl = issue.replacement_text ?? "";
+  if (orig.length > 0) {
+    const ratio = Math.abs(repl.length - orig.length) / orig.length;
+    if (ratio >= 0.5) return true;
+  }
+  return false;
+}
+
+/**
+ * 본문에서 originalText 를 포함하는 문단을 찾는다.
+ * 본문을 \n\n 단위로 split 후, original 이 속한 문단을 반환.
+ * 정확 매칭 실패 시 whitespace 정규화 / prefix(첫 20자) 매칭으로 fallback.
+ */
+function findParagraphContaining(
+  body: string,
+  originalText: string
+): { paragraph: string } | null {
+  if (!originalText) return null;
+  const paragraphs = body.split(/\n\n+/);
+
+  // 1) 정확 매칭
+  for (const p of paragraphs) {
+    if (p.includes(originalText)) return { paragraph: p };
+  }
+
+  // 2) whitespace 정규화
+  const normalize = (s: string) => s.replace(/\s+/g, " ").trim();
+  const normOrig = normalize(originalText);
+  if (normOrig.length >= 5) {
+    for (const p of paragraphs) {
+      if (normalize(p).includes(normOrig)) return { paragraph: p };
+    }
+  }
+
+  // 3) prefix 매칭
+  const prefix = originalText.trim().slice(0, 20);
+  if (prefix.length >= 8) {
+    for (const p of paragraphs) {
+      if (p.includes(prefix)) return { paragraph: p };
+    }
+  }
+
+  return null;
+}
+
 function normalizeKey(text: string | undefined): string {
   if (!text) return "";
   // 화이트스페이스 정규화 + 처음 60자 — 같은 이슈를 다른 표현으로 지적해도 어느 정도 묶음
@@ -128,15 +196,19 @@ export function CrossLLMValidationPanel({
   title: _title,
   body,
   availableModels,
-  baseProvider,
+  baseLLM,
   legalReferences,
   categoryName,
+  categoryToneRules,
   targetKeyword,
   onApplyFix,
+  onApplyParagraph,
+  onUndoParagraph,
   onUndoFix,
   onProceedToPhase3,
   onClose,
 }: CrossLLMValidationPanelProps) {
+  const baseProvider = baseLLM.provider;
   void _title;
   const [, startTransition] = useTransition();
 
@@ -267,6 +339,10 @@ export function CrossLLMValidationPanel({
   const allHandled = groups.length > 0 && counts.pending === 0;
   const hasNoIssues = !isValidating && groups.length === 0 && results !== null;
 
+  /**
+   * 단순 반영 경로 — original_text → replacement_text 치환.
+   * 카드가 needsParagraphRewrite === false 일 때만 사용.
+   */
   function handleApplyGroup(group: IssueGroup) {
     const iss = group.primary.issue;
     if (!iss.original_text || !iss.replacement_text) {
@@ -294,6 +370,61 @@ export function CrossLLMValidationPanel({
     }
     setGroupStatus((prev) => ({ ...prev, [group.groupKey]: "applied" }));
     toast.success(`${iss.category} 반영 완료`);
+  }
+
+  /**
+   * 문단 재작성 경로 — IssueCard 의 [반영 + 다듬기] 버튼이 호출.
+   * 1) 본문에서 original_text 를 포함하는 문단을 찾음
+   * 2) 베이스 LLM 에게 문단 + 수정사항을 보내 다듬어진 문단 받기
+   * 3) IssueCard 는 이 결과를 preview 로 표시
+   *
+   * 실제 본문 교체는 사용자가 preview 에서 [적용] 누를 때 handleConfirmParagraph 가 처리.
+   */
+  async function handleRewriteParagraph(
+    issue: FactCheckIssue
+  ): Promise<{ originalParagraph: string; rewrittenParagraph: string } | { error: string }> {
+    if (!issue.original_text) {
+      return { error: "원문이 누락되었습니다" };
+    }
+    const found = findParagraphContaining(body, issue.original_text);
+    if (!found) {
+      return { error: "본문에서 원문이 포함된 문단을 찾지 못했습니다 — 수동 확인 필요" };
+    }
+
+    const res = await clientRewriteParagraph({
+      llm: baseLLM,
+      categoryTone: categoryToneRules,
+      originalParagraph: found.paragraph,
+      originalText: issue.original_text,
+      suggestedText: issue.replacement_text ?? issue.suggestion ?? "",
+      problem: issue.description ?? "",
+    });
+
+    if (!res.success || !res.rewrittenParagraph) {
+      return { error: res.error ?? "문단 재작성 실패" };
+    }
+    return {
+      originalParagraph: found.paragraph,
+      rewrittenParagraph: res.rewrittenParagraph,
+    };
+  }
+
+  /**
+   * 문단 재작성 [적용] — preview 의 rewrittenParagraph 를 본문에 실제 반영.
+   */
+  function handleConfirmParagraph(group: IssueGroup, originalParagraph: string, rewrittenParagraph: string) {
+    if (!onApplyParagraph) {
+      toast.error("문단 재작성 기능이 활성화되지 않았습니다");
+      return false;
+    }
+    const ok = onApplyParagraph(originalParagraph, rewrittenParagraph);
+    if (!ok) {
+      toast.error("본문에서 원본 문단을 찾지 못했습니다 (본문이 수동 편집됨?)");
+      return false;
+    }
+    setGroupStatus((prev) => ({ ...prev, [group.groupKey]: "applied" }));
+    toast.success(`${group.primary.issue.category} 반영 + 다듬기 완료`);
+    return true;
   }
 
   function handleIgnoreGroup(group: IssueGroup) {
@@ -490,6 +621,23 @@ export function CrossLLMValidationPanel({
               onApply={() => handleApplyGroup(g)}
               onIgnore={() => handleIgnoreGroup(g)}
               onUndo={() => handleUndoGroup(g)}
+              onRewriteRequest={() => handleRewriteParagraph(g.primary.issue)}
+              onRewriteConfirm={(original, rewritten) =>
+                handleConfirmParagraph(g, original, rewritten)
+              }
+              onRewriteUndo={(original, rewritten) => {
+                if (!onUndoParagraph) return false;
+                const ok = onUndoParagraph(original, rewritten);
+                if (ok) {
+                  setGroupStatus((prev) => {
+                    const next = { ...prev };
+                    delete next[g.groupKey];
+                    return next;
+                  });
+                  toast.success("문단 재작성 취소 — 원래 문단으로 복귀했습니다");
+                }
+                return ok;
+              }}
             />
           ))}
         </div>
@@ -542,20 +690,91 @@ interface IssueGroupCardProps {
   onApply: () => void;
   onIgnore: () => void;
   onUndo: () => void;
+  /** 문단 재작성 요청 — 베이스 LLM 호출, 결과(originalParagraph/rewrittenParagraph) 반환 */
+  onRewriteRequest: () => Promise<
+    { originalParagraph: string; rewrittenParagraph: string } | { error: string }
+  >;
+  /** preview 의 [적용] 버튼 — 본문에서 문단 교체 */
+  onRewriteConfirm: (originalParagraph: string, rewrittenParagraph: string) => boolean;
+  /** 적용 후 되돌리기 */
+  onRewriteUndo: (originalParagraph: string, rewrittenParagraph: string) => boolean;
 }
 
-function IssueGroupCard({ group, status, onApply, onIgnore, onUndo }: IssueGroupCardProps) {
+type RewriteState = "idle" | "generating" | "preview" | "applied-rewrite";
+
+function IssueGroupCard({
+  group,
+  status,
+  onApply,
+  onIgnore,
+  onUndo,
+  onRewriteRequest,
+  onRewriteConfirm,
+  onRewriteUndo,
+}: IssueGroupCardProps) {
   const sev = SEVERITY_STYLES[group.effectiveSeverity];
   const iss = group.primary.issue;
   const canApply = !!iss.original_text && !!iss.replacement_text;
   const isMultiLLM = group.providers.length >= 2;
+  const requiresRewrite = needsParagraphRewrite(iss);
+
+  // 문단 재작성 local state
+  const [rewriteState, setRewriteState] = useState<RewriteState>("idle");
+  const [originalParagraph, setOriginalParagraph] = useState<string | null>(null);
+  const [rewrittenParagraph, setRewrittenParagraph] = useState<string | null>(null);
+  const [rewriteError, setRewriteError] = useState<string | null>(null);
+
+  async function handleRequestRewrite() {
+    setRewriteState("generating");
+    setRewriteError(null);
+    const res = await onRewriteRequest();
+    if ("error" in res) {
+      setRewriteState("idle");
+      setRewriteError(res.error);
+      toast.error(res.error);
+      return;
+    }
+    setOriginalParagraph(res.originalParagraph);
+    setRewrittenParagraph(res.rewrittenParagraph);
+    setRewriteState("preview");
+  }
+
+  function handleConfirm() {
+    if (!originalParagraph || !rewrittenParagraph) return;
+    const ok = onRewriteConfirm(originalParagraph, rewrittenParagraph);
+    if (ok) {
+      setRewriteState("applied-rewrite");
+    }
+  }
+
+  function handleCancelPreview() {
+    setRewriteState("idle");
+    setOriginalParagraph(null);
+    setRewrittenParagraph(null);
+  }
+
+  function handleRewriteUndoClick() {
+    if (!originalParagraph || !rewrittenParagraph) {
+      onUndo(); // 문단 정보가 없으면 단순 undo 로 fallback
+      return;
+    }
+    const ok = onRewriteUndo(originalParagraph, rewrittenParagraph);
+    if (ok) {
+      setRewriteState("idle");
+      setOriginalParagraph(null);
+      setRewrittenParagraph(null);
+    }
+  }
+
+  const effectiveStatus: ItemStatus =
+    rewriteState === "applied-rewrite" ? "applied" : status;
 
   return (
     <div
       className={`rounded-md border p-3 text-sm space-y-2 transition-colors ${
-        status === "applied"
-          ? "bg-green-50 border-green-200 opacity-70"
-          : status === "ignored"
+        effectiveStatus === "applied"
+          ? "bg-green-50 border-green-200 opacity-90"
+          : effectiveStatus === "ignored"
             ? "bg-muted/30 opacity-50"
             : "bg-background"
       }`}
@@ -569,7 +788,11 @@ function IssueGroupCard({ group, status, onApply, onIgnore, onUndo }: IssueGroup
           {isMultiLLM && ` ⬆`}
         </span>
         <span className="font-semibold text-sm">{iss.category}</span>
-        {/* provider 배지 */}
+        {requiresRewrite && (
+          <Badge variant="outline" className="text-[10px] py-0 border-blue-300 text-blue-700">
+            문단 재작성
+          </Badge>
+        )}
         {group.providers.map((p) => (
           <Badge key={p} variant="outline" className="text-xs py-0">
             {p}
@@ -579,24 +802,24 @@ function IssueGroupCard({ group, status, onApply, onIgnore, onUndo }: IssueGroup
           <span className="text-xs text-muted-foreground">· {group.providers.length}개 LLM 지적</span>
         )}
         <div className="ml-auto flex items-center gap-1">
-          {status === "applied" ? (
+          {effectiveStatus === "applied" ? (
             <>
               <Badge style={{ backgroundColor: "#16a34a", color: "white" }} className="text-xs">
                 <Check className="mr-0.5 h-3.5 w-3.5" />
-                반영됨
+                {rewriteState === "applied-rewrite" ? "다듬기 반영됨" : "반영됨"}
               </Badge>
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-7 px-2 text-xs"
-                onClick={onUndo}
+                onClick={rewriteState === "applied-rewrite" ? handleRewriteUndoClick : onUndo}
                 title="본문에서 되돌리고 다시 처리할 수 있게 합니다"
               >
                 <RotateCcw className="mr-0.5 h-3.5 w-3.5" />
                 되돌리기
               </Button>
             </>
-          ) : status === "ignored" ? (
+          ) : effectiveStatus === "ignored" ? (
             <>
               <Badge variant="outline" className="text-xs text-muted-foreground">
                 무시됨
@@ -612,19 +835,38 @@ function IssueGroupCard({ group, status, onApply, onIgnore, onUndo }: IssueGroup
                 되돌리기
               </Button>
             </>
-          ) : (
+          ) : rewriteState === "generating" ? (
+            <Badge variant="outline" className="text-xs">
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              다듬는 중...
+            </Badge>
+          ) : rewriteState === "preview" ? null : (
             <>
-              <Button
-                size="sm"
-                variant="default"
-                className="h-7 px-2.5 text-xs"
-                onClick={onApply}
-                disabled={!canApply}
-                title={canApply ? "본문에 즉시 적용" : "원문 매칭 불가 — 수동 확인"}
-              >
-                <Check className="mr-0.5 h-3.5 w-3.5" />
-                반영
-              </Button>
+              {requiresRewrite ? (
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-7 px-2.5 text-xs"
+                  onClick={handleRequestRewrite}
+                  disabled={!iss.original_text}
+                  title="해당 문단을 LLM 에게 다시 다듬게 합니다 (앞뒤 문맥 자연스럽게)"
+                >
+                  <Check className="mr-0.5 h-3.5 w-3.5" />
+                  반영 + 다듬기
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-7 px-2.5 text-xs"
+                  onClick={onApply}
+                  disabled={!canApply}
+                  title={canApply ? "본문에 즉시 적용" : "원문 매칭 불가 — 수동 확인"}
+                >
+                  <Check className="mr-0.5 h-3.5 w-3.5" />
+                  반영
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="ghost"
@@ -644,23 +886,79 @@ function IssueGroupCard({ group, status, onApply, onIgnore, onUndo }: IssueGroup
           제안: {iss.suggestion}
         </p>
       )}
-      {canApply && (
+
+      {/* 단순 치환 케이스: 기존 diff 박스 (original_text → replacement_text) */}
+      {!requiresRewrite && canApply && rewriteState === "idle" && (
         <div className="mt-2 rounded bg-background border p-2 space-y-1">
           <p
-            className={`text-xs leading-relaxed whitespace-pre-wrap break-words ${status === "applied" ? "" : "line-through"}`}
+            className={`text-xs leading-relaxed whitespace-pre-wrap break-words ${
+              effectiveStatus === "applied" ? "" : "line-through"
+            }`}
             style={{
-              color: status === "applied" ? "#dc2626" : "var(--neutral-text-muted)",
+              color: effectiveStatus === "applied" ? "#dc2626" : "var(--neutral-text-muted)",
             }}
           >
             {iss.original_text}
           </p>
           <p
             className="text-xs leading-relaxed whitespace-pre-wrap break-words"
-            style={{ color: status === "applied" ? "#16a34a" : "var(--foreground)" }}
+            style={{ color: effectiveStatus === "applied" ? "#16a34a" : "var(--foreground)" }}
           >
             → {iss.replacement_text}
           </p>
         </div>
+      )}
+
+      {/* 문단 재작성 preview — LLM 이 다듬어 준 문단을 수정 전/후로 비교 */}
+      {rewriteState === "preview" && originalParagraph && rewrittenParagraph && (
+        <div className="mt-2 space-y-2">
+          <div className="rounded border p-2 bg-red-50">
+            <div className="text-[10px] font-semibold text-red-700 mb-1">수정 전 문단</div>
+            <p className="text-xs leading-relaxed whitespace-pre-wrap break-words text-neutral-600 line-through">
+              {originalParagraph}
+            </p>
+          </div>
+          <div className="rounded border p-2 bg-green-50">
+            <div className="text-[10px] font-semibold text-green-700 mb-1">수정 후 문단 (LLM 다듬기)</div>
+            <p className="text-xs leading-relaxed whitespace-pre-wrap break-words text-foreground">
+              {rewrittenParagraph}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              className="h-7 px-3 text-xs"
+              onClick={handleConfirm}
+              style={{ backgroundColor: "var(--brand-accent)" }}
+            >
+              <Check className="mr-0.5 h-3.5 w-3.5" />
+              적용
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-3 text-xs"
+              onClick={handleCancelPreview}
+            >
+              <X className="mr-0.5 h-3.5 w-3.5" />
+              원래대로
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-3 text-xs"
+              onClick={handleRequestRewrite}
+            >
+              <RotateCcw className="mr-0.5 h-3.5 w-3.5" />
+              다시 다듬기
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {rewriteError && rewriteState === "idle" && (
+        <p className="text-xs text-red-600 whitespace-pre-wrap break-words">{rewriteError}</p>
       )}
     </div>
   );
