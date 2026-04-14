@@ -42,9 +42,64 @@ export async function* generateStream(
   }
 }
 
-export async function testConnection(apiKey: string): Promise<boolean> {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
-  const result = await model.generateContent("Hi");
-  return result.response.text() !== undefined;
+/**
+ * Google Gemini API 연결 테스트
+ * - fetch 로 직접 호출 (REST API)
+ * - 사용자가 지정한 model 로 정확히 테스트
+ */
+export async function testConnection(
+  apiKey: string,
+  model: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!apiKey) return { success: false, error: "API 키가 비어있습니다." };
+  if (!model) return { success: false, error: "모델 ID가 비어있습니다." };
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const body = {
+    contents: [{ role: "user", parts: [{ text: "Hi" }] }],
+    generationConfig: { maxOutputTokens: 10 },
+  };
+
+  console.log("[gemini.testConnection] 요청:", { model, apiKeyPrefix: apiKey.slice(0, 8) });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[gemini.testConnection] fetch 실패:", msg);
+    return { success: false, error: `네트워크 오류: ${msg}` };
+  }
+
+  const rawBody = await response.text().catch(() => "");
+
+  if (!response.ok) {
+    let parsed: { error?: { message?: string; status?: string } } | null = null;
+    try {
+      parsed = JSON.parse(rawBody);
+    } catch {
+      // raw text fallback
+    }
+    const apiMessage = parsed?.error?.message ?? rawBody.slice(0, 400) ?? "(응답 본문 없음)";
+    const errorMessage = `Gemini API ${response.status} ${response.statusText}: ${apiMessage}`;
+    console.error("[gemini.testConnection] 실패:", errorMessage);
+    return { success: false, error: errorMessage };
+  }
+
+  // 성공 응답에 candidates 가 있어야 함
+  try {
+    const json = JSON.parse(rawBody);
+    if (!json?.candidates) {
+      return { success: false, error: "Gemini 응답에 candidates 가 없습니다: " + rawBody.slice(0, 200) };
+    }
+  } catch {
+    return { success: false, error: "Gemini 응답을 JSON 으로 파싱할 수 없습니다: " + rawBody.slice(0, 200) };
+  }
+
+  console.log("[gemini.testConnection] 성공:", { model });
+  return { success: true };
 }
