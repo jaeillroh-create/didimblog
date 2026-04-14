@@ -84,6 +84,94 @@ interface ExtractedImageMarker {
   rawText: string;
 }
 
+type FuzzyMode = "exact" | "whitespace" | "prefix";
+
+interface FuzzyApplyResult {
+  body: string;
+  matched: boolean;
+  mode?: FuzzyMode;
+}
+
+/**
+ * 본문에서 originalText 를 찾아 replacementText 로 교체.
+ * LLM 이 반환한 original_text 가 본문과 정확히 일치하지 않는 경우가 잦아서
+ * 다음 3단계 fallback 으로 매칭 성공률을 올린다.
+ *
+ *   1. 정확 매칭 (현재 기존 동작)
+ *   2. whitespace 정규화 매칭 — original 의 모든 \s+ 시퀀스를 \s+ 로 매칭하는
+ *      정규식을 만들어 본문에서 검색 (줄바꿈/탭/이중 공백 차이 흡수)
+ *   3. prefix 매칭 — original 의 첫 25자가 본문 어딘가에 있으면, 그 위치부터
+ *      가장 가까운 문장 종결자(. ! ? 。 \n) 또는 최대 1.5배 길이까지를 한
+ *      덩어리로 보고 replacementText 로 교체
+ *
+ * 모두 실패 시 matched=false 반환 → 호출 측이 수동 확인 안내.
+ */
+function fuzzyApplyFix(
+  body: string,
+  originalText: string,
+  replacementText: string
+): FuzzyApplyResult {
+  if (!originalText) return { body, matched: false };
+
+  // 1) 정확 매칭
+  if (body.includes(originalText)) {
+    return { body: body.replace(originalText, replacementText), matched: true, mode: "exact" };
+  }
+
+  // 2) whitespace 정규화 매칭
+  const trimmed = originalText.trim();
+  if (trimmed.length >= 5) {
+    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const fuzzyPattern = escapeRegex(trimmed).replace(/\s+/g, "\\s+");
+    try {
+      const re = new RegExp(fuzzyPattern);
+      const m = body.match(re);
+      if (m && m[0]) {
+        return { body: body.replace(m[0], replacementText), matched: true, mode: "whitespace" };
+      }
+    } catch {
+      // 정규식 컴파일 실패 → 다음 단계로
+    }
+  }
+
+  // 3) prefix 매칭 — 첫 25자만으로 위치 잡고 문장 종결까지 교체
+  const prefix = trimmed.slice(0, 25);
+  if (prefix.length >= 10) {
+    const idx = body.indexOf(prefix);
+    if (idx !== -1) {
+      let endIdx = body.length;
+      for (let i = idx + prefix.length; i < body.length; i++) {
+        const ch = body[i];
+        if (ch === "." || ch === "!" || ch === "?" || ch === "。" || ch === "\n") {
+          endIdx = i + 1;
+          break;
+        }
+      }
+      // 폭주 방지: 원본 길이의 1.8배 + 60자 이내로 제한
+      const maxEnd = idx + Math.floor(originalText.length * 1.8) + 60;
+      if (endIdx > maxEnd) endIdx = maxEnd;
+      return {
+        body: body.slice(0, idx) + replacementText + body.slice(endIdx),
+        matched: true,
+        mode: "prefix",
+      };
+    }
+  }
+
+  return { body, matched: false };
+}
+
+/**
+ * 박스 형식 인포그래픽 마커 [IMAGE: ... | (1) 한국어: ... (2) English: ...] 에서
+ * (1) 한국어 부분만 추출. (2) English 가 없거나 형식이 다르면 description 반환.
+ */
+function extractKoreanInfographic(rawTextOrDescription: string): string {
+  // (1) 한국어: 다음부터 (2) English 또는 끝까지
+  const m = rawTextOrDescription.match(/\(1\)\s*한국어\s*:\s*([\s\S]*?)(?=\n\s*\(2\)\s*English|$)/);
+  if (m) return m[1].trim().replace(/\]$/, "").trim();
+  return rawTextOrDescription;
+}
+
 /**
  * 본문에서 이미지 마커를 추출 — 박스 형식과 단순 형식 모두 지원.
  *
@@ -511,25 +599,45 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
   /**
    * 교차검증 패널에서 개별 issue 반영 시 호출.
-   * 본문에서 originalText → replacementText 교체.
-   * 매칭 성공하면 textarea 를 잠깐 강조해서 사용자에게 시각적 피드백.
+   * fuzzyApplyFix 로 정확/근사 매칭 fallback. setEditText 는 새 body 로 직접 교체
+   * (prev 기반 update 의 stale closure 문제 회피).
    */
   function applyFixToBody(originalText: string, replacementText: string): boolean {
-    if (!editText.includes(originalText)) return false;
-    setEditText((prev) => prev.replace(originalText, replacementText));
+    const result = fuzzyApplyFix(editText, originalText, replacementText);
+    if (!result.matched) {
+      console.warn("[applyFixToBody] 본문에서 원문 매칭 실패", {
+        originalLen: originalText.length,
+        bodyLen: editText.length,
+      });
+      return false;
+    }
+    setEditText(result.body);
     setBodyHighlight(true);
     setTimeout(() => setBodyHighlight(false), 3000);
+    if (result.mode && result.mode !== "exact") {
+      toast.info(
+        result.mode === "whitespace"
+          ? "공백 차이를 흡수해서 반영했습니다 — 본문을 한 번 확인해주세요"
+          : "원문이 정확히 일치하지 않아 근사 위치로 반영했습니다 — 본문을 확인해주세요"
+      );
+    }
     return true;
   }
 
   /**
    * "반영됨" 항목을 되돌릴 때 호출되는 역치환.
-   * 본문에서 replacementText → originalText 로 되돌림.
-   * 사용자가 본문을 수동 편집해서 replacementText 가 더 이상 본문에 없으면 false 반환.
+   * fuzzyApplyFix 로 replacement → original 역치환. fuzzy fallback 동일.
    */
   function undoFixInBody(originalText: string, replacementText: string): boolean {
-    if (!editText.includes(replacementText)) return false;
-    setEditText((prev) => prev.replace(replacementText, originalText));
+    const result = fuzzyApplyFix(editText, replacementText, originalText);
+    if (!result.matched) {
+      console.warn("[undoFixInBody] 본문에서 교체된 문장 매칭 실패", {
+        replacementLen: replacementText.length,
+        bodyLen: editText.length,
+      });
+      return false;
+    }
+    setEditText(result.body);
     setBodyHighlight(true);
     setTimeout(() => setBodyHighlight(false), 3000);
     return true;
@@ -910,13 +1018,58 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        const bodyWithoutMarkers = editText.replace(/\[IMAGE:[^\]]+\]/g, "").replace(/\n{3,}/g, "\n\n");
-                        const markerTexts = imageMarkers.map((m, i) => `[IMG ${i + 1}]\n${m.rawText}`).join("\n\n");
-                        const fullCopy = `---\n[블로그 글 전체 내용]\n${bodyWithoutMarkers}\n\n---\n\n위 블로그 글의 맥락에 맞게 아래 ${imageMarkers.length}개의 인포그래픽을 생성해주세요.\n각 인포그래픽은 블로그 본문의 해당 위치에 삽입될 이미지입니다.\n한국어로 작성하고, 세련된 비즈니스 스타일로 만들어주세요.\n\n${markerTexts}\n---`;
-                        navigator.clipboard.writeText(fullCopy).then(() => toast.success("본문 + 이미지 프롬프트가 복사되었습니다"));
+                        // 1) 본문에서 박스 형식 마커를 정확히 제거 (extractImageMarkers 의 rawText 사용)
+                        let cleanBody = editText;
+                        for (const mk of imageMarkers) {
+                          cleanBody = cleanBody.split(mk.rawText).join("");
+                        }
+                        // 박스 구분선 (━━ 📷 이미지 N ━━ / ━━━━━━━━━━━━━━) 도 같이 제거
+                        cleanBody = cleanBody
+                          .replace(/━━\s*📷[^\n]*\n?/g, "")
+                          .replace(/━━━━+\n?/g, "")
+                          .replace(/\n{3,}/g, "\n\n")
+                          .trim();
+
+                        // 2) 각 마커의 한국어 프롬프트만 추출
+                        const koreanInfographics = imageMarkers
+                          .map((m, i) => {
+                            const ko = extractKoreanInfographic(m.rawText || m.description);
+                            return `── 인포그래픽 ${i + 1} ──\n${ko}`;
+                          })
+                          .join("\n\n");
+
+                        const fullCopy = `다음 블로그 본문을 참고해서 아래 ${imageMarkers.length}개의 한국어 인포그래픽을 생성해주세요.
+
+[블로그 본문]
+${cleanBody}
+
+────────────────────
+
+[인포그래픽 작성 지침]
+- 모든 텍스트는 반드시 한국어로 작성 (영문 일절 금지)
+- Clean modern flat design, 흰색 배경, 16:9
+- 각 인포그래픽 최상단에 임팩트 헤드라인 (24pt 볼드, 데이터가 아닌 메시지)
+- 감정 톤에 어울리는 색상 자유 선택 (성취감 / 위기감 / 자신감 / 긴급함)
+- 핵심 데이터 1~2개만 색상/크기/볼드로 강조
+- 하단에 출처(법률 근거 / 기관명) + 단위 / 기준일 표기
+- 세련되고 전문적인 비즈니스 톤 유지
+
+────────────────────
+
+[생성할 인포그래픽 ${imageMarkers.length}개]
+
+${koreanInfographics}`;
+
+                        navigator.clipboard.writeText(fullCopy).then(
+                          () =>
+                            toast.success(
+                              `본문 + ${imageMarkers.length}개 인포그래픽 한국어 프롬프트가 복사되었습니다 — LLM에 바로 붙여넣으세요`
+                            ),
+                          () => toast.error("클립보드 복사에 실패했습니다")
+                        );
                       }}
                     >
-                      전체 복사 (본문+이미지)
+                      전체 복사 (본문+한국어 지침)
                     </Button>
                     <a
                       href="https://www.genspark.ai"
