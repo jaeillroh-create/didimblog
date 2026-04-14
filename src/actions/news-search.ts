@@ -1,6 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { ensureAdmin } from "@/lib/auth/ensure-admin";
 import { generateFull } from "@/lib/llm";
 import type { SearchApiConfig, SearchApiProvider, NewsArticle, NewsItem, LLMStreamConfig, LLMMessage } from "@/lib/types/database";
 
@@ -124,28 +126,21 @@ export async function saveSearchApiConfig(
   try {
     const supabase = await createClient();
 
-    // admin 권한 확인
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return { success: false, error: "로그인이 필요합니다." };
+    // admin 권한 확인 (다층 폴백 + 상세 로깅)
+    const adminCheck = await ensureAdmin(supabase);
+    if (!adminCheck.success) {
+      return { success: false, error: adminCheck.error };
     }
+    console.log("[saveSearchApiConfig] admin 검증 통과 (source:", adminCheck.source, ")");
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (profile?.role !== "admin") {
-      return { success: false, error: "관리자 권한이 필요합니다." };
-    }
+    const userId = adminCheck.userId;
+    // RLS(admin 전용) 우회 — service-role 있으면 사용, 없으면 세션 클라이언트 폴백
+    const dbClient = createAdminClient() ?? supabase;
 
     const encryptedSecret = encryptSecret(input.clientSecret);
 
     // 기존 설정 존재 여부 확인
-    const { data: existing, error: selectError } = await supabase
+    const { data: existing, error: selectError } = await dbClient
       .from("search_api_configs")
       .select("id")
       .eq("provider", input.provider)
@@ -165,7 +160,7 @@ export async function saveSearchApiConfig(
 
     if (existing) {
       // 업데이트
-      const { data, error } = await supabase
+      const { data, error } = await dbClient
         .from("search_api_configs")
         .update({
           display_name: input.displayName,
@@ -179,12 +174,13 @@ export async function saveSearchApiConfig(
         .single();
 
       if (error || !data) {
+        console.error("[saveSearchApiConfig] 업데이트 실패:", error);
         return { success: false, error: `업데이트 실패: ${error?.message || "알 수 없는 오류"}` };
       }
       resultId = data.id;
     } else {
       // 신규 생성
-      const { data, error } = await supabase
+      const { data, error } = await dbClient
         .from("search_api_configs")
         .insert({
           provider: input.provider,
@@ -192,12 +188,13 @@ export async function saveSearchApiConfig(
           client_id: input.clientId,
           client_secret_encrypted: encryptedSecret,
           is_active: true,
-          created_by: user.id,
+          created_by: userId,
         })
         .select("id")
         .single();
 
       if (error || !data) {
+        console.error("[saveSearchApiConfig] 저장 실패:", error);
         return { success: false, error: `저장 실패: ${error?.message || "알 수 없는 오류"}` };
       }
       resultId = data.id;
