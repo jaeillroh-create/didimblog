@@ -562,6 +562,17 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
               }}
               autoComplete="off"
             >
+              {/* Chrome 접근성 경고 방지를 위한 숨김 username 필드 */}
+              <input
+                type="text"
+                name="username"
+                autoComplete="username"
+                value={editProvider}
+                readOnly
+                aria-hidden="true"
+                tabIndex={-1}
+                style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }}
+              />
               <div>
                 <label className="input-label">모델</label>
                 <Select
@@ -716,6 +727,17 @@ export function AiSettings({ initialConfigs, initialTemplates, initialSearchConf
             }}
             autoComplete="off"
           >
+            {/* Chrome 접근성 경고 방지를 위한 숨김 username 필드 */}
+            <input
+              type="text"
+              name="username"
+              autoComplete="username"
+              value={editSearchProvider ?? ""}
+              readOnly
+              aria-hidden="true"
+              tabIndex={-1}
+              style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }}
+            />
             <div className="ucl-alert alert-info">
               <span className="t-xs">
               {editSearchProvider === "naver"

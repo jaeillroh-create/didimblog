@@ -129,10 +129,12 @@ export function TeamManagement({
   }
 
   function formatDate(dateStr: string) {
+    // timeZone을 명시해서 서버(UTC)와 클라이언트(KST) 결과를 일치시킴 → hydration mismatch 방지
     return new Date(dateStr).toLocaleDateString("ko-KR", {
       year: "numeric",
       month: "long",
       day: "numeric",
+      timeZone: "Asia/Seoul",
     });
   }
 
@@ -184,7 +186,7 @@ export function TeamManagement({
                       <span className="t-sm" style={{ color: "var(--g500)" }}>{member.email}</span>
                     </TableCell>
                     <TableCell>
-                      <span className="t-sm" style={{ color: "var(--g500)" }}>{formatDate(member.created_at)}</span>
+                      <span className="t-sm" style={{ color: "var(--g500)" }} suppressHydrationWarning>{formatDate(member.created_at)}</span>
                     </TableCell>
                     <TableCell>
                       <Select
@@ -296,7 +298,7 @@ export function TeamManagement({
                     </Select>
                   </TableCell>
                   <TableCell>
-                    <span className="t-sm" style={{ color: "var(--g500)" }}>{formatDate(member.created_at)}</span>
+                    <span className="t-sm" style={{ color: "var(--g500)" }} suppressHydrationWarning>{formatDate(member.created_at)}</span>
                   </TableCell>
                   <TableCell>
                     <button
