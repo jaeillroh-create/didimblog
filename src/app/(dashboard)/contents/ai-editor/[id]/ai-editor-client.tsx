@@ -84,7 +84,7 @@ interface ExtractedImageMarker {
   rawText: string;
 }
 
-type FuzzyMode = "exact" | "whitespace" | "prefix";
+type FuzzyMode = "exact" | "whitespace" | "markdown" | "prefix";
 
 interface FuzzyApplyResult {
   body: string;
@@ -95,13 +95,16 @@ interface FuzzyApplyResult {
 /**
  * 본문에서 originalText 를 찾아 replacementText 로 교체.
  * LLM 이 반환한 original_text 가 본문과 정확히 일치하지 않는 경우가 잦아서
- * 다음 3단계 fallback 으로 매칭 성공률을 올린다.
+ * 다음 4단계 fallback 으로 매칭 성공률을 올린다.
  *
  *   1. 정확 매칭 (현재 기존 동작)
  *   2. whitespace 정규화 매칭 — original 의 모든 \s+ 시퀀스를 \s+ 로 매칭하는
  *      정규식을 만들어 본문에서 검색 (줄바꿈/탭/이중 공백 차이 흡수)
- *   3. prefix 매칭 — original 의 첫 25자가 본문 어딘가에 있으면, 그 위치부터
- *      가장 가까운 문장 종결자(. ! ? 。 \n) 또는 최대 1.5배 길이까지를 한
+ *   3. markdown strip 매칭 — 본문과 original 모두 마크다운 기호(## ** > * _ ` ~)
+ *      를 제거하고 정규화한 뒤 본문에서 original 을 찾음. 찾으면 stripped 본문의
+ *      위치를 원본 본문 위치로 매핑하여 교체.
+ *   4. prefix 매칭 — original 의 첫 20자가 본문 어딘가에 있으면, 그 위치부터
+ *      가장 가까운 문장 종결자(. ! ? 。 \n) 또는 최대 1.8배 길이까지를 한
  *      덩어리로 보고 replacementText 로 교체
  *
  * 모두 실패 시 matched=false 반환 → 호출 측이 수동 확인 안내.
@@ -134,9 +137,62 @@ function fuzzyApplyFix(
     }
   }
 
-  // 3) prefix 매칭 — 첫 25자만으로 위치 잡고 문장 종결까지 교체
-  const prefix = trimmed.slice(0, 25);
-  if (prefix.length >= 10) {
+  // 3) markdown strip 매칭 — 마크다운 기호와 공백 차이 동시 흡수
+  // 본문의 매 문자가 stripped 본문의 어느 위치에 매핑되는지 추적해서 원본 위치 복원
+  if (trimmed.length >= 5) {
+    const isMarkdownNoise = (ch: string) =>
+      ch === "#" || ch === "*" || ch === ">" || ch === "_" || ch === "`" || ch === "~";
+
+    // 본문을 stripped 형태로 변환하면서 stripped 인덱스 → 원본 인덱스 매핑 작성
+    const strippedBodyChars: string[] = [];
+    const strippedToOriginal: number[] = [];
+    let lastWasSpace = false;
+    for (let i = 0; i < body.length; i++) {
+      const ch = body[i];
+      if (isMarkdownNoise(ch)) continue;
+      if (/\s/.test(ch)) {
+        if (lastWasSpace) continue;
+        strippedBodyChars.push(" ");
+        strippedToOriginal.push(i);
+        lastWasSpace = true;
+      } else {
+        strippedBodyChars.push(ch);
+        strippedToOriginal.push(i);
+        lastWasSpace = false;
+      }
+    }
+    const strippedBody = strippedBodyChars.join("");
+
+    // original 도 동일 방식으로 strip
+    const strippedOriginal = trimmed
+      .replace(/[#*>_`~]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (strippedOriginal.length >= 5) {
+      const sIdx = strippedBody.indexOf(strippedOriginal);
+      if (sIdx !== -1) {
+        // stripped 위치를 원본 본문 위치로 매핑
+        const startInBody = strippedToOriginal[sIdx];
+        const endStripIdx = sIdx + strippedOriginal.length - 1;
+        const endInBody =
+          endStripIdx < strippedToOriginal.length
+            ? strippedToOriginal[endStripIdx] + 1
+            : body.length;
+        if (startInBody !== undefined && endInBody !== undefined && endInBody > startInBody) {
+          return {
+            body: body.slice(0, startInBody) + replacementText + body.slice(endInBody),
+            matched: true,
+            mode: "markdown",
+          };
+        }
+      }
+    }
+  }
+
+  // 4) prefix 매칭 — 첫 20자만으로 위치 잡고 문장 종결까지 교체
+  const prefix = trimmed.slice(0, 20);
+  if (prefix.length >= 8) {
     const idx = body.indexOf(prefix);
     if (idx !== -1) {
       let endIdx = body.length;
@@ -147,8 +203,8 @@ function fuzzyApplyFix(
           break;
         }
       }
-      // 폭주 방지: 원본 길이의 1.8배 + 60자 이내로 제한
-      const maxEnd = idx + Math.floor(originalText.length * 1.8) + 60;
+      // 폭주 방지: 원본 길이의 1.8배 + 80자 이내로 제한
+      const maxEnd = idx + Math.floor(originalText.length * 1.8) + 80;
       if (endIdx > maxEnd) endIdx = maxEnd;
       return {
         body: body.slice(0, idx) + replacementText + body.slice(endIdx),

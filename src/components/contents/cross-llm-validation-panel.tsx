@@ -275,7 +275,21 @@ export function CrossLLMValidationPanel({
     }
     const ok = onApplyFix(iss.original_text, iss.replacement_text);
     if (!ok) {
-      toast.error("본문에서 원문을 찾지 못했습니다 — 수동 확인 필요");
+      // fuzzy 4단계 fallback 도 매칭 실패 → 사용자가 직접 처리할 수 있게 클립보드에
+      // original / replacement 를 함께 복사하고 안내. 본문 textarea 에서 Ctrl+F 로
+      // original 검색 → 수동 교체.
+      const recoveryPayload = `[원문 — 본문에서 찾아 선택하세요]\n${iss.original_text}\n\n[교체할 내용]\n${iss.replacement_text}`;
+      navigator.clipboard.writeText(recoveryPayload).then(
+        () => {
+          toast.error(
+            "본문에서 원문을 자동 매칭하지 못했습니다. 원문/교체안이 클립보드에 복사되었습니다 — 본문 편집기에서 Ctrl+F 로 원문을 찾아 직접 수정해주세요.",
+            { duration: 6000 }
+          );
+        },
+        () => {
+          toast.error("본문에서 원문을 찾지 못했습니다 — 수동 확인 필요");
+        }
+      );
       return;
     }
     setGroupStatus((prev) => ({ ...prev, [group.groupKey]: "applied" }));
