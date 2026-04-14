@@ -1010,6 +1010,83 @@ export function cleanFinalText(body: string): string {
 }
 
 /**
+ * Phase 2 ↔ Phase 3 사이 — 교차검증 이슈 [반영 + 다듬기] 전용.
+ *
+ * 교차검증에서 severity 가 심각/주의 이거나 category 가 논리/단정/출처 인 경우,
+ * original_text → suggested_text 단순 치환은 앞뒤 문맥이 어색해진다. 이럴 때
+ * 해당 문단 전체를 베이스 LLM 에게 보내서 "수정 사항을 반영하고 문단 전체를
+ * 자연스럽게 다듬어라" 라고 요청.
+ *
+ * 입력:
+ *   - categoryTone: CATEGORY_TONE_RULES[promptKey] (1인칭/구어체 등)
+ *   - originalParagraph: 본문에서 original_text 를 포함하는 문단 전체
+ *   - originalText / suggestedText / problem: 교차검증 issue 3개 필드
+ *
+ * 출력: 다듬어진 문단 전체 (이 문단으로 본문의 originalParagraph 를 교체)
+ */
+export async function clientRewriteParagraph(params: {
+  llm: ClientPhaseLLMConfig;
+  categoryTone: string;
+  originalParagraph: string;
+  originalText: string;
+  suggestedText: string;
+  problem: string;
+}): Promise<{ success: boolean; rewrittenParagraph?: string; error?: string }> {
+  const userMessage = `아래 블로그 본문의 특정 문단에서 수정이 발생했습니다.
+수정된 문장이 앞뒤 문맥과 자연스럽게 이어지도록 해당 문단 전체를 다듬어주세요.
+
+규칙:
+- 수정된 내용(suggested_text)의 의미는 반드시 유지
+- 해당 문단의 다른 문장들도 수정 내용에 맞게 자연스럽게 조정
+- 글의 전체 톤(1인칭, 구어체)을 유지
+- 문단 외의 다른 부분은 절대 건드리지 마세요
+- 문단 길이는 원본과 비슷하게 유지 (과도하게 늘리거나 줄이지 말 것)
+
+카테고리 톤:
+${params.categoryTone}
+
+--- 수정 전 문단 ---
+${params.originalParagraph}
+
+--- 수정 사항 ---
+원문: ${params.originalText}
+수정: ${params.suggestedText}
+수정 이유: ${params.problem}
+
+--- 출력 ---
+다듬어진 문단 전체를 출력하세요. 문단만 출력, 다른 텍스트(설명/코드펜스/헤더) 없이.`;
+
+  try {
+    const body = await streamLLM({
+      messages: [
+        {
+          role: "system",
+          content:
+            "당신은 한국어 블로그 편집자입니다. 사용자가 제공한 문단을 지시에 따라 정확히 다듬어 출력합니다. 문단 외 설명/코드펜스/헤더 절대 출력 금지.",
+        },
+        { role: "user", content: userMessage },
+      ],
+      model: params.llm.model,
+      apiKey: params.llm.apiKey,
+      provider: params.llm.provider,
+      // 한 문단은 보통 300~800자. 안전 마진 포함 1500.
+      maxTokens: 1500,
+      temperature: 0.5,
+    });
+
+    let cleaned = body.trim();
+    const fence = cleaned.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/);
+    if (fence) cleaned = fence[1].trim();
+    if (!cleaned) {
+      return { success: false, error: "재작성 결과가 비어있습니다." };
+    }
+    return { success: true, rewrittenParagraph: cleaned };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "문단 재작성 실패" };
+  }
+}
+
+/**
  * Phase 3 종료 후 후처리 — CTA / 서명 / 태그 한 줄을 본문 끝에 append.
  * 다이어리 카테고리는 그대로 반환 (CTA 금지).
  *
