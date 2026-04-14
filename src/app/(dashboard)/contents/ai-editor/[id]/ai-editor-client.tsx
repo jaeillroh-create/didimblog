@@ -78,6 +78,64 @@ interface AiEditorClientProps {
   generationId: number;
 }
 
+interface ExtractedImageMarker {
+  position: number;
+  description: string;
+  rawText: string;
+}
+
+/**
+ * 본문에서 이미지 마커를 추출 — 박스 형식과 단순 형식 모두 지원.
+ *
+ * 박스 형식 (PHASE2/VISUAL_RULES 표준):
+ *   ━━ 📷 이미지 N ━━
+ *   [IMAGE: 한국어 설명 | 유형(A~H) |
+ *   (1) 한국어: ...
+ *   (2) English: ...]
+ *   ━━━━━━━━━━━━━━
+ *
+ * 단순 형식 (다이어리 등):
+ *   [IMAGE: 분위기 묘사]
+ *
+ * 기존 정규식 /\[IMAGE:\s*(.+?)\]/g 은 single-line 매칭이라 박스 형식에서
+ * description 안에 줄바꿈이 들어가면 매칭 실패 → 마커 0개로 인식되는 버그.
+ */
+function extractImageMarkers(text: string): ExtractedImageMarker[] {
+  const markers: ExtractedImageMarker[] = [];
+
+  // 1) 박스 형식: [IMAGE: ...] 다음에 ━━ 가 오는 multi-line 매칭
+  // ([\s\S]*?) 로 줄바꿈 포함 + 닫는 ] 직후 ━━ 구분선이 와야 함
+  // (description 안의 임의의 [type] 같은 nested ] 와 충돌하지 않음)
+  const boxRe = /\[IMAGE:\s*([\s\S]*?)\]\s*\n\s*━━/g;
+  let m: RegExpExecArray | null;
+  while ((m = boxRe.exec(text)) !== null) {
+    markers.push({
+      position: m.index,
+      description: m[1].trim().slice(0, 200),
+      // rawText 는 [IMAGE:..] 까지만 (구분선 제외) — 이후 본문에서 indexOf 로 찾기 위함
+      rawText: text.slice(m.index, m.index + m[0].length).replace(/\s*\n\s*━━$/, ""),
+    });
+  }
+
+  // 2) 단순 형식: 한 줄짜리 [IMAGE: ...] (박스 형식과 위치 겹치지 않는 것만)
+  const simpleRe = /\[IMAGE:\s*([^\]\n]+?)\]/g;
+  while ((m = simpleRe.exec(text)) !== null) {
+    const idx = m.index;
+    const overlap = markers.some(
+      (mk) => idx >= mk.position && idx < mk.position + mk.rawText.length
+    );
+    if (overlap) continue;
+    markers.push({
+      position: idx,
+      description: m[1].trim(),
+      rawText: m[0],
+    });
+  }
+
+  markers.sort((a, b) => a.position - b.position);
+  return markers;
+}
+
 // 간이 SEO 체크
 function calculateSeoScore(title: string, text: string, keyword: string) {
   const checks: { label: string; passed: boolean; detail: string }[] = [];
@@ -116,8 +174,8 @@ function calculateSeoScore(title: string, text: string, keyword: string) {
     detail: `${headingCount}개`,
   });
 
-  // 이미지 마커
-  const imageMarkers = (text.match(/\[IMAGE:\s*.+?\]/g) || []).length;
+  // 이미지 마커 — 박스 형식 (multi-line) + 단순 형식 모두 카운트
+  const imageMarkers = extractImageMarkers(text).length;
   checks.push({
     label: "이미지 마커 3개 이상",
     passed: imageMarkers >= 3,
@@ -326,13 +384,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       const phase2Body = phase2Result.body;
       await savePhase2Output(genId, phase2Body);
 
-      // 본문에서 이미지 마커 추출 (Phase 2 결과 기준)
-      const imageMarkerRegex = /\[IMAGE:\s*([\s\S]+?)\]/g;
-      const imageMarkers: { position: number; description: string }[] = [];
-      let m: RegExpExecArray | null;
-      while ((m = imageMarkerRegex.exec(phase2Body)) !== null) {
-        imageMarkers.push({ position: m.index, description: m[1].slice(0, 100) });
-      }
+      // 본문에서 이미지 마커 추출 (Phase 2 결과 기준) — 박스/단순 형식 모두 지원
+      const imageMarkers = extractImageMarkers(phase2Body).map((mk) => ({
+        position: mk.position,
+        description: mk.description,
+      }));
 
       // 제목은 Phase 1 outline 의 title 을 신뢰
       const title = phase1Result.outline.title;
@@ -484,18 +540,15 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     }
   }, [status, currentGenerationId]);
 
-  // 이미지 마커 추출 (재사용)
-  const imageMarkers: (ImageMarker & { rawText: string })[] = [];
-  const markerRegex = /\[IMAGE:\s*(.+?)\]/g;
-  let markerMatch;
-  while ((markerMatch = markerRegex.exec(editText)) !== null) {
-    imageMarkers.push({
-      position: markerMatch.index,
-      description: markerMatch[1],
-      rawText: markerMatch[0],
-      imageUrl: generatedImageUrls[imageMarkers.length] || undefined,
-    });
-  }
+  // 이미지 마커 추출 — 박스 형식(multi-line)과 단순 형식 모두 지원
+  const imageMarkers: (ImageMarker & { rawText: string })[] = extractImageMarkers(editText).map(
+    (m, idx) => ({
+      position: m.position,
+      description: m.description,
+      rawText: m.rawText,
+      imageUrl: generatedImageUrls[idx] || undefined,
+    })
+  );
 
   function handleImageGenerated(markerIndex: number, imageUrl: string) {
     setGeneratedImageUrls((prev) => ({ ...prev, [markerIndex]: imageUrl }));
@@ -1101,13 +1154,13 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
       {/* 교차검증 모달 — 헤더 "교차검증" 버튼 또는 Phase 2 자동 트리거로 열림 */}
       <Dialog open={showValidation} onOpenChange={setShowValidation}>
-        <DialogContent className="sm:max-w-[760px] max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-[1100px] max-h-[88vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" style={{ color: "var(--brand-accent)" }} />
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Sparkles className="h-5 w-5" style={{ color: "var(--brand-accent)" }} />
               교차검증 (Phase 2 → Phase 3)
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-sm">
               초안 생성 LLM을 제외한 다른 LLM들이 사실/논리만 검증합니다. SEO/CTA는 Phase 3에서 처리됩니다.
             </DialogDescription>
           </DialogHeader>

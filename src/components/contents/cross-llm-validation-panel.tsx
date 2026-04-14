@@ -362,12 +362,12 @@ export function CrossLLMValidationPanel({
       </CardHeader>
       <CardContent className="space-y-4">
         {/* 진행 중 LLM 배지 */}
-        <div className="flex items-center gap-2 flex-wrap text-xs">
+        <div className="flex items-center gap-2 flex-wrap text-sm">
           {results?.map((pr) => (
             <Badge
               key={pr.provider}
               variant="outline"
-              className="text-xs"
+              className="text-sm py-1 px-2.5"
               style={
                 pr.success
                   ? { backgroundColor: "#dcfce7", color: "#16a34a", borderColor: "#86efac" }
@@ -377,11 +377,11 @@ export function CrossLLMValidationPanel({
               }
             >
               {pr.success ? (
-                <Check className="mr-1 h-3 w-3 inline" />
+                <Check className="mr-1 h-3.5 w-3.5 inline" />
               ) : pr.error ? (
-                <X className="mr-1 h-3 w-3 inline" />
+                <X className="mr-1 h-3.5 w-3.5 inline" />
               ) : (
-                <Loader2 className="mr-1 h-3 w-3 animate-spin inline" />
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin inline" />
               )}
               {pr.displayName}
               {pr.success && pr.result && ` · ${pr.result.overall_score}점`}
@@ -393,23 +393,23 @@ export function CrossLLMValidationPanel({
         {/* 요약 카운트 */}
         {!isValidating && groups.length > 0 && (
           <div
-            className="rounded-md p-3 text-xs flex items-center gap-3 flex-wrap"
+            className="rounded-md p-3 text-sm flex items-center gap-3 flex-wrap"
             style={{
               backgroundColor: counts.high > 0 ? "#fee2e2" : counts.medium > 0 ? "#fef3c7" : "#dcfce7",
               color: counts.high > 0 ? "#dc2626" : counts.medium > 0 ? "#d97706" : "var(--quality-excellent)",
             }}
           >
-            <span className="flex items-center gap-1 font-semibold">
+            <span className="flex items-center gap-1.5 font-semibold">
               {counts.high === 0 ? (
-                <CheckCircle2 className="h-3.5 w-3.5" />
+                <CheckCircle2 className="h-4 w-4" />
               ) : (
-                <AlertTriangle className="h-3.5 w-3.5" />
+                <AlertTriangle className="h-4 w-4" />
               )}
               심각 {counts.high}건
             </span>
             <span style={{ color: "#d97706" }}>· 주의 {counts.medium}건</span>
             <span style={{ color: "#6b7280" }}>· 경미 {counts.low}건</span>
-            <span className="text-muted-foreground ml-auto">
+            <span className="text-muted-foreground ml-auto text-xs">
               {counts.applied}건 반영 · {counts.ignored}건 무시 · {counts.pending}건 대기
             </span>
           </div>
@@ -492,7 +492,7 @@ function IssueGroupCard({ group, status, onApply, onIgnore }: IssueGroupCardProp
 
   return (
     <div
-      className={`rounded-md border p-2 text-xs space-y-1 transition-colors ${
+      className={`rounded-md border p-3 text-sm space-y-2 transition-colors ${
         status === "applied"
           ? "bg-green-50 border-green-200 opacity-70"
           : status === "ignored"
@@ -500,32 +500,32 @@ function IssueGroupCard({ group, status, onApply, onIgnore }: IssueGroupCardProp
             : "bg-background"
       }`}
     >
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <span
-          className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+          className="px-2 py-0.5 rounded text-xs font-semibold"
           style={{ backgroundColor: sev.bg, color: sev.color }}
         >
           {sev.label}
           {isMultiLLM && ` ⬆`}
         </span>
-        <span className="font-medium">{iss.category}</span>
+        <span className="font-semibold text-sm">{iss.category}</span>
         {/* provider 배지 */}
         {group.providers.map((p) => (
-          <Badge key={p} variant="outline" className="text-[9px] py-0">
+          <Badge key={p} variant="outline" className="text-xs py-0">
             {p}
           </Badge>
         ))}
         {isMultiLLM && (
-          <span className="text-[10px] text-muted-foreground">· {group.providers.length}개 LLM 지적</span>
+          <span className="text-xs text-muted-foreground">· {group.providers.length}개 LLM 지적</span>
         )}
         <div className="ml-auto flex items-center gap-1">
           {status === "applied" ? (
-            <Badge style={{ backgroundColor: "#16a34a", color: "white" }} className="text-[10px]">
-              <Check className="mr-0.5 h-3 w-3" />
+            <Badge style={{ backgroundColor: "#16a34a", color: "white" }} className="text-xs">
+              <Check className="mr-0.5 h-3.5 w-3.5" />
               반영됨
             </Badge>
           ) : status === "ignored" ? (
-            <Badge variant="outline" className="text-[10px] text-muted-foreground">
+            <Badge variant="outline" className="text-xs text-muted-foreground">
               무시됨
             </Badge>
           ) : (
@@ -533,35 +533,37 @@ function IssueGroupCard({ group, status, onApply, onIgnore }: IssueGroupCardProp
               <Button
                 size="sm"
                 variant="default"
-                className="h-6 px-2 text-[10px]"
+                className="h-7 px-2.5 text-xs"
                 onClick={onApply}
                 disabled={!canApply}
                 title={canApply ? "본문에 즉시 적용" : "원문 매칭 불가 — 수동 확인"}
               >
-                <Check className="mr-0.5 h-3 w-3" />
+                <Check className="mr-0.5 h-3.5 w-3.5" />
                 반영
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-6 px-2 text-[10px]"
+                className="h-7 px-2.5 text-xs"
                 onClick={onIgnore}
               >
-                <X className="mr-0.5 h-3 w-3" />
+                <X className="mr-0.5 h-3.5 w-3.5" />
                 무시
               </Button>
             </>
           )}
         </div>
       </div>
-      <p className="text-muted-foreground">{iss.description}</p>
+      <p className="text-sm text-muted-foreground leading-relaxed">{iss.description}</p>
       {iss.suggestion && (
-        <p style={{ color: "var(--brand-accent)" }}>제안: {iss.suggestion}</p>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--brand-accent)" }}>
+          제안: {iss.suggestion}
+        </p>
       )}
       {canApply && (
-        <div className="mt-1 rounded bg-background border p-1.5 space-y-0.5">
+        <div className="mt-2 rounded bg-background border p-2 space-y-1">
           <p
-            className={`text-[10px] truncate ${status === "applied" ? "" : "line-through"}`}
+            className={`text-xs leading-relaxed whitespace-pre-wrap break-words ${status === "applied" ? "" : "line-through"}`}
             style={{
               color: status === "applied" ? "#dc2626" : "var(--neutral-text-muted)",
             }}
@@ -569,7 +571,7 @@ function IssueGroupCard({ group, status, onApply, onIgnore }: IssueGroupCardProp
             {iss.original_text}
           </p>
           <p
-            className="text-[10px] truncate"
+            className="text-xs leading-relaxed whitespace-pre-wrap break-words"
             style={{ color: status === "applied" ? "#16a34a" : "var(--foreground)" }}
           >
             → {iss.replacement_text}

@@ -918,12 +918,50 @@ export async function clientCrossValidateV2(
 }
 
 /**
+ * 카테고리(promptKey)별 기본 태그 — 본문 키워드만으로는 SEO 기준(8개 이상)에
+ * 미달이라, 카테고리 정체성에 맞는 일반 태그로 채워서 항상 10개 이상 보장.
+ * 사용자가 본문 편집기에서 태그를 자유롭게 추가/삭제할 수 있도록 너무 길지 않게.
+ */
+const DEFAULT_TAGS_BY_CATEGORY: Record<PromptKey, string[]> = {
+  PROMPT_FIELD: [
+    "직무발명보상",
+    "법인세절감",
+    "중소기업절세",
+    "변리사",
+    "특허출원",
+    "기업부설연구소",
+    "벤처기업인증",
+  ],
+  PROMPT_LOUNGE_GENERAL: [
+    "지식재산",
+    "특허전략",
+    "IP라운지",
+    "AI특허",
+    "스타트업특허",
+    "기업IP",
+    "변리사칼럼",
+  ],
+  PROMPT_LOUNGE_BITE: [
+    "IP뉴스",
+    "특허이슈",
+    "지식재산트렌드",
+    "특허개정",
+    "한입IP",
+    "변리사칼럼",
+    "IP라운지",
+  ],
+  PROMPT_DIARY: [],
+};
+
+/**
  * Phase 3 종료 후 후처리 — CTA / 서명 / 태그 한 줄을 본문 끝에 append.
  * 다이어리 카테고리는 그대로 반환 (CTA 금지).
  *
- * LLM 이 [TAGS] ... [/TAGS] 블록을 출력하면 그걸 파싱하고, 없으면
- * target_keyword 와 브랜드 태그만으로 한 줄을 만든다. 항상 #특허그룹디딤
- * #디딤변리사 두 브랜드 태그가 포함되도록 보장.
+ * 태그 구성 (다이어리 제외, 최소 10개):
+ *   1. target_keyword (있으면)
+ *   2. LLM 이 [TAGS]...[/TAGS] 로 출력했으면 그 태그들
+ *   3. 카테고리별 DEFAULT_TAGS (부족분 채움)
+ *   4. 브랜드 태그 (특허그룹디딤, 디딤변리사) — 항상 마지막에 보장
  */
 export function appendCtaAndSignature(params: {
   body: string;
@@ -944,21 +982,37 @@ export function appendCtaAndSignature(params: {
     llmTags = tagsMatch[1]
       .split(/[,\n#]/)
       .map((t) => t.replace(/^\d+\.\s*/, "").trim())
-      .filter(Boolean)
-      .slice(0, 8);
+      .filter(Boolean);
     bodyWithoutTagsBlock = params.body.replace(tagsMatch[0], "").trimEnd();
   }
 
-  // 키워드 + 브랜드 태그 머지
-  const keyword = (params.targetKeyword ?? "").replace(/\s+/g, "");
-  const fixedTags = ["특허그룹디딤", "디딤변리사"];
-  const merged = Array.from(
-    new Set([
-      ...(keyword ? [keyword] : []),
-      ...llmTags.map((t) => t.replace(/\s+/g, "")),
-      ...fixedTags,
-    ])
-  ).slice(0, 12);
+  const normalize = (t: string) => t.replace(/\s+/g, "").replace(/^#/, "");
+
+  const keyword = normalize(params.targetKeyword ?? "");
+  const categoryDefaults = DEFAULT_TAGS_BY_CATEGORY[params.promptKey] ?? [];
+  const fixedBrand = ["특허그룹디딤", "디딤변리사"];
+
+  // 우선순위: keyword → LLM 태그 → 카테고리 기본 → 브랜드
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  function push(t: string) {
+    const n = normalize(t);
+    if (!n || seen.has(n)) return;
+    seen.add(n);
+    ordered.push(n);
+  }
+
+  if (keyword) push(keyword);
+  for (const t of llmTags) push(t);
+  for (const t of categoryDefaults) push(t);
+  for (const t of fixedBrand) push(t);
+
+  // 최소 10개 보장이 안 되면 (LLM 태그 + 카테고리 기본 다 합쳐도 부족) — 브랜드는 항상 포함
+  // 최대 12개로 자르되, 브랜드 2개는 반드시 살림
+  let merged = ordered.slice(0, 12);
+  for (const b of fixedBrand) {
+    if (!merged.includes(normalize(b))) merged = [...merged.slice(0, 11), normalize(b)];
+  }
 
   const tagLine = merged.map((t) => `#${t}`).join(" ");
 
