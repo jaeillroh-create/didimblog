@@ -13,6 +13,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { PageHeader } from "@/components/common/page-header";
 import { CopyButton } from "@/components/common/copy-button";
 import { toast } from "sonner";
@@ -191,6 +198,10 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [phase3Loading, setPhase3Loading] = useState(false);
   const [phase3Error, setPhase3Error] = useState<string | null>(null);
   const [pipelineCategoryName, setPipelineCategoryName] = useState<string>("");
+  // 교차검증 단계 — stepper 의 ✅ 표시용
+  const [crossValidationDone, setCrossValidationDone] = useState(false);
+  // Phase 2 직후 SEO 점수 (Phase 3 와 비교하기 위해 보존)
+  const [seoScoreBeforePhase3, setSeoScoreBeforePhase3] = useState<number | null>(null);
 
   // 클라이언트 사이드 생성 — useRef로 한 번만 트리거
   const generationTriggered = useRef(false);
@@ -343,9 +354,14 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         setEditTitle(title);
         setStatus("completed");
         setPipelinePhase("phase3"); // Phase 3 트리거 가능 상태
-        // Phase 2 완료 직후 교차검증 패널 자동 오픈 — 사용자가 검증/반영/Phase 3 흐름을
+        // Phase 2 완료 시점 SEO 점수 1차 계산 — Phase 3 완료 후 변화량 비교용.
+        // calculateSeoScore 는 (title, text, keyword) 시그니처라 keyword 가 비어있어도
+        // 0 을 반환하므로 안전.
+        const seoNow = calculateSeoScore(title, phase2Body, targetKeyword || "").score;
+        setSeoScoreBeforePhase3(seoNow);
+        // Phase 2 완료 직후 교차검증 모달 자동 오픈 — 사용자가 검증/반영/Phase 3 흐름을
         // 즉시 진행할 수 있도록 함. 닫기 버튼으로 언제든 닫을 수 있고, Phase 3 는
-        // 패널의 "Phase 3 진행" 버튼 또는 헤더의 "🔍 SEO 최적화" 버튼으로 트리거.
+        // 모달의 "Phase 3 진행" 버튼 또는 헤더의 "🔍 SEO 최적화" 버튼으로 트리거.
         setShowValidation(true);
       }
     } catch (err) {
@@ -607,8 +623,12 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             </Select>
           </div>
         )}
-        {/* 3-Phase 진행 인디케이터 */}
-        <PhaseIndicator phase={pipelinePhase} />
+        {/* 4단계 진행 인디케이터 */}
+        <PipelineStepper
+          phase={pipelinePhase}
+          crossValidationDone={crossValidationDone}
+          phase3Loading={phase3Loading}
+        />
         {streamingText ? (
           <Card>
             <CardContent className="pt-6">
@@ -730,6 +750,15 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           </div>
         }
       />
+
+      {/* 4단계 진행 표시 — Phase 3 완료 후 자동 숨김 */}
+      {pipelinePhase !== "completed" && pipelinePhase !== "failed" && (
+        <PipelineStepper
+          phase={pipelinePhase}
+          crossValidationDone={crossValidationDone}
+          phase3Loading={phase3Loading}
+        />
+      )}
 
       {/* Phase 3 에러 표시 */}
       {phase3Error && (
@@ -894,25 +923,6 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             </Card>
           )}
 
-          {/* 교차검증 패널 — Phase 2 완료 후 자동 표시 + Phase 3 진입 게이트 역할 */}
-          {showValidation && baseLLMRef.current && (
-            <CrossLLMValidationPanel
-              title={editTitle}
-              body={editText}
-              availableModels={availableModels}
-              baseProvider={baseLLMRef.current.provider}
-              legalReferences={phase1Outline?.legal_references ?? []}
-              categoryName={pipelineCategoryName}
-              targetKeyword={keyword}
-              onApplyFix={applyFixToBody}
-              onProceedToPhase3={() => {
-                // 교차검증 처리 완료 → 패널 닫고 Phase 3 시작
-                setShowValidation(false);
-                runPhase3();
-              }}
-              onClose={() => setShowValidation(false)}
-            />
-          )}
         </div>
 
         {/* 우측: 사이드 패널 */}
@@ -921,7 +931,28 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm flex items-center justify-between">
-                <span>SEO 점수</span>
+                <span className="flex items-center gap-2">
+                  SEO 점수
+                  {/* Phase 3 완료 후 변화량 표시 — Phase 2 직후 점수와 비교 */}
+                  {seoScoreBeforePhase3 !== null && pipelinePhase === "completed" && (
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                      style={{
+                        backgroundColor:
+                          seoResult.score - seoScoreBeforePhase3 >= 0 ? "#dcfce7" : "#fee2e2",
+                        color:
+                          seoResult.score - seoScoreBeforePhase3 >= 0
+                            ? "var(--quality-excellent)"
+                            : "var(--quality-critical)",
+                      }}
+                      title="Phase 2 → Phase 3 변화"
+                    >
+                      {seoScoreBeforePhase3} → {seoResult.score} (
+                      {seoResult.score - seoScoreBeforePhase3 >= 0 ? "+" : ""}
+                      {seoResult.score - seoScoreBeforePhase3})
+                    </span>
+                  )}
+                </span>
                 <span
                   className="text-lg font-bold"
                   style={{
@@ -1068,6 +1099,39 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         </div>
       </div>
 
+      {/* 교차검증 모달 — 헤더 "교차검증" 버튼 또는 Phase 2 자동 트리거로 열림 */}
+      <Dialog open={showValidation} onOpenChange={setShowValidation}>
+        <DialogContent className="sm:max-w-[760px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" style={{ color: "var(--brand-accent)" }} />
+              교차검증 (Phase 2 → Phase 3)
+            </DialogTitle>
+            <DialogDescription>
+              초안 생성 LLM을 제외한 다른 LLM들이 사실/논리만 검증합니다. SEO/CTA는 Phase 3에서 처리됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          {baseLLMRef.current && (
+            <CrossLLMValidationPanel
+              title={editTitle}
+              body={editText}
+              availableModels={availableModels}
+              baseProvider={baseLLMRef.current.provider}
+              legalReferences={phase1Outline?.legal_references ?? []}
+              categoryName={pipelineCategoryName}
+              targetKeyword={keyword}
+              onApplyFix={applyFixToBody}
+              onProceedToPhase3={() => {
+                setCrossValidationDone(true);
+                setShowValidation(false);
+                runPhase3();
+              }}
+              onClose={() => setShowValidation(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* 저장 경고 다이얼로그 */}
       <ConfirmDialog
         open={saveConfirmOpen}
@@ -1085,53 +1149,87 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 }
 
 /**
- * 3-Phase 진행 인디케이터.
- * 생성 중 페이지 상단에서 현재 단계를 시각적으로 보여준다.
+ * 4단계 파이프라인 진행 인디케이터:
+ *   Phase 1: 구조 설계  →  Phase 2: 본문 작성  →  교차검증  →  Phase 3: SEO
+ *
+ * - 현재 단계: 🔄 (애니메이션 pulse + 브랜드 컬러)
+ * - 완료 단계: ✅
+ * - 미진행: ⬜
+ * - Phase 3 완료(pipelinePhase === 'completed') 시 상위에서 렌더링 자체를 숨김
  */
-function PhaseIndicator({ phase }: { phase: PipelinePhase }) {
-  const steps: { key: PipelinePhase; icon: string; label: string }[] = [
-    { key: "phase1", icon: "📋", label: "구조 설계" },
-    { key: "phase2", icon: "✍️", label: "본문 작성" },
-    { key: "phase3", icon: "🔍", label: "SEO 최적화" },
+function PipelineStepper({
+  phase,
+  crossValidationDone,
+  phase3Loading,
+}: {
+  phase: PipelinePhase;
+  crossValidationDone: boolean;
+  phase3Loading: boolean;
+}) {
+  type StepKey = "phase1" | "phase2" | "crossValidation" | "phase3";
+  const steps: { key: StepKey; label: string }[] = [
+    { key: "phase1", label: "Phase 1: 구조 설계" },
+    { key: "phase2", label: "Phase 2: 본문 작성" },
+    { key: "crossValidation", label: "교차검증" },
+    { key: "phase3", label: "Phase 3: SEO" },
   ];
 
-  // 현재 phase 인덱스 (completed 면 모두 done)
-  const order: Record<PipelinePhase, number> = {
-    phase1: 0,
-    phase2: 1,
-    phase3: 2,
-    completed: 3,
-    failed: -1,
-  };
-  const current = order[phase];
+  // 각 step 의 상태를 결정
+  function statusFor(key: StepKey): "done" | "active" | "pending" {
+    if (phase === "failed") return "pending";
+
+    if (key === "phase1") {
+      if (phase === "phase1") return "active";
+      return "done";
+    }
+    if (key === "phase2") {
+      if (phase === "phase1") return "pending";
+      if (phase === "phase2") return "active";
+      return "done";
+    }
+    if (key === "crossValidation") {
+      if (phase === "phase1" || phase === "phase2") return "pending";
+      // phase === 'phase3' (Phase 2 완료, Phase 3 대기 또는 진행 중)
+      if (phase3Loading) return "done"; // Phase 3 가 시작되었으면 교차검증은 끝났다고 봄
+      return crossValidationDone ? "done" : "active";
+    }
+    // phase3
+    if (phase === "phase1" || phase === "phase2") return "pending";
+    if (phase === "phase3") {
+      if (phase3Loading) return "active";
+      return crossValidationDone ? "pending" : "pending";
+    }
+    return "pending";
+  }
 
   return (
-    <div className="flex items-center gap-2 text-xs">
-      {steps.map((s, i) => {
-        const done = current > i || phase === "completed";
-        const active = current === i && phase !== "completed" && phase !== "failed";
-        const failed = phase === "failed" && i === Math.max(0, current);
-        return (
-          <div key={s.key} className="flex items-center gap-1">
-            <span
-              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border ${
-                done
-                  ? "bg-[var(--quality-excellent)]/10 border-[var(--quality-excellent)] text-[var(--quality-excellent)]"
-                  : active
-                    ? "bg-[var(--brand-accent)]/10 border-[var(--brand-accent)] text-[var(--brand-accent)] animate-pulse"
-                    : failed
-                      ? "bg-red-50 border-red-300 text-red-600"
-                      : "bg-muted/30 border-input text-muted-foreground"
-              }`}
-            >
-              {done ? "✅" : active ? "⏳" : s.icon} {s.label}
-            </span>
-            {i < steps.length - 1 && (
-              <span className="text-muted-foreground">→</span>
-            )}
-          </div>
-        );
-      })}
+    <div className="rounded-md border bg-muted/20 px-3 py-2">
+      <div className="flex items-center gap-2 text-xs flex-wrap">
+        {steps.map((s, i) => {
+          const st = statusFor(s.key);
+          return (
+            <div key={s.key} className="flex items-center gap-1.5">
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border font-medium ${
+                  st === "done"
+                    ? "bg-[var(--quality-excellent)]/10 border-[var(--quality-excellent)] text-[var(--quality-excellent)]"
+                    : st === "active"
+                      ? "bg-[var(--brand-accent)]/10 border-[var(--brand-accent)] text-[var(--brand-accent)] animate-pulse"
+                      : "bg-background border-input text-muted-foreground"
+                }`}
+              >
+                <span className="text-[13px] leading-none">
+                  {st === "done" ? "✅" : st === "active" ? "🔄" : "⬜"}
+                </span>
+                {s.label}
+              </span>
+              {i < steps.length - 1 && (
+                <span className="text-muted-foreground text-[10px]">→</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -441,28 +441,29 @@ export function CrossLLMValidationPanel({
 
         <Separator />
 
-        <div className="flex flex-wrap gap-2">
+        {/* 모달 footer: 좌측 = 다시 검증(회색), 우측 = 선택 반영 후 Phase 3 진행(파란 primary) */}
+        <div className="flex items-center justify-between gap-2">
+          <Button variant="outline" onClick={runValidation} disabled={isValidating}>
+            <Sparkles className="mr-1 h-4 w-4" />
+            다시 검증
+          </Button>
           <Button
             onClick={handleProceed}
             disabled={isValidating || (!allHandled && !hasNoIssues)}
             style={{ backgroundColor: "var(--brand-accent)" }}
-            className="flex-1 min-w-[200px]"
+            className="min-w-[260px]"
             title={
               !allHandled && !hasNoIssues
                 ? "모든 지적 사항을 반영 또는 무시한 뒤 진행할 수 있습니다"
-                : "Phase 3 SEO 최적화로 진행"
+                : "선택한 수정사항을 적용하고 Phase 3 SEO 최적화로 진행"
             }
           >
             <ArrowRight className="mr-1 h-4 w-4" />
             {hasNoIssues
               ? "Phase 3 진행 (지적 사항 없음)"
               : allHandled
-                ? "Phase 3 진행"
-                : `Phase 3 진행 (${counts.pending}건 처리 필요)`}
-          </Button>
-          <Button variant="outline" onClick={runValidation} disabled={isValidating}>
-            <Sparkles className="mr-1 h-4 w-4" />
-            다시 검증
+                ? "선택 반영 후 Phase 3 진행"
+                : `${counts.pending}건 처리 후 Phase 3 진행`}
           </Button>
         </div>
 
