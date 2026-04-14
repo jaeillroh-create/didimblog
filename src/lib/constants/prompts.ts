@@ -690,6 +690,253 @@ ${COMMON_EMPHASIS_RULES}
 3. CTA나 영업 냄새가 단 한 줄이라도 남아있지 않은가?
 세 질문에 모두 "예"가 아니면 수정하세요.`;
 
+// ─────────────────────────────────────────────────────────────────
+// 3-Phase 리팩토링 (구조 설계 → 본문 생성 → SEO 최적화)
+// 기존 PROMPT_FIELD/LOUNGE_*/DIARY 는 LEGACY_ alias 로 보존되며
+// 그대로 작동한다. 새 코드는 PHASE1/PHASE2/PHASE3 를 사용.
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * 카테고리별 톤/스토리텔링 규칙
+ * Phase 2 본문 생성 시 {{category_tone_rules}} 로 주입.
+ * 기존 PROMPT_FIELD / LOUNGE_GENERAL / LOUNGE_BITE / DIARY 의
+ * "## 톤 & 무드 / 글쓰기 공식" 부분만 추출해 분리.
+ */
+export const CATEGORY_TONE_RULES: Record<PromptKey, string> = {
+  PROMPT_FIELD: `## 톤 & 무드
+- "경험 많은 선배가 후배 사장님에게 커피 한 잔 하며 알려주는 느낌"
+- 반드시 1인칭 시점 사용: "제가 만난 대표님은…", "얼마 전 OO업 대표님을 만났습니다"
+- 구어체, 실제 사례 기반 스토리텔링
+- 법적 근거는 괄호 안에 배치
+
+## 글쓰기 공식
+- 상황 묘사(고객의 고민) 30%
+- 해결 과정(숫자+근거) 40%
+- 결론 + CTA 30%
+
+## 카테고리 정체성
+변리사의 현장 수첩 — 노재일 변리사가 직접 만난 고객 사례 기반 절세/IP 전략 글.
+독자: 중소기업 대표. 목적: 디딤에 전화 오게 만들기.`,
+
+  PROMPT_LOUNGE_GENERAL: `## 톤 & 무드
+- "옆자리 전문가가 흥미로운 이야기를 들려주는 느낌"
+- 격식 없는 전문 칼럼체
+- 질문형 도입 권장: "요즘 대표님들 만나면 꼭 받는 질문이 있습니다"
+- 현장수첩과 다른 점: 특정 고객 사례 중심이 아니라 이슈/트렌드 중심
+
+## 글쓰기 공식
+- 이슈 소개 20%
+- 대표에게 미치는 영향 40%
+- 디딤의 제안 40%
+
+## 카테고리 정체성
+IP 라운지 — 특허 전략 노트, AI 와 IP 등 트렌드/이슈 분석 칼럼.
+독자: 중소기업 대표. 목적: 신뢰 형성 → 이웃 추가 → 장기 전환.`,
+
+  PROMPT_LOUNGE_BITE: `## 톤 & 무드
+- IP 라운지와 같은 "옆자리 전문가" 톤이지만 더 가볍고 빠르게
+- 격식 없는 전문 칼럼체
+- "한 줄로 정리하면 이겁니다" 에 집중
+
+## ⚠️ 핵심: 경량 포맷
+- 본문 1,200자 이내. 일반 IP 라운지(1,500~2,000자)와 완전히 다른 짧은 포맷
+- 깊은 분석이 아니라 한 가지 이슈만 빠르게
+- 이슈 소개 30% / 시사점 70%
+
+## 카테고리 정체성
+IP 뉴스 한 입 — 빠르게 소비되는 짧은 이슈 글.
+독자: 시간 없는 대표. 목적: 가벼운 신뢰 누적.`,
+
+  PROMPT_DIARY: `## 톤 & 무드
+- "일기장에 가깝게, 격식 없이, 인간적으로"
+- 1인칭 (노재일 변리사 또는 이용환 변리사), 당일 경험 기반
+- 감정과 생각을 반드시 포함
+- 정보 전달 X, 사람만 보이는 글
+
+## ⚠️ CTA 절대 금지
+"상담", "문의", "연락", "무료", "진단", "시뮬레이션", admin@ 모두 금지.
+이 카테고리의 목적은 "이 변리사 사람이 괜찮네" 라는 인간적 신뢰 형성.
+
+## 카테고리 정체성
+디딤 다이어리 — 노재일/이용환 변리사가 그날 있었던 일/느낀 점을 적는 에세이.
+독자: 디딤을 망설이는 대표. 목적: 인간적 신뢰 → 수임 전환.`,
+};
+
+/**
+ * Phase 1 — 구조 설계
+ * 입력: category_name, topic, target_keyword
+ * 출력: JSON 아웃라인 (제목, hook, sections, keyword_plan, legal_references, infographic_plan, content_type)
+ * max_tokens: 1500
+ */
+export const PHASE1_PROMPT = `당신은 블로그 콘텐츠 구조 설계 전문가입니다.
+주어진 주제와 키워드로 글의 아웃라인만 JSON으로 작성하세요.
+본문은 작성하지 마세요.
+
+카테고리: {{category_name}}
+주제: {{topic}}
+핵심 키워드: {{target_keyword}}
+
+다음 JSON 구조로 응답하세요 (JSON만 출력, 다른 텍스트 없이):
+{
+  "title": "25-30자. 키워드를 앞 15자 이내에 배치. 숫자 1개 이상 포함",
+  "hook_type": "A(결과제시) / B(질문) / C(오해지적) / D(대화시작) / E(반전) 중 1개",
+  "hook_summary": "도입부 첫 2문장 요약",
+  "sections": [
+    {
+      "heading": "소제목 (키워드 변형 포함, ## 형식)",
+      "content_summary": "이 섹션에서 다룰 내용 2-3줄 요약",
+      "has_infographic": true,
+      "infographic_type": "A~H 중 선택 (has_infographic가 true일 때만)"
+    }
+  ],
+  "keyword_plan": {
+    "total_count": "3-5 사이 숫자",
+    "positions": ["도입부", "섹션2 본문", "CTA 직전 등 구체적 위치"]
+  },
+  "legal_references": ["이 글에서 언급할 법률/제도명과 조항 번호 목록. 확신이 없으면 '(확인 필요)' 병기"],
+  "infographic_plan": [
+    {
+      "position": "도입부 직후 / 섹션N 뒤 / CTA 직전",
+      "type": "A~H",
+      "data_source": "어떤 숫자/비교 데이터를 시각화할지",
+      "emotion": "성취감/위기감/자신감/긴급함"
+    }
+  ],
+  "content_type": "절세시뮬레이션 / 인증가이드 / 트렌드분석 / 비교가이드 / 실무노하우 중 1개"
+}`;
+
+/**
+ * Phase 2 — 본문 생성
+ * 입력: phase1_output (JSON 문자열), category_tone_rules, common_writing_rules, visual_rules
+ * 출력: 본문 마크다운
+ * max_tokens: 4000
+ *
+ * 변수 주입 시 호출 코드에서 다음 placeholder 를 채워야 함:
+ *   {{category_tone_rules}}  ← CATEGORY_TONE_RULES[promptKey]
+ *   {{common_writing_rules}} ← COMMON_WRITING_RULES
+ *   {{visual_rules}}         ← VISUAL_RULES (또는 VISUAL_RULES_FIELD/_LOUNGE/_DIARY)
+ *   {{phase1_output}}        ← Phase 1 의 JSON 응답 그대로
+ */
+export const PHASE2_PROMPT = `당신은 특허그룹 디딤의 블로그 콘텐츠 작성자입니다.
+아래 아웃라인에 따라 본문을 작성하세요.
+
+## 필수 준수사항
+- 아웃라인의 제목을 그대로 사용하세요 (수정 금지)
+- 아웃라인의 소제목 구조를 그대로 따르세요
+- 아웃라인의 keyword_plan에 명시된 위치에 키워드를 자연스럽게 배치
+- 아웃라인의 legal_references에 있는 법률만 언급하세요. 목록에 없는 법률 조항을 임의로 추가하지 마세요.
+- 법률 조항에 '(확인 필요)'가 있으면 본문에서도 '(확인 필요)'를 유지하세요
+
+## 카테고리 톤
+{{category_tone_rules}}
+
+## 글쓰기 규칙
+{{common_writing_rules}}
+
+## 인포그래픽 마커
+아웃라인의 infographic_plan에 따라 [IMAGE: ] 마커를 삽입하세요.
+{{visual_rules}}
+
+## 아웃라인
+{{phase1_output}}`;
+
+/**
+ * Phase 3 — SEO 정량 체크 + 최종 마무리 (일반 카테고리용: 현장수첩 / IP 라운지 / IP 뉴스 한 입)
+ * 입력: phase2_output, target_keyword, category_name
+ * 출력: 수정된 본문
+ * max_tokens: 5000
+ *
+ * 디딤 다이어리는 CTA 가 없으므로 PHASE3_PROMPT_DIARY 를 사용해야 함.
+ */
+export const PHASE3_PROMPT = `당신은 네이버 블로그 SEO 최적화 전문가입니다.
+아래 블로그 초안을 검토하고 SEO 기준에 맞게 수정하세요.
+
+## 수정 항목 (이것만 수정, 나머지 내용은 건드리지 마세요)
+
+1. 제목: 25-30자인지 확인. 초과하면 핵심만 남기고 줄이세요.
+2. 제목 키워드: 핵심 키워드({{target_keyword}})가 앞 15자 이내에 있는지 확인. 없으면 제목 재구성.
+3. 키워드 빈도: 본문에서 핵심 키워드가 3-5회 등장하는지 세기. 초과하면 일부를 유의어로 교체, 부족하면 자연스럽게 추가.
+4. 볼드(**): 핵심 숫자, 결론 문장에만 사용. 전체 3개 이하로 줄이세요.
+5. 인용 블록(>): 고객 발언이나 핵심 질문에 1개 이상 사용되었는지 확인.
+6. 구분선(━━━): 본문 마지막, CTA 직전에 1회 배치.
+7. 소제목: ## 형식 2개 이상인지 확인.
+8. 본문 글자수: 1,500-2,500자 범위인지 확인 (현장수첩/IP라운지 기준).
+
+## 수정하지 않을 것
+- 글의 톤, 스토리, 논리 흐름은 변경하지 마세요
+- 인포그래픽 마커 내용은 변경하지 마세요
+- 법률 조항이나 숫자는 변경하지 마세요
+
+## 출력 형식
+수정된 전체 본문을 출력하세요. 수정한 부분은 <!-- 수정: 설명 --> 주석으로 표시.
+
+핵심 키워드: {{target_keyword}}
+카테고리: {{category_name}}
+
+--- 초안 ---
+{{phase2_output}}
+--- 초안 끝 ---`;
+
+/**
+ * Phase 3 — 디딤 다이어리 전용
+ * CTA / 구분선 / 키워드 빈도 체크를 모두 건너뛰고, 다이어리 톤 유지에 집중.
+ */
+export const PHASE3_PROMPT_DIARY = `당신은 네이버 블로그 에세이 편집자입니다.
+아래 디딤 다이어리 초안을 검토하고 다음 항목만 가볍게 정리하세요.
+
+## 수정 항목
+1. 제목: 25-30자 권장 (다이어리는 숫자 강제 X). 너무 길면 줄이세요.
+2. 소제목: ## 형식이 너무 많으면 1~2개로 줄이세요. 에세이는 흐름이 끊기면 안 됨.
+3. 단락: 한 단락 2~3문장, 5문장 연속 금지.
+4. 분위기 사진 마커: [IMAGE: 장면 묘사] 1~2개 이내 유지.
+
+## 절대 금지 (다이어리 카테고리 핵심)
+- "상담", "문의", "연락", "무료", "진단", "시뮬레이션", "admin@" 등 영업 냄새가 나는 표현이 있으면 모두 제거하세요.
+- 구분선(━━━)이나 CTA 블록이 있으면 삭제하세요.
+- 키워드 빈도 체크는 하지 마세요.
+
+## 수정하지 않을 것
+- 글의 1인칭 톤, 감정, 일기 같은 자유로운 호흡은 절대 건드리지 마세요
+- 분위기 사진 마커 내용은 변경하지 마세요
+
+## 출력 형식
+수정된 전체 본문을 출력하세요. 수정한 부분은 <!-- 수정: 설명 --> 주석으로 표시.
+
+카테고리: {{category_name}}
+
+--- 초안 ---
+{{phase2_output}}
+--- 초안 끝 ---`;
+
+/**
+ * 카테고리(PromptKey) 별 Phase 3 프롬프트 매핑
+ * 호출 코드에서 promptKey 로 바로 가져갈 수 있도록 lookup 제공.
+ */
+export const PHASE3_PROMPT_BY_KEY: Record<PromptKey, string> = {
+  PROMPT_FIELD: PHASE3_PROMPT,
+  PROMPT_LOUNGE_GENERAL: PHASE3_PROMPT,
+  PROMPT_LOUNGE_BITE: PHASE3_PROMPT,
+  PROMPT_DIARY: PHASE3_PROMPT_DIARY,
+};
+
+/**
+ * 3-Phase max_tokens 권장값.
+ * 호출 코드(client-generate.ts 또는 generation-runner)에서 사용.
+ */
+export const PHASE_MAX_TOKENS = {
+  PHASE1: 1500,
+  PHASE2: 4000,
+  PHASE3: 5000,
+} as const;
+
+// ── LEGACY_ alias — 기존 단일 프롬프트 보존 ──
+// 새 PHASE 흐름이 안정화되기 전까지 SYSTEM_PROMPTS / USER_PROMPTS 경로가
+// 그대로 작동해야 하므로, 기존 export 이름은 유지하고 LEGACY_ 별칭만 추가한다.
+export const LEGACY_PROMPT_FIELD = PROMPT_FIELD;
+export const LEGACY_PROMPT_LOUNGE_GENERAL = PROMPT_LOUNGE_GENERAL;
+export const LEGACY_PROMPT_LOUNGE_BITE = PROMPT_LOUNGE_BITE;
+export const LEGACY_PROMPT_DIARY = PROMPT_DIARY;
+
 // ── 프롬프트 키 → 시스템 프롬프트 매핑 ──
 
 export const SYSTEM_PROMPTS: Record<PromptKey, string> = {
