@@ -86,11 +86,13 @@ async function streamClaude(params: ClientGenerateParams): Promise<string> {
 
 /**
  * OpenAI Chat Completions API 스트리밍 호출
+ * - GPT-5.x 계열은 max_tokens 대신 max_completion_tokens 를 사용한다
+ *   (max_tokens 를 보내면 "Unsupported parameter" 400 에러)
  */
 async function streamOpenAI(params: ClientGenerateParams): Promise<string> {
   const body = {
     model: params.model,
-    max_tokens: params.maxTokens ?? 6000,
+    max_completion_tokens: params.maxTokens ?? 6000,
     temperature: params.temperature ?? 0.7,
     stream: true,
     messages: params.messages.map((m) => ({
