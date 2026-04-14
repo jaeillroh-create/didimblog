@@ -21,19 +21,35 @@ import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { calcDraftScore, validateDraft } from "@/lib/draft-validator";
 import { CrossLLMValidationPanel } from "@/components/contents/cross-llm-validation-panel";
 import {
-  getGenerationStatus,
-  getGenerationPrompt,
   saveGenerationResult,
   markGenerationFailed,
   saveAiDraftToContent,
+  savePhase1Output,
+  savePhase2Output,
+  getCategoryName,
+  getGenerationMeta,
 } from "@/actions/ai";
 import {
-  clientGenerateDraft,
+  clientRunPhase1,
+  clientRunPhase2,
+  clientRunPhase3,
+  appendCtaAndSignature,
   type ClientLLMProvider,
 } from "@/lib/client-generate";
+import {
+  PHASE1_PROMPT,
+  PHASE2_PROMPT,
+  PHASE3_PROMPT_BY_KEY,
+  CATEGORY_TONE_RULES,
+  COMMON_WRITING_RULES,
+  VISUAL_RULES,
+  FIELD_CTA,
+  getPromptKey,
+  getFieldCta,
+} from "@/lib/constants/prompts";
 import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
 import { ImageGenPanel } from "@/components/contents/image-gen-panel";
-import type { GenerationStatus, ImageMarker } from "@/lib/types/database";
+import type { GenerationStatus, ImageMarker, Phase1Outline, PipelinePhase } from "@/lib/types/database";
 import {
   ArrowLeft,
   Save,
@@ -169,6 +185,12 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   // 본문 textarea hydration mismatch 방지용 highlight (교차검증 반영 시 잠깐 강조)
   const [bodyHighlight, setBodyHighlight] = useState(false);
 
+  // 3-Phase 파이프라인 상태
+  const [pipelinePhase, setPipelinePhase] = useState<PipelinePhase>("phase1");
+  const [phase1Outline, setPhase1Outline] = useState<Phase1Outline | null>(null);
+  const [phase3Loading, setPhase3Loading] = useState(false);
+  const [phase3Error, setPhase3Error] = useState<string | null>(null);
+
   // 클라이언트 사이드 생성 — useRef로 한 번만 트리거
   const generationTriggered = useRef(false);
   const isMounted = useRef(true);
@@ -201,22 +223,19 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   }, [status, currentGenerationId]);
 
   async function startClientGeneration(genId: number) {
-    console.log("[AI Editor] 클라이언트 생성 시작, genId:", genId);
+    console.log("[AI Editor] 3-Phase 파이프라인 시작, genId:", genId);
     setStatus("generating");
+    setPipelinePhase("phase1");
+    setPhase1Outline(null);
 
     const startTime = Date.now();
 
     try {
-      // 1. LLM 설정 조회
-      console.log("[AI Editor] LLM config 조회 시작");
+      // ── 0. LLM 설정 + 생성 메타 조회 ──
       const configRes = await fetch("/api/llm-config");
-      if (!configRes.ok) {
-        throw new Error("LLM 설정을 가져올 수 없습니다.");
-      }
+      if (!configRes.ok) throw new Error("LLM 설정을 가져올 수 없습니다.");
       const configData = await configRes.json();
-      console.log("[AI Editor] LLM config 응답:", configData.apiKey ? "키 있음" : "키 없음", "모델:", configData.model);
 
-      // 모델 목록 저장
       if (configData.models && isMounted.current) {
         setAvailableModels(configData.models);
         if (!selectedModelId) {
@@ -225,100 +244,185 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         }
       }
 
-      // 선택된 모델 또는 기본 모델 사용
       const selected = configData.models?.find((m: LLMModelOption) => String(m.id) === selectedModelId);
       const apiKey = selected?.apiKey ?? configData.apiKey;
       const model = selected?.model ?? configData.model;
       const provider = (selected?.provider ?? configData.provider ?? "claude") as ClientLLMProvider;
       baseLLMRef.current = { apiKey, model, provider };
+      const llm = { apiKey, model, provider };
 
-      // 2. 프롬프트 조립
-      console.log("[AI Editor] getGenerationPrompt 호출 시작, generationId:", genId);
-      const promptResult = await getGenerationPrompt(genId);
-      console.log("[AI Editor] getGenerationPrompt 응답:", promptResult.success ? "성공" : "실패");
-      if (!promptResult.success || !promptResult.messages) {
-        throw new Error(promptResult.error || "프롬프트 조립 실패");
+      // 생성 메타 (topic, category_id, target_keyword) 조회
+      const meta = await getGenerationMeta(genId);
+      if (!meta.success || !meta.data) throw new Error(meta.error || "생성 메타 조회 실패");
+
+      const topic = meta.data.topic ?? "";
+      const categoryId = meta.data.category_id ?? "";
+      const targetKeyword = meta.data.target_keyword ?? "";
+      const promptKey = getPromptKey(categoryId);
+      const categoryName = await getCategoryName(categoryId);
+
+      if (targetKeyword && isMounted.current) {
+        setKeyword(targetKeyword);
       }
 
-      // 키워드 자동 설정 (SEO 점수 계산용)
-      if (promptResult.targetKeyword && isMounted.current) {
-        setKeyword(promptResult.targetKeyword);
+      // ── Phase 1: 구조 설계 ──
+      console.log("[Phase 1] 시작 — provider:", provider, "model:", model);
+      if (isMounted.current) setStreamingText("📋 구조 설계 중...");
+      const phase1Result = await clientRunPhase1({
+        llm,
+        phase1Prompt: PHASE1_PROMPT,
+        categoryName,
+        topic,
+        targetKeyword,
+      });
+
+      if (!phase1Result.success || !phase1Result.outline) {
+        throw new Error(phase1Result.error || "Phase 1 실패");
       }
 
-      // 3. Anthropic API 직접 호출
-      console.log("[AI Editor] clientGenerateDraft 호출 직전");
-      console.log("[AI Editor] apiKey:", apiKey ? `${apiKey.slice(0, 8)}...` : "없음");
-      console.log("[AI Editor] model:", model);
-      console.log("[AI Editor] messages 길이:", promptResult.messages?.length);
+      console.log("[Phase 1] 완료 — 제목:", phase1Result.outline.title);
+      await savePhase1Output(genId, phase1Result.outline);
+      if (isMounted.current) {
+        setPhase1Outline(phase1Result.outline);
+        setPipelinePhase("phase2");
+      }
 
-      const fullText = await clientGenerateDraft({
-        messages: promptResult.messages,
-        model,
-        apiKey,
-        provider,
+      // ── Phase 2: 본문 생성 (스트리밍) ──
+      console.log("[Phase 2] 시작");
+      if (isMounted.current) setStreamingText("");
+
+      const phase2Result = await clientRunPhase2({
+        llm,
+        phase2Prompt: PHASE2_PROMPT,
+        categoryToneRules: CATEGORY_TONE_RULES[promptKey],
+        commonWritingRules: COMMON_WRITING_RULES,
+        visualRules: VISUAL_RULES,
+        phase1Outline: phase1Result.outline,
         onProgress: (text) => {
-          if (isMounted.current) {
-            setStreamingText(text);
-          }
-          if (text.length % 500 < 20) {
-            console.log("[AI Editor] 스트리밍 수신 중, 길이:", text.length);
-          }
+          if (isMounted.current) setStreamingText(text);
         },
       });
-      console.log("[AI Editor] clientGenerateDraft 완료, 길이:", fullText?.length);
 
+      if (!phase2Result.success || !phase2Result.body) {
+        throw new Error(phase2Result.error || "Phase 2 실패");
+      }
+
+      console.log("[Phase 2] 완료, 길이:", phase2Result.body.length);
+      const phase2Body = phase2Result.body;
+      await savePhase2Output(genId, phase2Body);
+
+      // 본문에서 이미지 마커 추출 (Phase 2 결과 기준)
+      const imageMarkerRegex = /\[IMAGE:\s*([\s\S]+?)\]/g;
+      const imageMarkers: { position: number; description: string }[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = imageMarkerRegex.exec(phase2Body)) !== null) {
+        imageMarkers.push({ position: m.index, description: m[1].slice(0, 100) });
+      }
+
+      // 제목은 Phase 1 outline 의 title 을 신뢰
+      const title = phase1Result.outline.title;
       const generationTimeMs = Date.now() - startTime;
 
-      // 4. 결과 파싱
-      const lines = fullText.split("\n").filter((l) => l.trim());
-      let title = lines[0]?.replace(/^#+\s*/, "").trim() || "";
-      if (title.length > 50) title = title.substring(0, 50);
-
-      let tags: string[] = [];
-      const tagsMatch = fullText.match(/\[TAGS\]\s*([\s\S]*?)\s*\[\/TAGS\]/);
-      if (tagsMatch) {
-        tags = tagsMatch[1].split(/[,\n]/).map((t) => t.replace(/^\d+\.\s*/, "").trim()).filter(Boolean).slice(0, 10);
-      } else {
-        const textForTags = fullText.replace(/\[IMAGE:[\s\S]*?\]/g, "");
-        const tagMatches = textForTags.match(/#([^\s#]+)/g);
-        tags = tagMatches ? tagMatches.map((t) => t.replace("#", "")).slice(0, 10) : [];
-      }
-
-      const imageMarkerRegex = /\[IMAGE:\s*(.+?)\]/g;
-      const imageMarkers: { position: number; description: string }[] = [];
-      let match;
-      while ((match = imageMarkerRegex.exec(fullText)) !== null) {
-        imageMarkers.push({ position: match.index, description: match[1] });
-      }
-
-      // 5. DB에 결과 저장 (언마운트되어도 저장은 완료)
+      // 저장 — Phase 3 는 사용자가 별도 트리거 (생략 가능)
       await saveGenerationResult(genId, {
-        generatedText: fullText,
+        generatedText: phase2Body,
         generatedTitle: title,
-        generatedTags: tags,
+        generatedTags: [],
         imageMarkers,
         generationTimeMs,
       });
 
-      // 6. UI 상태 업데이트 (마운트된 경우에만)
       if (isMounted.current) {
-        setGeneratedText(fullText);
+        setGeneratedText(phase2Body);
         setGeneratedTitle(title);
-        setGeneratedTags(tags);
-        setEditText(fullText);
+        setEditText(phase2Body);
         setEditTitle(title);
-        setEditTags(tags);
         setStatus("completed");
+        setPipelinePhase("phase3"); // Phase 3 트리거 가능 상태
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "생성 중 오류가 발생했습니다.";
-      console.error("[AI Editor] 생성 에러:", err);
-      // DB에 실패 기록 (언마운트되어도 실행)
+      console.error("[AI Editor] 파이프라인 에러:", err);
       await markGenerationFailed(genId, errorMessage);
       if (isMounted.current) {
         setGenError(errorMessage);
         setStatus("failed");
+        setPipelinePhase("failed");
       }
+    }
+  }
+
+  /**
+   * Phase 3 — SEO 정량 체크 + CTA/서명/태그 append
+   * 사용자가 헤더의 "SEO 최적화 (Phase 3)" 버튼을 누르면 실행.
+   * Phase 2 결과를 입력으로 받아 새 본문을 생성하고 editText 로 교체.
+   */
+  async function runPhase3() {
+    if (!baseLLMRef.current) return;
+    if (phase3Loading) return;
+
+    setPhase3Loading(true);
+    setPhase3Error(null);
+
+    try {
+      const meta = await getGenerationMeta(currentGenerationId);
+      if (!meta.success || !meta.data) throw new Error(meta.error || "메타 조회 실패");
+
+      const categoryId = meta.data.category_id ?? "";
+      const targetKeyword = meta.data.target_keyword ?? "";
+      const promptKey = getPromptKey(categoryId);
+      const categoryName = await getCategoryName(categoryId);
+      const phase3Prompt = PHASE3_PROMPT_BY_KEY[promptKey];
+
+      const result = await clientRunPhase3({
+        llm: baseLLMRef.current,
+        phase3Prompt,
+        targetKeyword,
+        categoryName,
+        phase2Body: editText,
+        onProgress: (text) => {
+          if (isMounted.current) setStreamingText(text);
+        },
+      });
+
+      if (!result.success || !result.body) {
+        throw new Error(result.error || "Phase 3 실패");
+      }
+
+      // CTA / 서명 / 태그 한 줄 append (다이어리는 자동으로 건너뜀)
+      const cta = promptKey === "PROMPT_FIELD" ? getFieldCta(categoryId) : { cta: "", emailSubject: "" };
+      const finalBody = appendCtaAndSignature({
+        body: result.body,
+        promptKey,
+        ctaText: cta.cta || FIELD_CTA["CAT-A-01"]?.cta,
+        emailSubject: cta.emailSubject || FIELD_CTA["CAT-A-01"]?.emailSubject,
+        targetKeyword,
+      });
+
+      if (isMounted.current) {
+        setEditText(finalBody);
+        setBodyHighlight(true);
+        setTimeout(() => setBodyHighlight(false), 3000);
+        setPipelinePhase("completed");
+        setStreamingText("");
+      }
+
+      // DB 저장
+      await saveGenerationResult(currentGenerationId, {
+        generatedText: finalBody,
+        generatedTitle: editTitle,
+        generatedTags: [],
+        imageMarkers: [],
+        generationTimeMs: 0,
+      });
+      toast.success("Phase 3 SEO 최적화 완료");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Phase 3 실패";
+      console.error("[Phase 3] 에러:", err);
+      setPhase3Error(msg);
+      toast.error(msg);
+    } finally {
+      setPhase3Loading(false);
     }
   }
 
@@ -495,6 +599,8 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
             </Select>
           </div>
         )}
+        {/* 3-Phase 진행 인디케이터 */}
+        <PhaseIndicator phase={pipelinePhase} />
         {streamingText ? (
           <Card>
             <CardContent className="pt-6">
@@ -583,6 +689,21 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
               <ArrowLeft className="mr-1 h-4 w-4" />
               콘텐츠 관리
             </Button>
+            {pipelinePhase === "phase3" && (
+              <Button
+                variant="outline"
+                onClick={runPhase3}
+                disabled={phase3Loading}
+                title="Phase 3 — 키워드 빈도/볼드/구분선 등 SEO 정량 체크 + CTA·서명·태그 추가"
+              >
+                {phase3Loading ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1 h-4 w-4" />
+                )}
+                {phase3Loading ? "SEO 최적화 중..." : "🔍 SEO 최적화 (Phase 3)"}
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => setShowValidation(!showValidation)}
@@ -601,6 +722,28 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           </div>
         }
       />
+
+      {/* Phase 3 에러 표시 */}
+      {phase3Error && (
+        <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+          Phase 3 SEO 최적화 실패: {phase3Error}
+          <span className="block text-xs text-red-600 mt-1">
+            현재 본문(Phase 2 결과)을 그대로 사용할 수 있습니다.
+          </span>
+        </div>
+      )}
+
+      {/* Phase 1 outline 미리보기 (collapsed) */}
+      {phase1Outline && (
+        <details className="rounded-md border border-dashed p-2 bg-muted/20">
+          <summary className="text-xs cursor-pointer text-muted-foreground hover:text-foreground">
+            📋 Phase 1 구조 ({phase1Outline.sections?.length ?? 0}개 섹션 · 키워드 {phase1Outline.keyword_plan?.total_count ?? "?"}회 · {phase1Outline.legal_references?.length ?? 0}개 법령)
+          </summary>
+          <pre className="mt-2 text-[10px] overflow-x-auto whitespace-pre-wrap text-muted-foreground font-mono">
+            {JSON.stringify(phase1Outline, null, 2)}
+          </pre>
+        </details>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 좌측: 에디터 영역 */}
@@ -928,6 +1071,58 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           doSave();
         }}
       />
+    </div>
+  );
+}
+
+/**
+ * 3-Phase 진행 인디케이터.
+ * 생성 중 페이지 상단에서 현재 단계를 시각적으로 보여준다.
+ */
+function PhaseIndicator({ phase }: { phase: PipelinePhase }) {
+  const steps: { key: PipelinePhase; icon: string; label: string }[] = [
+    { key: "phase1", icon: "📋", label: "구조 설계" },
+    { key: "phase2", icon: "✍️", label: "본문 작성" },
+    { key: "phase3", icon: "🔍", label: "SEO 최적화" },
+  ];
+
+  // 현재 phase 인덱스 (completed 면 모두 done)
+  const order: Record<PipelinePhase, number> = {
+    phase1: 0,
+    phase2: 1,
+    phase3: 2,
+    completed: 3,
+    failed: -1,
+  };
+  const current = order[phase];
+
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      {steps.map((s, i) => {
+        const done = current > i || phase === "completed";
+        const active = current === i && phase !== "completed" && phase !== "failed";
+        const failed = phase === "failed" && i === Math.max(0, current);
+        return (
+          <div key={s.key} className="flex items-center gap-1">
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border ${
+                done
+                  ? "bg-[var(--quality-excellent)]/10 border-[var(--quality-excellent)] text-[var(--quality-excellent)]"
+                  : active
+                    ? "bg-[var(--brand-accent)]/10 border-[var(--brand-accent)] text-[var(--brand-accent)] animate-pulse"
+                    : failed
+                      ? "bg-red-50 border-red-300 text-red-600"
+                      : "bg-muted/30 border-input text-muted-foreground"
+              }`}
+            >
+              {done ? "✅" : active ? "⏳" : s.icon} {s.label}
+            </span>
+            {i < steps.length - 1 && (
+              <span className="text-muted-foreground">→</span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

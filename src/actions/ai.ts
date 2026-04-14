@@ -529,10 +529,113 @@ export async function markGenerationFailed(
     const supabase = await createClient();
     await supabase
       .from("ai_generations")
-      .update({ status: "failed", error_message: errorMessage })
+      .update({ status: "failed", error_message: errorMessage, phase: "failed" })
       .eq("id", generationId);
   } catch {
     // 실패 기록이 안 되어도 진행
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 3-Phase 파이프라인 — 단계별 산출물 저장
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Phase 1 결과 (JSON 아웃라인) 저장 + phase = 'phase2' 로 전이
+ */
+export async function savePhase1Output(
+  generationId: number,
+  outline: object
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("ai_generations")
+      .update({
+        phase1_output: outline,
+        phase: "phase2",
+      })
+      .eq("id", generationId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Phase 1 저장 실패" };
+  }
+}
+
+/**
+ * Phase 2 결과 (본문 마크다운) 저장 + phase = 'phase3' 로 전이
+ * Phase 3 를 건너뛰면 호출 코드에서 phase = 'completed' 로 별도 업데이트.
+ */
+export async function savePhase2Output(
+  generationId: number,
+  body: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("ai_generations")
+      .update({
+        phase2_output: body,
+        phase: "phase3",
+      })
+      .eq("id", generationId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Phase 2 저장 실패" };
+  }
+}
+
+/**
+ * 3-Phase 파이프라인용 — 생성 메타 (topic / category_id / target_keyword) 조회.
+ * getGenerationStatus 가 status 중심이라 이 필드들이 없어 별도 액션 필요.
+ */
+export async function getGenerationMeta(
+  generationId: number
+): Promise<{
+  success: boolean;
+  data?: {
+    topic: string;
+    category_id: string | null;
+    target_keyword: string | null;
+    additional_context: string | null;
+  };
+  error?: string;
+}> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("ai_generations")
+      .select("topic, category_id, target_keyword, additional_context")
+      .eq("id", generationId)
+      .single();
+    if (error || !data) {
+      return { success: false, error: "생성 메타 조회 실패" };
+    }
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "메타 조회 실패" };
+  }
+}
+
+/**
+ * 카테고리 ID 로 카테고리명 조회 (Phase 1/3 에서 category_name 변수에 사용)
+ */
+export async function getCategoryName(
+  categoryId: string | null
+): Promise<string> {
+  if (!categoryId) return "";
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("categories")
+      .select("name")
+      .eq("id", categoryId)
+      .maybeSingle();
+    return data?.name ?? "";
+  } catch {
+    return "";
   }
 }
 
