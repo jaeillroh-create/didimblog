@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { PageHeader } from "@/components/common/page-header";
-import { StatusBadge } from "@/components/common/status-badge";
 import { TimelineStep } from "@/components/common/timeline-step";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { SeoScorePanel } from "@/components/contents/seo-score-panel";
@@ -23,10 +22,10 @@ import { QualityScore } from "@/components/contents/quality-score";
 import { PerformanceInput } from "@/components/contents/performance-input";
 import { HealthBanner } from "@/components/contents/health-banner";
 import { InternalLinksPanel } from "@/components/contents/internal-links-panel";
+import { StatusTransitionPanel } from "@/components/contents/status-transition-panel";
 import { calculateSeoScore } from "@/lib/seo-calculator";
 import {
   updateContent,
-  updateContentStatus,
   deleteContent,
 } from "@/actions/contents";
 import { checkSla } from "@/lib/utils/sla-checker";
@@ -36,14 +35,12 @@ import type {
   Category,
   Profile,
   StateTransition,
-  ContentStatus,
   TargetAudience,
+  ValidationResult,
 } from "@/lib/types/database";
 import {
   ArrowLeft,
   Save,
-  ArrowRight,
-  Undo2,
   User,
   Calendar,
   FileEdit,
@@ -61,6 +58,34 @@ interface ContentDetailClientProps {
   categories: Category[];
   profiles: Profile[];
   transitions: StateTransition[];
+  isAdmin: boolean;
+  validationResults: ValidationResult[] | null;
+}
+
+/**
+ * 본문에서 이미지 마커 개수 추출 — ai-editor 의 extractImageMarkers 와 동일 로직.
+ * 박스 형식 + 단순 형식 두 가지 모두 카운트.
+ */
+function countImageMarkers(text: string): number {
+  if (!text) return 0;
+  let count = 0;
+  const positions: number[] = [];
+
+  const boxRe = /\[IMAGE:\s*([\s\S]*?)\]\s*\n\s*━━/g;
+  let m: RegExpExecArray | null;
+  while ((m = boxRe.exec(text)) !== null) {
+    positions.push(m.index);
+    count++;
+  }
+
+  const simpleRe = /\[IMAGE:\s*([^\]\n]+?)\]/g;
+  while ((m = simpleRe.exec(text)) !== null) {
+    const idx = m.index;
+    const overlap = positions.some((p) => idx >= p && idx < p + 200);
+    if (overlap) continue;
+    count++;
+  }
+  return count;
 }
 
 export function ContentDetailClient({
@@ -68,6 +93,8 @@ export function ContentDetailClient({
   categories,
   profiles,
   transitions,
+  isAdmin,
+  validationResults,
 }: ContentDetailClientProps) {
   const router = useRouter();
 
@@ -91,11 +118,6 @@ export function ContentDetailClient({
     content.tags?.join(", ") ?? ""
   );
 
-  // 상태 전이 다이얼로그
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingTransition, setPendingTransition] =
-    useState<StateTransition | null>(null);
-
   // 삭제 다이얼로그
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -103,10 +125,21 @@ export function ContentDetailClient({
   // 저장 중 상태
   const [isSavingContent, setIsSavingContent] = useState(false);
 
-  // 유효한 전이 목록
-  const validTransitions = transitions.filter(
-    (t) => t.from_status === content.status
+  // 교차검증 결과 요약 (severity === "high" 가 심각 이슈)
+  const crossValidationRun = !!validationResults && validationResults.length > 0;
+  const crossValidationCriticalCount = (validationResults ?? []).reduce(
+    (sum, r) => sum + (r.issues?.filter((i) => i.severity === "high").length ?? 0),
+    0
   );
+
+  // 본문에서 이미지 마커 개수 추출 (실시간 — body state 기반)
+  const imageMarkerCount = countImageMarkers(body);
+
+  // SEO 점수 — 저장된 값 우선, 없으면 즉시 계산
+  const seoScore =
+    content.seo_score ??
+    calculateSeoScore(content, content.secondary_category || content.category_id)
+      .normalizedScore;
 
   // 카테고리 계층 - 1차 카테고리 선택 시 2차 드롭다운 동적 변경
   const primaryCategories = categories.filter((c) => c.tier === "primary");
@@ -218,39 +251,6 @@ export function ContentDetailClient({
     seoKeywords,
     tagsInput,
   ]);
-
-  // 상태 전이
-  const handleTransition = useCallback(
-    (transition: StateTransition) => {
-      setPendingTransition(transition);
-      setConfirmOpen(true);
-    },
-    []
-  );
-
-  const confirmTransition = useCallback(async () => {
-    if (!pendingTransition) return;
-    const newStatus = pendingTransition.to_status as ContentStatus;
-
-    const { data, error } = await updateContentStatus(content.id, newStatus);
-
-    if (error) {
-      toast.error("상태 변경에 실패했습니다");
-      console.error("[상태 전이 실패]", error);
-    } else {
-      if (data) {
-        setContent(data);
-      } else {
-        setContent((prev) => ({
-          ...prev,
-          status: newStatus,
-          updated_at: new Date().toISOString(),
-        }));
-      }
-      toast.success(`상태가 변경되었습니다: ${CONTENT_STATES[newStatus]?.label ?? newStatus}`);
-    }
-    setPendingTransition(null);
-  }, [pendingTransition, content.id]);
 
   // 삭제
   const handleDelete = useCallback(async () => {
@@ -442,7 +442,7 @@ export function ContentDetailClient({
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
+                <div className="space-y-2" data-scroll-id="publish-date">
                   <Label htmlFor="publishDate">발행예정일</Label>
                   <Input
                     id="publishDate"
@@ -476,7 +476,7 @@ export function ContentDetailClient({
           </Card>
 
           {/* 본문 편집 */}
-          <Card>
+          <Card data-scroll-id="body-editor">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center justify-between">
                 <span className="flex items-center gap-2">
@@ -518,7 +518,7 @@ export function ContentDetailClient({
           </Card>
 
           {/* 태그 편집 */}
-          <Card>
+          <Card data-scroll-id="tags-input">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">태그</CardTitle>
             </CardHeader>
@@ -592,56 +592,32 @@ export function ContentDetailClient({
           )}
 
           {/* SEO 자동 점수 패널 */}
-          <SeoScorePanel
-            content={content}
-            categoryId={content.secondary_category || content.category_id}
-          />
+          <div data-scroll-id="seo-panel">
+            <SeoScorePanel
+              content={content}
+              categoryId={content.secondary_category || content.category_id}
+            />
+          </div>
         </div>
 
         {/* 오른쪽 사이드바 (1/3) */}
         <div className="space-y-6">
-          {/* 상태 카드 */}
+          {/* 상태 전이 패널 (조건 체크리스트 + 강제 전환 + 역행) */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">상태</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">현재:</span>
-                <StatusBadge status={content.status} />
-              </div>
-
-              {validTransitions.length > 0 && (
-                <>
-                  <Separator />
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground font-medium">
-                      상태 전이
-                    </p>
-                    {validTransitions.map((t) => {
-                      const isReverse = t.is_reversible;
-                      return (
-                        <Button
-                          key={t.id}
-                          variant={isReverse ? "outline" : "default"}
-                          size="sm"
-                          className="w-full justify-start"
-                          onClick={() => handleTransition(t)}
-                        >
-                          {isReverse ? (
-                            <Undo2 className="h-4 w-4 mr-2" />
-                          ) : (
-                            <ArrowRight className="h-4 w-4 mr-2" />
-                          )}
-                          <span className="truncate">
-                            {t.description}
-                          </span>
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
+            <CardContent>
+              <StatusTransitionPanel
+                content={content}
+                transitions={transitions}
+                isAdmin={isAdmin}
+                seoScore={seoScore}
+                crossValidationRun={crossValidationRun}
+                crossValidationCriticalCount={crossValidationCriticalCount}
+                imageMarkerCount={imageMarkerCount}
+                onContentUpdated={(next) => setContent(next)}
+              />
             </CardContent>
           </Card>
 
@@ -720,18 +696,6 @@ export function ContentDetailClient({
           </Card>
         </div>
       </div>
-
-      {/* 상태 전이 확인 다이얼로그 */}
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="상태 변경"
-        description={
-          pendingTransition?.description ?? "상태를 변경하시겠습니까?"
-        }
-        confirmLabel="변경"
-        onConfirm={confirmTransition}
-      />
 
       {/* 삭제 확인 다이얼로그 */}
       <ConfirmDialog

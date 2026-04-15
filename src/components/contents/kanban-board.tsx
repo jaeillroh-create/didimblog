@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { DragDropContext, type DropResult } from "@hello-pangea/dnd";
-import { Plus, RotateCcw, Sparkles, ChevronDown } from "lucide-react";
+import { Plus, RotateCcw, Sparkles, ChevronDown, AlertTriangle, ExternalLink } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -17,7 +17,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { KanbanColumn } from "@/components/contents/kanban-column";
 import { ContentForm } from "@/components/contents/content-form";
 import { AiDraftDialog, type AiDraftInitialValues } from "@/components/contents/ai-draft-dialog";
@@ -74,7 +81,9 @@ export function KanbanBoard({
     open: boolean;
     title: string;
     description: string;
-  }>({ open: false, title: "", description: "" });
+    contentId: string | null;
+    failedConditions: string[];
+  }>({ open: false, title: "", description: "", contentId: null, failedConditions: [] });
 
   // Zustand 필터 스토어
   const {
@@ -168,9 +177,11 @@ export function KanbanBoard({
         setErrorDialog({
           open: true,
           title: "상태 전이 불가",
-          description: failedConditions.length > 0
-            ? failedConditions.join("\n")
-            : `${CONTENT_STATES[fromStatus].label}에서 ${CONTENT_STATES[toStatus].label}(으)로 이동할 수 없습니다.`,
+          description:
+            `${CONTENT_STATES[fromStatus].label}에서 ${CONTENT_STATES[toStatus].label}(으)로 이동할 수 없습니다. ` +
+            `미충족 조건을 확인하세요.`,
+          contentId,
+          failedConditions,
         });
         return;
       }
@@ -184,6 +195,8 @@ export function KanbanBoard({
           open: true,
           title: "상태 변경 실패",
           description: error,
+          contentId,
+          failedConditions: [],
         });
       }
     },
@@ -334,15 +347,54 @@ export function KanbanBoard({
         initialContext={aiDraftInitialContext}
       />
 
-      {/* 에러 다이얼로그 */}
-      <ConfirmDialog
+      {/* 에러 다이얼로그 — 미충족 조건 + 상세 페이지 링크 */}
+      <Dialog
         open={errorDialog.open}
         onOpenChange={(open) => setErrorDialog((prev) => ({ ...prev, open }))}
-        title={errorDialog.title}
-        description={errorDialog.description}
-        confirmLabel="확인"
-        onConfirm={() => setErrorDialog((prev) => ({ ...prev, open: false }))}
-      />
+      >
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <AlertTriangle className="h-5 w-5" />
+              {errorDialog.title}
+            </DialogTitle>
+            <DialogDescription className="text-sm">
+              {errorDialog.description}
+            </DialogDescription>
+          </DialogHeader>
+          {errorDialog.failedConditions.length > 0 && (
+            <div className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 space-y-1">
+              <p className="text-xs font-medium text-orange-700">미충족 조건</p>
+              <ul className="text-xs text-orange-800 space-y-0.5 list-disc pl-4">
+                {errorDialog.failedConditions.map((cond, i) => (
+                  <li key={i}>{cond}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            <button
+              className="btn btn-ghost btn-md"
+              onClick={() => setErrorDialog((prev) => ({ ...prev, open: false }))}
+            >
+              닫기
+            </button>
+            {errorDialog.contentId && (
+              <button
+                className="btn btn-primary btn-md inline-flex items-center gap-1"
+                onClick={() => {
+                  const id = errorDialog.contentId;
+                  setErrorDialog((prev) => ({ ...prev, open: false }));
+                  if (id) router.push(`/contents/${id}`);
+                }}
+              >
+                <ExternalLink className="h-4 w-4" />
+                상세 페이지에서 조건 확인
+              </button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
