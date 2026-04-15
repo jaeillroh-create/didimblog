@@ -228,6 +228,158 @@ function extractKoreanInfographic(rawTextOrDescription: string): string {
   return rawTextOrDescription;
 }
 
+// ── 문단 단위 fuzzy 매칭 (교차검증 [반영 + 다듬기] 전용) ──
+
+type ParagraphMatchMode = "exact" | "normalized" | "sentence" | "first-sentence" | "similarity";
+
+interface ParagraphMatchResult {
+  body: string;
+  matched: boolean;
+  mode?: ParagraphMatchMode;
+  /** 실제로 본문에서 매칭된 원본 텍스트 (Phase 3 변경 등으로 원래 전달받은 것과 다를 수 있음) */
+  matchedText?: string;
+  /** similarity 모드의 단어 겹침 비율 (0-1) */
+  similarityRatio?: number;
+}
+
+/**
+ * 본문 정규화 — 마크다운 기호/연속 공백/줄바꿈 차이 흡수.
+ */
+function normalizeParagraph(s: string): string {
+  return s
+    .replace(/\r\n/g, "\n")
+    .replace(/[#*>`_~]+/g, "") // markdown emphasis chars
+    .replace(/━+/g, "") // 박스 구분선
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * 한국어/영문 혼합 텍스트를 단어 토큰으로 분리 (2자 이상만).
+ */
+function tokenizeParagraph(s: string): string[] {
+  return normalizeParagraph(s)
+    .split(/\s+/)
+    .map((t) => t.replace(/[.,!?。:;()[\]{}"'「」『』]/g, ""))
+    .filter((t) => t.length >= 2);
+}
+
+/**
+ * 문단 재작성 후 [적용] 클릭 시 본문에서 original 문단을 찾아 rewritten 으로 교체.
+ *
+ * 3단계 fallback:
+ *   1. 정확 매칭 (기존 editText.includes)
+ *   2. 정규화 매칭 — 본문을 \n\n 로 split 후 각 문단을 normalizeParagraph 로
+ *      정규화해서 original 과 비교. 일치하면 원본 조각을 rewritten 으로 교체.
+ *   3. 첫·마지막 문장 매칭 — original 의 첫 문장과 마지막 문장이 모두 한 문단에
+ *      있으면 그 문단 전체를 교체. 첫 문장만 있어도 보조 매칭으로 인정.
+ *   4. 유사도 매칭 — 각 문단과 original 의 단어 겹침 비율(Jaccard 유사)을 계산,
+ *      가장 높은 것이 70% 이상이면 그 문단을 교체.
+ *
+ * 3단계 모두 실패 시 { matched: false } 반환 → 호출 측이 클립보드 fallback 표시.
+ */
+function fuzzyApplyParagraph(
+  body: string,
+  originalParagraph: string,
+  rewrittenParagraph: string
+): ParagraphMatchResult {
+  if (!originalParagraph) return { body, matched: false };
+
+  // ── 0) 정확 매칭 ──
+  if (body.includes(originalParagraph)) {
+    return {
+      body: body.replace(originalParagraph, rewrittenParagraph),
+      matched: true,
+      mode: "exact",
+      matchedText: originalParagraph,
+    };
+  }
+
+  const paragraphs = body.split(/\n\n+/);
+
+  // ── 1) 정규화 매칭 ──
+  const normOriginal = normalizeParagraph(originalParagraph);
+  if (normOriginal.length >= 5) {
+    for (const p of paragraphs) {
+      if (normalizeParagraph(p) === normOriginal) {
+        return {
+          body: body.replace(p, rewrittenParagraph),
+          matched: true,
+          mode: "normalized",
+          matchedText: p,
+        };
+      }
+    }
+  }
+
+  // ── 2) 첫·마지막 문장 기반 매칭 ──
+  const sentences = originalParagraph
+    .split(/(?<=[.!?。])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 6);
+
+  if (sentences.length > 0) {
+    const firstSentence = sentences[0];
+    const lastSentence = sentences[sentences.length - 1];
+
+    // 첫 + 마지막 둘 다 포함
+    if (firstSentence !== lastSentence) {
+      for (const p of paragraphs) {
+        if (p.includes(firstSentence) && p.includes(lastSentence)) {
+          return {
+            body: body.replace(p, rewrittenParagraph),
+            matched: true,
+            mode: "sentence",
+            matchedText: p,
+          };
+        }
+      }
+    }
+
+    // 첫 문장만이라도 매칭
+    for (const p of paragraphs) {
+      if (p.includes(firstSentence)) {
+        return {
+          body: body.replace(p, rewrittenParagraph),
+          matched: true,
+          mode: "first-sentence",
+          matchedText: p,
+        };
+      }
+    }
+  }
+
+  // ── 3) 유사도 매칭 (Jaccard) — 단어 겹침 70% 이상 ──
+  const origTokens = new Set(tokenizeParagraph(originalParagraph));
+  if (origTokens.size >= 3) {
+    let bestMatch: { p: string; ratio: number } | null = null;
+    for (const p of paragraphs) {
+      const pTokens = tokenizeParagraph(p);
+      if (pTokens.length === 0) continue;
+      const pSet = new Set(pTokens);
+      // Jaccard = |A ∩ B| / |A ∪ B|
+      let inter = 0;
+      for (const t of pSet) if (origTokens.has(t)) inter++;
+      const union = origTokens.size + pSet.size - inter;
+      const ratio = union > 0 ? inter / union : 0;
+      if (!bestMatch || ratio > bestMatch.ratio) {
+        bestMatch = { p, ratio };
+      }
+    }
+    if (bestMatch && bestMatch.ratio >= 0.7) {
+      return {
+        body: body.replace(bestMatch.p, rewrittenParagraph),
+        matched: true,
+        mode: "similarity",
+        matchedText: bestMatch.p,
+        similarityRatio: bestMatch.ratio,
+      };
+    }
+  }
+
+  return { body, matched: false };
+}
+
 /**
  * 본문에서 이미지 마커를 추출 — 박스 형식과 단순 형식 모두 지원.
  *
@@ -685,31 +837,51 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
   /**
    * 문단 재작성 반영 — originalParagraph 를 rewrittenParagraph 로 교체.
-   * original_text 대신 문단 전체를 한 단위로 교체하므로 문맥 일관성 유지.
+   * fuzzyApplyParagraph 의 3단계 매칭 (정확 → 정규화 → 첫·마지막 문장 → 유사도)
+   * 으로 Phase 3 중간 변경이나 마크다운 서식 차이가 있어도 매칭 성공률을 높임.
    */
   function applyParagraphToBody(originalParagraph: string, rewrittenParagraph: string): boolean {
     if (!originalParagraph || !rewrittenParagraph) return false;
-    if (!editText.includes(originalParagraph)) {
-      // fuzzy 한 번 시도 — whitespace 정규화만
-      const result = fuzzyApplyFix(editText, originalParagraph, rewrittenParagraph);
-      if (!result.matched) return false;
-      setEditText(result.body);
-      setBodyHighlight(true);
-      setTimeout(() => setBodyHighlight(false), 3000);
-      return true;
+    const result = fuzzyApplyParagraph(editText, originalParagraph, rewrittenParagraph);
+    if (!result.matched) {
+      console.warn("[applyParagraphToBody] 본문에서 원본 문단 매칭 실패", {
+        originalLen: originalParagraph.length,
+        bodyLen: editText.length,
+      });
+      return false;
     }
-    setEditText((prev) => prev.replace(originalParagraph, rewrittenParagraph));
+    setEditText(result.body);
     setBodyHighlight(true);
     setTimeout(() => setBodyHighlight(false), 3000);
+    if (result.mode && result.mode !== "exact") {
+      const modeLabel =
+        result.mode === "normalized"
+          ? "공백/마크다운 차이 흡수"
+          : result.mode === "sentence"
+            ? "첫+마지막 문장 매칭"
+            : result.mode === "first-sentence"
+              ? "첫 문장 매칭"
+              : result.mode === "similarity"
+                ? `유사도 매칭 (${Math.round((result.similarityRatio ?? 0) * 100)}%)`
+                : "근사 매칭";
+      toast.info(`${modeLabel}으로 문단을 반영했습니다 — 본문을 확인해주세요`);
+    }
     return true;
   }
 
   /**
    * 문단 재작성 [원래대로] 버튼 — rewritten 을 다시 original 로 되돌림.
+   * 동일한 3단계 fuzzy 매칭으로 역치환.
    */
   function undoParagraphInBody(originalParagraph: string, rewrittenParagraph: string): boolean {
-    if (!editText.includes(rewrittenParagraph)) return false;
-    setEditText((prev) => prev.replace(rewrittenParagraph, originalParagraph));
+    if (!originalParagraph || !rewrittenParagraph) return false;
+    // rewritten → original 로 역치환 (fuzzy 적용)
+    const result = fuzzyApplyParagraph(editText, rewrittenParagraph, originalParagraph);
+    if (!result.matched) {
+      console.warn("[undoParagraphInBody] 본문에서 재작성 문단 매칭 실패");
+      return false;
+    }
+    setEditText(result.body);
     setBodyHighlight(true);
     setTimeout(() => setBodyHighlight(false), 3000);
     return true;

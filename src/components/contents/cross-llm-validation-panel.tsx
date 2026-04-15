@@ -411,6 +411,8 @@ export function CrossLLMValidationPanel({
 
   /**
    * 문단 재작성 [적용] — preview 의 rewrittenParagraph 를 본문에 실제 반영.
+   * 3단계 fuzzy 매칭 모두 실패하면 클립보드에 rewritten 을 복사하고 사용자에게
+   * 수동 모드 안내.
    */
   function handleConfirmParagraph(group: IssueGroup, originalParagraph: string, rewrittenParagraph: string) {
     if (!onApplyParagraph) {
@@ -419,7 +421,19 @@ export function CrossLLMValidationPanel({
     }
     const ok = onApplyParagraph(originalParagraph, rewrittenParagraph);
     if (!ok) {
-      toast.error("본문에서 원본 문단을 찾지 못했습니다 (본문이 수동 편집됨?)");
+      // 3단계 매칭 모두 실패 → 수동 모드: 재작성된 문단을 클립보드에 복사
+      const recoveryPayload = `[다듬어진 문단 — 본문 편집기에 직접 붙여넣으세요]\n\n${rewrittenParagraph}\n\n[원본 문단 — 이 위치를 Ctrl+F 로 찾으세요]\n\n${originalParagraph}`;
+      navigator.clipboard.writeText(recoveryPayload).then(
+        () => {
+          toast.error(
+            "자동 매칭에 실패했습니다. 다듬어진 문단과 원본이 클립보드에 복사되었습니다 — 본문 편집기에서 원본 문단을 Ctrl+F 로 찾아 직접 붙여넣으세요.",
+            { duration: 8000 }
+          );
+        },
+        () => {
+          toast.error("본문에서 원본 문단을 찾지 못했습니다 — 수동 확인 필요");
+        }
+      );
       return false;
     }
     setGroupStatus((prev) => ({ ...prev, [group.groupKey]: "applied" }));
