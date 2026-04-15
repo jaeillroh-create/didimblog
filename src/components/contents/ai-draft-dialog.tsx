@@ -57,6 +57,8 @@ export interface AiDraftInitialValues {
   categoryId?: string;
   secondaryCategory?: string;
   keyword?: string;
+  /** 참고 자료(뉴스 URL 등) — 추천 기반 초안 생성 시 자동 주입 */
+  additionalContext?: string;
 }
 
 interface AiDraftDialogProps {
@@ -94,7 +96,9 @@ export function AiDraftDialog({
   const [secondaryCategory, setSecondaryCategory] = useState(initialValues?.secondaryCategory ?? "");
   const [keyword, setKeyword] = useState(initialValues?.keyword ?? "");
   const [targetAudience, setTargetAudience] = useState("");
-  const [additionalContext, setAdditionalContext] = useState(initialContext || "");
+  const [additionalContext, setAdditionalContext] = useState(
+    initialValues?.additionalContext || initialContext || ""
+  );
   const activeConfigs = llmConfigs.filter((c) => c.is_active);
   const defaultConfig = activeConfigs.find((c) => c.is_default) ?? activeConfigs[0];
   const [selectedLlmId, setSelectedLlmId] = useState<string>(

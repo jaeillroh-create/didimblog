@@ -413,6 +413,28 @@ export interface KeywordPool {
   created_at: string;
 }
 
+// ── 대시보드 추천 피드백 (010 migration) ──
+
+export type RecommendationSource = "keyword_pool" | "news_api" | "schedule" | "manual";
+export type RecommendationStatus = "pending" | "accepted" | "rejected" | "generated";
+
+export interface ContentRecommendation {
+  id: string;
+  recommended_topic: string;
+  recommended_category: string | null;
+  recommended_subcategory: string | null;
+  recommended_keywords: string[] | null;
+  source: RecommendationSource;
+  /** 소스별 부가 정보 (뉴스 URL, 원본 키워드 ID, 스케줄 week 번호 등) */
+  source_detail: Record<string, unknown> | null;
+  status: RecommendationStatus;
+  rejection_reason: string | null;
+  rejection_keywords: string[] | null;
+  created_at: string;
+  acted_at: string | null;
+  created_by: string | null;
+}
+
 // ── 키워드 순위 추적 ──
 
 export interface KeywordRanking {
