@@ -320,6 +320,122 @@ export async function updateContentStatus(
   }
 }
 
+/**
+ * 확장된 상태 전이 — 메타 정보(URL, 성과, 사유)를 함께 저장.
+ *
+ * 사용처:
+ *   - S3 → S4 발행 완료: naverBlogUrl, publishedAt 주입
+ *   - S4 → S5 성과 측정: performanceSnapshot (views / comments / neighbor / consultation)
+ *   - 역행 전이: transitionReason 주입
+ *
+ * 기존 contents.notes 컬럼에 prefix 로 저장하여 마이그레이션 없이 작동한다.
+ * notes 의 기존 내용이 있으면 뒤에 append 하는 방식.
+ */
+export interface UpdateContentStatusWithMetaInput {
+  contentId: string;
+  newStatus: ContentStatus;
+  naverBlogUrl?: string;
+  publishedAtOverride?: string;
+  performanceSnapshot?: {
+    views_1w?: number;
+    comments?: number;
+    neighbor_added?: number;
+    consultation_yn?: boolean;
+  };
+  transitionReason?: string;
+  isReversal?: boolean;
+  force?: boolean; // admin 강제 전환 플래그 (서버측 별도 검증 없음 — UI 에서 이미 판단)
+}
+
+export async function updateContentStatusWithMeta(
+  input: UpdateContentStatusWithMetaInput
+): Promise<{
+  data: Content | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = await createClient();
+
+    // 기존 content 조회 (notes append 를 위해)
+    const { data: existing } = await supabase
+      .from("contents")
+      .select("notes, views_1w")
+      .eq("id", input.contentId)
+      .single();
+
+    const updateData: Record<string, unknown> = {
+      status: input.newStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    // 상태별 타임스탬프 자동 기록 (override 있으면 그 값 사용)
+    if (input.newStatus === "S1") {
+      updateData.draft_done_at = new Date().toISOString();
+    } else if (input.newStatus === "S2") {
+      updateData.review_done_at = new Date().toISOString();
+    } else if (input.newStatus === "S3") {
+      updateData.image_done_at = new Date().toISOString();
+    } else if (input.newStatus === "S4") {
+      updateData.published_at = input.publishedAtOverride || new Date().toISOString();
+    }
+
+    // 성과 스냅샷 — contents 테이블의 기존 컬럼(views_1w, cta_clicks)에 매핑
+    if (input.performanceSnapshot) {
+      if (typeof input.performanceSnapshot.views_1w === "number") {
+        updateData.views_1w = input.performanceSnapshot.views_1w;
+      }
+      if (typeof input.performanceSnapshot.comments === "number") {
+        updateData.cta_clicks = input.performanceSnapshot.comments;
+      }
+    }
+
+    // notes 에 메타 정보 append (마이그레이션 없이 작동)
+    const existingNotes = (existing?.notes as string | null) ?? "";
+    const metaLines: string[] = [];
+    if (input.naverBlogUrl) {
+      metaLines.push(`[네이버 URL] ${input.naverBlogUrl}`);
+    }
+    if (input.performanceSnapshot) {
+      const s = input.performanceSnapshot;
+      const parts: string[] = [];
+      if (typeof s.views_1w === "number") parts.push(`조회수 ${s.views_1w}`);
+      if (typeof s.comments === "number") parts.push(`댓글 ${s.comments}`);
+      if (typeof s.neighbor_added === "number") parts.push(`이웃 +${s.neighbor_added}`);
+      if (typeof s.consultation_yn === "boolean")
+        parts.push(`상담 ${s.consultation_yn ? "유입" : "없음"}`);
+      if (parts.length > 0) {
+        metaLines.push(`[성과 1주차] ${parts.join(" · ")}`);
+      }
+    }
+    if (input.transitionReason) {
+      const prefix = input.isReversal ? "[역행 전이 사유]" : "[전이 사유]";
+      metaLines.push(`${prefix} ${input.transitionReason}`);
+    }
+    if (metaLines.length > 0) {
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const block = `\n\n── ${stamp} (${input.newStatus}) ──\n${metaLines.join("\n")}`;
+      updateData.notes = existingNotes + block;
+    }
+
+    const { data, error } = await supabase
+      .from("contents")
+      .update(updateData)
+      .eq("id", input.contentId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return { data: data as Content, error: null };
+  } catch (err) {
+    console.error("[updateContentStatusWithMeta] 에러:", err);
+    return {
+      data: null,
+      error: err instanceof Error ? err.message : "상태 변경에 실패했습니다.",
+    };
+  }
+}
+
 // ── 콘텐츠 수정 (저장) ──
 
 export interface UpdateContentInput {
