@@ -78,6 +78,20 @@ interface AiEditorClientProps {
   generationId: number;
 }
 
+/**
+ * 카테고리 (promptKey) 별 본문 글자수 목표 범위 (공백 제외).
+ * 생성 중 화면에서 현재 글자수의 색상 (초록/회색/주황) 분기에 사용.
+ */
+const TARGET_RANGE_BY_PROMPT: Record<
+  import("@/lib/constants/prompts").PromptKey,
+  { min: number; max: number }
+> = {
+  PROMPT_FIELD: { min: 1500, max: 2500 },
+  PROMPT_LOUNGE_GENERAL: { min: 1500, max: 2500 },
+  PROMPT_LOUNGE_BITE: { min: 800, max: 1200 },
+  PROMPT_DIARY: { min: 800, max: 1500 },
+};
+
 interface ExtractedImageMarker {
   position: number;
   description: string;
@@ -561,6 +575,8 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   const [crossValidationDone, setCrossValidationDone] = useState(false);
   // Phase 2 직후 SEO 점수 (Phase 3 와 비교하기 위해 보존)
   const [seoScoreBeforePhase3, setSeoScoreBeforePhase3] = useState<number | null>(null);
+  // Phase 2 이어쓰기 중 상태 (finish_reason=length 감지 시 1, 2 로 증가)
+  const [continuationAttempt, setContinuationAttempt] = useState(0);
 
   // 클라이언트 사이드 생성 — useRef로 한 번만 트리거
   const generationTriggered = useRef(false);
@@ -664,7 +680,10 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
       // ── Phase 2: 본문 생성 (스트리밍) ──
       console.log("[Phase 2] 시작");
-      if (isMounted.current) setStreamingText("");
+      if (isMounted.current) {
+        setStreamingText("");
+        setContinuationAttempt(0);
+      }
 
       const phase2Result = await clientRunPhase2({
         llm,
@@ -675,6 +694,9 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         phase1Outline: phase1Result.outline,
         onProgress: (text) => {
           if (isMounted.current) setStreamingText(text);
+        },
+        onContinuationStart: (attempt) => {
+          if (isMounted.current) setContinuationAttempt(attempt);
         },
       });
 
@@ -1070,23 +1092,67 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           phase3Loading={phase3Loading}
         />
         {streamingText ? (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Loader2
-                  className="h-4 w-4 animate-spin"
-                  style={{ color: "var(--brand-accent)" }}
-                />
-                <span className="text-sm font-medium">초안 작성 중... ({streamingText.replace(/\s/g, "").length.toLocaleString()}자)</span>
-              </div>
-              <div
-                className="w-full min-h-[300px] max-h-[500px] overflow-y-auto rounded-md border border-input bg-muted/30 px-4 py-3 text-sm leading-relaxed font-mono whitespace-pre-wrap"
-              >
-                {streamingText}
-                <span className="inline-block w-1.5 h-4 bg-[var(--brand-accent)] animate-pulse ml-0.5" />
-              </div>
-            </CardContent>
-          </Card>
+          (() => {
+            const charCount = streamingText.replace(/\s/g, "").length;
+            const target = TARGET_RANGE_BY_PROMPT[pipelinePromptKey] ?? {
+              min: 1500,
+              max: 2500,
+            };
+            const inRange = charCount >= target.min && charCount <= target.max;
+            const overRange = charCount > target.max;
+            const countColor = inRange
+              ? "var(--quality-excellent)"
+              : overRange
+                ? "#d97706"
+                : "var(--neutral-text-muted)";
+            const progress = Math.min(100, Math.round((charCount / target.max) * 100));
+            return (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Loader2
+                      className="h-4 w-4 animate-spin"
+                      style={{ color: "var(--brand-accent)" }}
+                    />
+                    <span className="text-sm font-medium">
+                      {continuationAttempt > 0 ? (
+                        <>
+                          ✍️ 본문 이어서 작성 중...{" "}
+                          <span className="text-xs text-muted-foreground">
+                            (이어쓰기 {continuationAttempt}회차)
+                          </span>
+                        </>
+                      ) : (
+                        "초안 작성 중..."
+                      )}
+                    </span>
+                    <span className="ml-auto text-sm font-semibold" style={{ color: countColor }}>
+                      {charCount.toLocaleString()}자
+                      <span className="text-xs text-muted-foreground ml-1">
+                        / 목표 {target.min.toLocaleString()}~{target.max.toLocaleString()}자
+                      </span>
+                    </span>
+                  </div>
+                  {/* 진행 표시줄 */}
+                  <div className="mb-3 h-1 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full transition-all duration-200"
+                      style={{
+                        width: `${progress}%`,
+                        backgroundColor: countColor,
+                      }}
+                    />
+                  </div>
+                  <div
+                    className="w-full min-h-[300px] max-h-[500px] overflow-y-auto rounded-md border border-input bg-muted/30 px-4 py-3 text-sm leading-relaxed font-mono whitespace-pre-wrap"
+                  >
+                    {streamingText}
+                    <span className="inline-block w-1.5 h-4 bg-[var(--brand-accent)] animate-pulse ml-0.5" />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()
         ) : (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16">

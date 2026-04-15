@@ -8,6 +8,9 @@ import type { PromptKey } from "@/lib/constants/prompts";
 
 export type ClientLLMProvider = "claude" | "openai" | "gemini";
 
+/** LLM 응답 종료 이유 — 이어쓰기 트리거 판단용 */
+export type FinishReason = "stop" | "length" | "other";
+
 export interface ClientGenerateParams {
   messages: { role: string; content: string }[];
   model: string;
@@ -16,6 +19,8 @@ export interface ClientGenerateParams {
   maxTokens?: number;
   temperature?: number;
   onProgress?: (text: string) => void;
+  /** 스트림 종료 시 finish_reason 을 콜백으로 전달 — 이어쓰기 판단 */
+  onFinishReason?: (reason: FinishReason) => void;
 }
 
 /**
@@ -77,6 +82,14 @@ async function streamClaude(params: ClientGenerateParams): Promise<string> {
         if (parsed.type === "content_block_delta" && parsed.delta?.text) {
           fullText += parsed.delta.text;
           params.onProgress?.(fullText);
+        }
+        // Claude 의 finish_reason: message_delta 이벤트의 delta.stop_reason
+        // ("end_turn" → stop, "max_tokens" → length, 기타 → other)
+        if (parsed.type === "message_delta" && parsed.delta?.stop_reason) {
+          const raw = parsed.delta.stop_reason as string;
+          const reason: FinishReason =
+            raw === "end_turn" ? "stop" : raw === "max_tokens" ? "length" : "other";
+          params.onFinishReason?.(reason);
         }
       } catch {
         // 무시
@@ -143,6 +156,14 @@ async function streamOpenAI(params: ClientGenerateParams): Promise<string> {
         if (delta) {
           fullText += delta;
           params.onProgress?.(fullText);
+        }
+        // OpenAI 의 finish_reason: choices[0].finish_reason 이 null 이 아닌 chunk 에서
+        // ("stop" → stop, "length" → length, 기타 content_filter/tool_calls → other)
+        const fr = parsed.choices?.[0]?.finish_reason;
+        if (fr && typeof fr === "string") {
+          const reason: FinishReason =
+            fr === "stop" ? "stop" : fr === "length" ? "length" : "other";
+          params.onFinishReason?.(reason);
         }
       } catch {
         // 무시
@@ -217,6 +238,14 @@ async function streamGemini(params: ClientGenerateParams): Promise<string> {
         if (text) {
           fullText += text;
           params.onProgress?.(fullText);
+        }
+        // Gemini 의 finish_reason: candidates[0].finishReason
+        // ("STOP" → stop, "MAX_TOKENS" → length, 기타 SAFETY/RECITATION → other)
+        const fr = parsed.candidates?.[0]?.finishReason;
+        if (fr && typeof fr === "string") {
+          const reason: FinishReason =
+            fr === "STOP" ? "stop" : fr === "MAX_TOKENS" ? "length" : "other";
+          params.onFinishReason?.(reason);
         }
       } catch {
         // 무시
@@ -605,7 +634,8 @@ export async function clientRunPhase1(params: {
       model: params.llm.model,
       apiKey: params.llm.apiKey,
       provider: params.llm.provider,
-      maxTokens: 1500,
+      // Phase 1 구조 설계: JSON 출력. legal_references + infographic_plan 이 길어질 수 있음
+      maxTokens: 2000,
       temperature: 0.4,
     });
   }
@@ -649,6 +679,10 @@ export async function clientRunPhase1(params: {
 /**
  * Phase 2 — 본문 생성 (스트리밍).
  * PHASE2_PROMPT 의 placeholder 4개 채워서 user 메시지로 보냄.
+ *
+ * 끊김 감지 + 이어쓰기: LLM 응답의 finish_reason 이 "length" 이면 토큰 한도
+ * 초과로 본문이 중간에 끊긴 것. 이 경우 지금까지의 결과 + 마지막 200자를
+ * 컨텍스트로 넘기고 "이어서 작성" 프롬프트로 자동 재호출 (최대 2회).
  */
 export async function clientRunPhase2(params: {
   llm: ClientPhaseLLMConfig;
@@ -658,6 +692,8 @@ export async function clientRunPhase2(params: {
   visualRules: string;
   phase1Outline: Phase1Outline;
   onProgress?: (text: string) => void;
+  /** 이어쓰기 단계 알림 — UI 에 "본문 이어서 작성 중..." 표시용 */
+  onContinuationStart?: (attempt: number) => void;
 }): Promise<{ success: boolean; body?: string; error?: string }> {
   const phase1Json = JSON.stringify(params.phase1Outline, null, 2);
   const userMessage = replaceTemplate(params.phase2Prompt, {
@@ -667,25 +703,98 @@ export async function clientRunPhase2(params: {
     phase1_output: phase1Json,
   });
 
+  const systemPrompt =
+    "당신은 한국어 블로그 콘텐츠 작성자입니다. 사용자가 제공한 아웃라인을 그대로 따라 본문을 마크다운으로 작성합니다. 본문 외 메타 설명/코드펜스를 출력하지 마세요.";
+
+  // finishReason 을 ref-like 객체로 보관 — TypeScript 의 타입 narrowing 을 우회
+  const frState: { value: FinishReason } = { value: "other" };
+
   try {
-    const body = await streamLLM({
+    // ── 1차 호출 ──
+    const initialBody = await streamLLM({
       messages: [
-        {
-          role: "system",
-          content:
-            "당신은 한국어 블로그 콘텐츠 작성자입니다. 사용자가 제공한 아웃라인을 그대로 따라 본문을 마크다운으로 작성합니다. 본문 외 메타 설명/코드펜스를 출력하지 마세요.",
-        },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
       ],
       model: params.llm.model,
       apiKey: params.llm.apiKey,
       provider: params.llm.provider,
-      maxTokens: 4000,
+      // 한국어 본문 + 인포그래픽 마커 (한·영 이중) 포함 시 기존 4000 은 부족.
+      // 8000 으로 상향 + 이어쓰기 fallback 으로 안전망.
+      maxTokens: 8000,
       temperature: 0.7,
       onProgress: params.onProgress,
+      onFinishReason: (r) => {
+        frState.value = r;
+      },
     });
 
-    let cleaned = body.trim();
+    let accumulated = initialBody;
+
+    // ── 이어쓰기 루프 (최대 2회) ──
+    // finish_reason 이 "length" 이면 토큰 한도로 끊긴 것. 이어서 작성 프롬프트로 재호출.
+    const MAX_CONTINUATIONS = 2;
+    for (let attempt = 1; attempt <= MAX_CONTINUATIONS; attempt++) {
+      if (frState.value !== "length") break;
+
+      console.log(`[clientRunPhase2] finish_reason=length 감지 — 이어쓰기 ${attempt}/${MAX_CONTINUATIONS}`);
+      params.onContinuationStart?.(attempt);
+
+      const tailContext = accumulated.slice(-200);
+      const continuationUser = `아래 블로그 본문이 토큰 한도로 중간에 끊겼습니다. 중단된 지점부터 이어서 완성해주세요.
+
+규칙:
+- 이미 작성된 부분을 반복하지 말고 **정확히 중단된 지점부터 이어가세요**.
+- 전체 톤과 구조(1인칭, 구어체, 카테고리 톤)를 그대로 유지하세요.
+- 인포그래픽 마커는 아웃라인의 infographic_plan 을 따라 빠진 것을 마저 삽입하세요.
+- 응답은 이어쓰기 부분만 출력하세요. 중복 텍스트, 설명, 코드펜스 금지.
+
+[아웃라인 — 참고용]
+${phase1Json}
+
+[지금까지 작성된 본문의 마지막 부분 — 여기 바로 다음부터 이어가세요]
+${tailContext}`;
+
+      // 다음 루프 판단을 위해 기본값으로 리셋
+      frState.value = "other";
+      const continuation = await streamLLM({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: continuationUser },
+        ],
+        model: params.llm.model,
+        apiKey: params.llm.apiKey,
+        provider: params.llm.provider,
+        maxTokens: 8000,
+        temperature: 0.7,
+        onProgress: (partialContinuation) => {
+          // UI 에는 누적된 body + 이어쓰기 스트리밍 을 함께 표시
+          params.onProgress?.(accumulated + partialContinuation);
+        },
+        onFinishReason: (r) => {
+          frState.value = r;
+        },
+      });
+
+      // 이어쓰기 결과에서 중복 prefix 제거 — 끝부분 50자 정도가 이어쓰기 첫 부분에
+      // 그대로 반복되어 있으면 제거
+      let cleanedContinuation = continuation.trim();
+      const overlapCheckLen = Math.min(80, tailContext.length);
+      if (overlapCheckLen > 20) {
+        const lastChunk = accumulated.slice(-overlapCheckLen);
+        const firstChunk = cleanedContinuation.slice(0, overlapCheckLen * 2);
+        const overlap = findOverlap(lastChunk, firstChunk);
+        if (overlap > 15) {
+          cleanedContinuation = cleanedContinuation.slice(overlap).trimStart();
+        }
+      }
+
+      accumulated = accumulated + cleanedContinuation;
+      params.onProgress?.(accumulated);
+      // frState.value 는 이미 이번 이어쓰기의 콜백에서 업데이트됨 → 루프 상단에서 판단
+    }
+
+    let cleaned = accumulated.trim();
     const fence = cleaned.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/);
     if (fence) cleaned = fence[1].trim();
     if (!cleaned) {
@@ -695,6 +804,18 @@ export async function clientRunPhase2(params: {
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Phase 2 호출 실패" };
   }
+}
+
+/**
+ * 두 문자열 사이의 최대 겹침 길이 계산 (a 의 suffix 와 b 의 prefix 가 겹치는 길이).
+ * 이어쓰기 시 중복 prefix 제거 용도.
+ */
+function findOverlap(a: string, b: string): number {
+  const maxLen = Math.min(a.length, b.length);
+  for (let len = maxLen; len >= 1; len--) {
+    if (a.slice(-len) === b.slice(0, len)) return len;
+  }
+  return 0;
 }
 
 /**
@@ -728,7 +849,9 @@ export async function clientRunPhase3(params: {
       model: params.llm.model,
       apiKey: params.llm.apiKey,
       provider: params.llm.provider,
-      maxTokens: 5000,
+      // Phase 3 는 본문 전체 + 주석 + 태그 블록을 포함해서 출력하므로 Phase 2 와
+      // 동일한 안전 마진 필요.
+      maxTokens: 8000,
       temperature: 0.4,
       onProgress: params.onProgress,
     });
