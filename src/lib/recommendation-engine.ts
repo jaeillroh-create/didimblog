@@ -25,6 +25,10 @@ export interface Recommendation {
   affectedExistingPosts?: string[];
   /** 재검증 상태 (뉴스 추천 전용, 클라이언트 관리) */
   verificationStatus?: "pending" | "verified" | "rejected";
+  /** 추천 소스 (카드 배지 표시용) */
+  source?: "keyword_pool" | "news_api" | "schedule" | "manual";
+  /** DB 에 저장된 content_recommendations.id — accept/reject 시 사용 */
+  recId?: string;
 }
 
 // ── 월간 발행 통계 ──

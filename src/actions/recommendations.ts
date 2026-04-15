@@ -13,7 +13,8 @@ import {
   validateNewsRelevance,
   URGENT_NEWS_KEYWORDS,
 } from "@/lib/recommendation-engine";
-import type { KeywordPool } from "@/lib/types/database";
+import type { KeywordPool, NewsItem } from "@/lib/types/database";
+import { SCHEDULE_DATA, getCurrentWeek } from "@/lib/constants/schedule-data";
 
 // ── 뉴스 캐시 (1시간) ──
 
@@ -709,5 +710,391 @@ export async function getTopPerformingPosts(): Promise<TopPerformingPost[]> {
   } catch (err) {
     console.error("[getTopPerformingPosts] 에러:", err);
     return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 멀티소스 추천 (키워드 풀 / 뉴스 / 스케줄) — 2~3개 동시 표시
+// 010 migration: content_recommendations 테이블을 사용해 피드백 저장 & 블랙리스트
+// ─────────────────────────────────────────────────────────────
+
+const REJECT_LOOKBACK_DAYS = 30;
+const BLACKLIST_REJECT_COUNT = 3;
+
+/**
+ * 최근 REJECT_LOOKBACK_DAYS 일 이내에 rejected 된 추천에서 rejection_keywords 를
+ * 집계. BLACKLIST_REJECT_COUNT 회 이상 반복 rejected 된 키워드는 블랙리스트.
+ *
+ * 반환: { rejectedKeywords: 30일 내 한 번이라도 거부된 키워드 Set,
+ *        blacklist: 3회 이상 거부된 키워드 Set }
+ */
+export async function getRejectedKeywordStats(): Promise<{
+  rejectedKeywords: Set<string>;
+  blacklist: Set<string>;
+}> {
+  try {
+    const supabase = await createClient();
+    const since = new Date(Date.now() - REJECT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+    const { data, error } = await supabase
+      .from("content_recommendations")
+      .select("rejection_keywords, recommended_topic")
+      .eq("status", "rejected")
+      .gte("created_at", since.toISOString());
+
+    if (error) {
+      console.warn("[getRejectedKeywordStats] 조회 실패 (table 없을 수도 있음):", error.message);
+      return { rejectedKeywords: new Set(), blacklist: new Set() };
+    }
+
+    const counts = new Map<string, number>();
+    for (const row of data ?? []) {
+      const kws = (row.rejection_keywords as string[] | null) ?? [];
+      for (const k of kws) {
+        const norm = k.trim().toLowerCase();
+        if (!norm) continue;
+        counts.set(norm, (counts.get(norm) ?? 0) + 1);
+      }
+    }
+
+    const rejectedKeywords = new Set<string>(counts.keys());
+    const blacklist = new Set<string>();
+    for (const [k, cnt] of counts.entries()) {
+      if (cnt >= BLACKLIST_REJECT_COUNT) blacklist.add(k);
+    }
+    return { rejectedKeywords, blacklist };
+  } catch (err) {
+    console.error("[getRejectedKeywordStats] 예외:", err);
+    return { rejectedKeywords: new Set(), blacklist: new Set() };
+  }
+}
+
+function isBlacklisted(text: string, blacklist: Set<string>): boolean {
+  if (blacklist.size === 0) return false;
+  const lower = text.toLowerCase();
+  for (const k of blacklist) {
+    if (k && lower.includes(k)) return true;
+  }
+  return false;
+}
+
+/**
+ * 가중치 기반 키워드 샘플링
+ * HIGH 50% / MEDIUM 30% / LOW 20% 확률로 한 카테고리에서 미커버 키워드를 선택.
+ * 이번 달 이미 커버된 키워드와 블랙리스트는 제외.
+ */
+async function pickWeightedKeyword(
+  categoryId: string,
+  excludeKeywordIds: Set<string>,
+  blacklist: Set<string>
+): Promise<KeywordPool | null> {
+  const supabase = await createClient();
+
+  // 우선순위 랜덤 선택 (HIGH 50 / MED 30 / LOW 20)
+  const roll = Math.random();
+  const tryOrder: Array<"HIGH" | "MEDIUM" | "LOW"> =
+    roll < 0.5 ? ["HIGH", "MEDIUM", "LOW"]
+    : roll < 0.8 ? ["MEDIUM", "HIGH", "LOW"]
+    : ["LOW", "MEDIUM", "HIGH"];
+
+  for (const priority of tryOrder) {
+    const { data } = await supabase
+      .from("keyword_pool")
+      .select("*")
+      .eq("category_id", categoryId)
+      .eq("priority", priority)
+      .is("covered_content_id", null)
+      .limit(30);
+
+    const candidates = ((data ?? []) as KeywordPool[]).filter(
+      (k) => !excludeKeywordIds.has(k.id) && !isBlacklisted(k.keyword, blacklist)
+    );
+    if (candidates.length > 0) {
+      // 랜덤 1개
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+  }
+  return null;
+}
+
+export interface MultiSourceRecommendations {
+  cards: Recommendation[];
+  /** 현재 표시된 카드의 DB id 목록 — 새로고침 시 exclude 에 사용 */
+  pendingIds: string[];
+}
+
+/**
+ * 멀티소스 추천 — 3개 소스에서 각 1개씩 (최대 3개 카드).
+ *
+ * @param excludeRecIds 이미 표시 중인 content_recommendations.id 목록
+ *                     (새로고침 시 중복 방지). 빈 배열이면 첫 로드.
+ */
+export async function getMultiSourceRecommendations(
+  excludeRecIds: string[] = []
+): Promise<MultiSourceRecommendations> {
+  const cards: Recommendation[] = [];
+  const { rejectedKeywords, blacklist } = await getRejectedKeywordStats();
+  const excludeSet = new Set(excludeRecIds);
+
+  // ── 1) 키워드 풀 기반 (가중치 샘플링) ──
+  const keywordCard = await buildKeywordCard(blacklist);
+  if (keywordCard && !excludeSet.has(keywordCard.recId ?? "")) {
+    cards.push(keywordCard);
+  }
+
+  // ── 2) 뉴스 API 기반 ──
+  const newsCard = await buildNewsCard(blacklist, rejectedKeywords);
+  if (newsCard && !excludeSet.has(newsCard.recId ?? "")) {
+    cards.push(newsCard);
+  }
+
+  // ── 3) 12주 스케줄 기반 ──
+  const scheduleCard = await buildScheduleCard(blacklist);
+  if (scheduleCard && !excludeSet.has(scheduleCard.recId ?? "")) {
+    cards.push(scheduleCard);
+  }
+
+  return {
+    cards,
+    pendingIds: cards.map((c) => c.recId).filter((id): id is string => !!id),
+  };
+}
+
+/**
+ * content_recommendations row 를 생성하고 recId 를 Recommendation 에 박아 반환.
+ * 이미 pending 상태의 같은 topic 이 있으면 그 id 를 재사용.
+ */
+async function persistRecommendation(
+  rec: Recommendation,
+  source: "keyword_pool" | "news_api" | "schedule",
+  sourceDetail?: Record<string, unknown>
+): Promise<Recommendation> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("content_recommendations")
+      .insert({
+        recommended_topic: rec.title,
+        recommended_category: rec.category,
+        recommended_subcategory: rec.subCategory ?? null,
+        recommended_keywords: rec.keywords ?? null,
+        source,
+        source_detail: sourceDetail ?? null,
+        status: "pending",
+      })
+      .select("id")
+      .single();
+    if (error || !data) {
+      console.warn("[persistRecommendation] insert 실패:", error?.message);
+      return { ...rec, source };
+    }
+    return { ...rec, source, recId: data.id };
+  } catch (err) {
+    console.warn("[persistRecommendation] 예외:", err);
+    return { ...rec, source };
+  }
+}
+
+async function buildKeywordCard(blacklist: Set<string>): Promise<Recommendation | null> {
+  // CAT-A 우선, 없으면 CAT-B 로 fallback
+  for (const catId of ["CAT-A", "CAT-B"]) {
+    const kw = await pickWeightedKeyword(catId, new Set(), blacklist);
+    if (!kw) continue;
+    const catName =
+      catId === "CAT-A" ? "변리사의 현장 수첩" : "IP 라운지";
+    const rec: Recommendation = {
+      priority: "PRIMARY",
+      category: catName,
+      categoryId: catId,
+      subCategoryId: kw.sub_category_id ?? undefined,
+      title: generateTitleSuggestion(kw.keyword),
+      reason: `키워드 풀에서 자동 추출 — ${kw.priority} 가중치 / 미발행 / 랜덤 샘플링`,
+      keywords: [kw.keyword],
+    };
+    return persistRecommendation(rec, "keyword_pool", {
+      keyword_id: kw.id,
+      priority: kw.priority,
+    });
+  }
+  return null;
+}
+
+async function buildNewsCard(
+  blacklist: Set<string>,
+  rejectedKeywords: Set<string>
+): Promise<Recommendation | null> {
+  try {
+    const supabase = await createClient();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const { data } = await supabase
+      .from("news_items")
+      .select("*")
+      .eq("is_used", false)
+      .gte("created_at", sevenDaysAgo.toISOString())
+      .order("created_at", { ascending: false })
+      .limit(15);
+
+    const items = (data ?? []) as NewsItem[];
+    for (const item of items) {
+      const titleLower = item.title.toLowerCase();
+      if (isBlacklisted(titleLower, blacklist)) continue;
+      // 최근 30일 내 rejected 된 키워드와 60% 이상 겹치면 skip
+      let hits = 0;
+      for (const k of rejectedKeywords) {
+        if (k && titleLower.includes(k)) hits++;
+      }
+      if (hits >= 2) continue;
+
+      const cleanTitle = item.title.replace(/<\/?b>/g, "");
+      const rec: Recommendation = {
+        priority: "URGENT",
+        category: "IP 라운지",
+        categoryId: "CAT-B",
+        subCategory: "IP 뉴스 한 입",
+        subCategoryId: "CAT-B-03",
+        title: cleanTitle,
+        reason:
+          item.blog_angle ??
+          item.ai_summary ??
+          `최근 7일 뉴스 — 검색 키워드: ${item.search_keyword}`,
+        keywords: [item.search_keyword],
+        newsUrl: item.link,
+        relevanceReason: item.ai_summary ?? undefined,
+        suggestedAngle: item.blog_angle ?? undefined,
+      };
+      return persistRecommendation(rec, "news_api", {
+        news_id: item.id,
+        link: item.link,
+        search_keyword: item.search_keyword,
+        source: item.source,
+      });
+    }
+  } catch (err) {
+    console.warn("[buildNewsCard] news_items 조회 실패:", err);
+  }
+  return null;
+}
+
+async function buildScheduleCard(blacklist: Set<string>): Promise<Recommendation | null> {
+  const currentWeek = getCurrentWeek();
+  // 이번 주 기준 ±1 주의 스케줄 아이템 중 블랙리스트 아닌 것
+  const candidates = SCHEDULE_DATA.filter(
+    (it) => it.week >= currentWeek && it.week <= currentWeek + 1
+  );
+  const list = candidates.length > 0 ? candidates : [SCHEDULE_DATA[0]];
+  for (const item of list) {
+    if (isBlacklisted(item.title, blacklist)) continue;
+    if (item.keywords.some((k) => isBlacklisted(k, blacklist))) continue;
+
+    // 카테고리명 → categoryId 매핑
+    const categoryId =
+      item.category === "변리사의 현장 수첩" || item.category === "현장 수첩"
+        ? "CAT-A"
+        : item.category === "IP 라운지"
+          ? "CAT-B"
+          : "CAT-C";
+
+    const rec: Recommendation = {
+      priority: "PRIMARY",
+      category: item.category,
+      categoryId,
+      subCategory: item.subCategory,
+      title: item.title,
+      reason: `12주 발행 스케줄 W${item.week} — ${item.subCategory}`,
+      keywords: item.keywords,
+    };
+    return persistRecommendation(rec, "schedule", {
+      week: item.week,
+      sub_category: item.subCategory,
+      cta: item.cta,
+    });
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 추천 피드백 액션 (accept / reject)
+// ─────────────────────────────────────────────────────────────
+
+export interface AcceptRecommendationResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * 사용자가 "적합 → 초안 생성" 클릭 시 호출.
+ * status 를 'accepted' 로 변경하고 acted_at 을 기록.
+ */
+export async function acceptRecommendation(
+  recId: string
+): Promise<AcceptRecommendationResult> {
+  if (!recId) return { success: false, error: "recId 누락" };
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("content_recommendations")
+      .update({
+        status: "accepted",
+        acted_at: new Date().toISOString(),
+      })
+      .eq("id", recId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "적합 처리 실패" };
+  }
+}
+
+export interface RejectRecommendationInput {
+  recId: string;
+  reason?: string;
+}
+
+/**
+ * 사용자가 "부적합 — 건너뛰기" 클릭 시 호출.
+ * status='rejected' + acted_at + rejection_reason + 자동 추출한 rejection_keywords 저장.
+ * 재추천 필터에서 이 키워드를 블랙리스트/필터링에 사용.
+ */
+export async function rejectRecommendation(
+  input: RejectRecommendationInput
+): Promise<AcceptRecommendationResult> {
+  if (!input.recId) return { success: false, error: "recId 누락" };
+  try {
+    const supabase = await createClient();
+
+    // 원본 추천 조회해서 rejection_keywords 추출
+    const { data: original } = await supabase
+      .from("content_recommendations")
+      .select("recommended_topic, recommended_keywords, recommended_category")
+      .eq("id", input.recId)
+      .maybeSingle();
+
+    let rejectionKeywords: string[] = [];
+    if (original) {
+      // 구조상 Recommendation 이 아니라 DB row → 간이 추출
+      const kws = new Set<string>();
+      for (const k of (original.recommended_keywords as string[] | null) ?? []) {
+        if (k?.trim()) kws.add(k.trim());
+      }
+      for (const chunk of ((original.recommended_topic as string) ?? "").split(/\s+/)) {
+        const cleaned = chunk.replace(/[^\w가-힣]/g, "");
+        if (cleaned.length >= 3 && !/^[0-9]+$/.test(cleaned)) kws.add(cleaned);
+      }
+      rejectionKeywords = Array.from(kws).slice(0, 8);
+    }
+
+    const { error } = await supabase
+      .from("content_recommendations")
+      .update({
+        status: "rejected",
+        acted_at: new Date().toISOString(),
+        rejection_reason: input.reason ?? null,
+        rejection_keywords: rejectionKeywords,
+      })
+      .eq("id", input.recId);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "부적합 처리 실패" };
   }
 }

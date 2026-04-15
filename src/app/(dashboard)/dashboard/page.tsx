@@ -5,7 +5,7 @@ import { SlaAlerts } from "@/components/dashboard/sla-alerts";
 import { RecentLeads } from "@/components/dashboard/recent-leads";
 import { DashboardWidgets } from "./dashboard-widgets";
 import {
-  getWeeklyRecommendations,
+  getMultiSourceRecommendations,
   getMonthlyPublishProgress,
   getMonthlySummary,
   getUpdateNeededPosts,
@@ -23,7 +23,7 @@ export const metadata = {
 export default async function DashboardPage() {
   // 병렬 데이터 로드
   const [
-    recommendations,
+    multiSourceResult,
     publishProgress,
     monthlySummary,
     updateNeeded,
@@ -32,7 +32,7 @@ export default async function DashboardPage() {
     llmResult,
     newsItems,
   ] = await Promise.all([
-    getWeeklyRecommendations(),
+    getMultiSourceRecommendations(),
     getMonthlyPublishProgress(),
     getMonthlySummary(),
     getUpdateNeededPosts(),
@@ -41,6 +41,8 @@ export default async function DashboardPage() {
     getLLMConfigs(),
     getRecentNews(5),
   ]);
+
+  const recommendations = multiSourceResult.cards;
 
   const now = new Date();
   const monthLabel = `${now.getFullYear()}년 ${now.getMonth() + 1}월`;
