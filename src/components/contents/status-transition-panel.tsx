@@ -114,6 +114,18 @@ function buildChecks(
         detail: `현재 ${props.imageMarkerCount}개`,
         scrollTarget: "body-editor",
       },
+      {
+        id: "review-approved",
+        label: "대표 검수 승인",
+        passed: content.review_status === "approved",
+        detail:
+          content.review_status === "approved"
+            ? "승인됨"
+            : content.review_status === "revision_requested"
+              ? "수정 요청됨"
+              : "미검수",
+        scrollTarget: "review-panel",
+      },
     ];
   }
 

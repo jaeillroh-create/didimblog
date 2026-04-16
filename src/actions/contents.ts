@@ -7,6 +7,7 @@ import {
   type Profile,
   type StateTransition,
   type ContentStatus,
+  type ReviewStatus,
 } from "@/lib/types/database";
 import { formatDate, calculateSlaDates, getNextTuesday } from "@/lib/utils/date-helpers";
 
@@ -189,6 +190,8 @@ export async function createContent(input: CreateContentInput): Promise<{
       ai_edited_by: null,
       ai_edit_ratio: null,
       notes: null,
+      review_status: "pending" as const,
+      review_memo: null,
     };
 
     const { data, error } = await supabase
@@ -539,5 +542,111 @@ export async function getContent(
   } catch (err) {
     console.error("[getContent] 에러:", err);
     return { data: null, error: "콘텐츠를 불러오지 못했습니다." };
+  }
+}
+
+// ── 대표 검수 ──
+
+export interface ReviewApproveInput {
+  contentId: string;
+  checkedItems: string[];
+}
+
+/** 대표 검수 승인 — reviewer_id, review_done_at, review_status='approved' 기록 */
+export async function approveReview(
+  input: ReviewApproveInput
+): Promise<{ data: Content | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const { data, error } = await supabase
+      .from("contents")
+      .update({
+        review_status: "approved" as ReviewStatus,
+        reviewer_id: user?.id ?? null,
+        review_done_at: new Date().toISOString(),
+        review_memo: `[검수 승인] 체크: ${input.checkedItems.join(", ")}`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.contentId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data: data as Content, error: null };
+  } catch (err) {
+    console.error("[approveReview] 에러:", err);
+    return { data: null, error: err instanceof Error ? err.message : "검수 승인 실패" };
+  }
+}
+
+export interface RevisionRequestInput {
+  contentId: string;
+  memo: string;
+}
+
+/** 대표 수정 요청 — review_status='revision_requested', revision_count++ */
+export async function requestRevision(
+  input: RevisionRequestInput
+): Promise<{ data: Content | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    // 기존 revision_count 조회
+    const { data: existing } = await supabase
+      .from("contents")
+      .select("revision_count")
+      .eq("id", input.contentId)
+      .single();
+
+    const { data, error } = await supabase
+      .from("contents")
+      .update({
+        review_status: "revision_requested" as ReviewStatus,
+        reviewer_id: user?.id ?? null,
+        review_memo: input.memo,
+        revision_count: (existing?.revision_count ?? 0) + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.contentId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data: data as Content, error: null };
+  } catch (err) {
+    console.error("[requestRevision] 에러:", err);
+    return { data: null, error: err instanceof Error ? err.message : "수정 요청 실패" };
+  }
+}
+
+/** 검수 상태 초기화 (수정 완료 후 재검수 요청) */
+export async function resetReviewStatus(
+  contentId: string
+): Promise<{ data: Content | null; error: string | null }> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("contents")
+      .update({
+        review_status: "pending" as ReviewStatus,
+        review_memo: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", contentId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { data: data as Content, error: null };
+  } catch (err) {
+    console.error("[resetReviewStatus] 에러:", err);
+    return { data: null, error: "검수 상태 초기화 실패" };
   }
 }

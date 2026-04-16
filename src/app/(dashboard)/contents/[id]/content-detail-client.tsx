@@ -23,6 +23,7 @@ import { PerformanceInput } from "@/components/contents/performance-input";
 import { HealthBanner } from "@/components/contents/health-banner";
 import { InternalLinksPanel } from "@/components/contents/internal-links-panel";
 import { StatusTransitionPanel } from "@/components/contents/status-transition-panel";
+import { ReviewPanel } from "@/components/contents/review-panel";
 import { calculateSeoScore } from "@/lib/seo-calculator";
 import {
   updateContent,
@@ -497,6 +498,16 @@ export function ContentDetailClient({
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {/* 대표 수정 요청 배너 */}
+              {content.review_status === "revision_requested" && content.review_memo && (
+                <div className="mb-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2">
+                  <p className="text-sm text-orange-700 font-medium flex items-center gap-1.5">
+                    <span>⚠️</span>
+                    대표 수정 요청
+                  </p>
+                  <p className="text-xs text-orange-600 mt-1">{content.review_memo}</p>
+                </div>
+              )}
               <textarea
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
                 style={{ minHeight: "400px" }}
@@ -618,6 +629,14 @@ export function ContentDetailClient({
                 imageMarkerCount={imageMarkerCount}
                 onContentUpdated={(next) => setContent(next)}
               />
+              {/* 대표 검수 패널 (S1 일 때만 표시) */}
+              <div data-scroll-id="review-panel">
+                <ReviewPanel
+                  content={content}
+                  profiles={profiles}
+                  onContentUpdated={(next) => setContent(next)}
+                />
+              </div>
             </CardContent>
           </Card>
 
