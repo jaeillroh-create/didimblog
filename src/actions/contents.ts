@@ -11,6 +11,30 @@ import {
 } from "@/lib/types/database";
 import { formatDate, calculateSlaDates, getNextTuesday } from "@/lib/utils/date-helpers";
 
+// ── 공통 에러 포맷 헬퍼 ──
+
+/**
+ * Supabase PostgrestError 또는 일반 Error 에서 디버그 가능한 메시지를 추출.
+ *
+ * PostgrestError 는 { code, message, details, hint } 구조이고 instanceof Error 가 아니다.
+ * 이 함수는 code 와 message 를 결합해서 사용자가 원인을 즉시 파악할 수 있게 한다.
+ *
+ * 예: "검수 승인 실패: (42703) column \"review_status\" of relation \"contents\" does not exist"
+ */
+function formatSupabaseError(err: unknown, fallback: string): string {
+  if (typeof err === "object" && err !== null && "code" in err && "message" in err) {
+    const pg = err as { code: string; message: string; details?: string | null; hint?: string | null };
+    const parts = [`(${pg.code})`, pg.message];
+    if (pg.details) parts.push(`[${pg.details}]`);
+    if (pg.hint) parts.push(`힌트: ${pg.hint}`);
+    return `${fallback}: ${parts.join(" ")}`;
+  }
+  if (err instanceof Error) {
+    return `${fallback}: ${err.message}`;
+  }
+  return fallback;
+}
+
 // ── 콘텐츠 목록 조회 ──
 
 export interface ContentWithCategory extends Content {
@@ -434,7 +458,7 @@ export async function updateContentStatusWithMeta(
     console.error("[updateContentStatusWithMeta] 에러:", err);
     return {
       data: null,
-      error: err instanceof Error ? err.message : "상태 변경에 실패했습니다.",
+      error: formatSupabaseError(err, "상태 변경에 실패했습니다"),
     };
   }
 }
@@ -552,7 +576,18 @@ export interface ReviewApproveInput {
   checkedItems: string[];
 }
 
-/** 대표 검수 승인 — reviewer_id, review_done_at, review_status='approved' 기록 */
+/**
+ * 대표 검수 승인.
+ *
+ * 기록:
+ *   - review_status = 'approved'
+ *   - reviewer_id = 현재 인증 사용자 id
+ *   - review_done_at = now()
+ *   - review_memo = 체크 항목 기록
+ *
+ * ⚠️ review_status / review_memo 컬럼이 DB 에 없으면 Supabase 가 42703 에러를 반환.
+ *    그 경우 012_review_columns.sql 마이그레이션을 Supabase SQL Editor 에서 수동 실행해야 함.
+ */
 export async function approveReview(
   input: ReviewApproveInput
 ): Promise<{ data: Content | null; error: string | null }> {
@@ -560,13 +595,21 @@ export async function approveReview(
     const supabase = await createClient();
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return {
+        data: null,
+        error: `검수 승인 실패: 인증 오류 — ${authError?.message ?? "세션 없음"}. 다시 로그인 해주세요.`,
+      };
+    }
 
     const { data, error } = await supabase
       .from("contents")
       .update({
         review_status: "approved" as ReviewStatus,
-        reviewer_id: user?.id ?? null,
+        reviewer_id: user.id,
         review_done_at: new Date().toISOString(),
         review_memo: `[검수 승인] 체크: ${input.checkedItems.join(", ")}`,
         updated_at: new Date().toISOString(),
@@ -575,11 +618,14 @@ export async function approveReview(
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("[approveReview] Supabase 에러:", JSON.stringify(error));
+      return { data: null, error: formatSupabaseError(error, "검수 승인 실패") };
+    }
     return { data: data as Content, error: null };
   } catch (err) {
-    console.error("[approveReview] 에러:", err);
-    return { data: null, error: err instanceof Error ? err.message : "검수 승인 실패" };
+    console.error("[approveReview] 예외:", err);
+    return { data: null, error: formatSupabaseError(err, "검수 승인 실패") };
   }
 }
 
@@ -596,7 +642,15 @@ export async function requestRevision(
     const supabase = await createClient();
     const {
       data: { user },
+      error: authError,
     } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return {
+        data: null,
+        error: `수정 요청 실패: 인증 오류 — ${authError?.message ?? "세션 없음"}`,
+      };
+    }
 
     // 기존 revision_count 조회
     const { data: existing } = await supabase
@@ -609,7 +663,7 @@ export async function requestRevision(
       .from("contents")
       .update({
         review_status: "revision_requested" as ReviewStatus,
-        reviewer_id: user?.id ?? null,
+        reviewer_id: user.id,
         review_memo: input.memo,
         revision_count: (existing?.revision_count ?? 0) + 1,
         updated_at: new Date().toISOString(),
@@ -618,11 +672,14 @@ export async function requestRevision(
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("[requestRevision] Supabase 에러:", JSON.stringify(error));
+      return { data: null, error: formatSupabaseError(error, "수정 요청 실패") };
+    }
     return { data: data as Content, error: null };
   } catch (err) {
-    console.error("[requestRevision] 에러:", err);
-    return { data: null, error: err instanceof Error ? err.message : "수정 요청 실패" };
+    console.error("[requestRevision] 예외:", err);
+    return { data: null, error: formatSupabaseError(err, "수정 요청 실패") };
   }
 }
 
@@ -643,10 +700,13 @@ export async function resetReviewStatus(
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("[resetReviewStatus] Supabase 에러:", JSON.stringify(error));
+      return { data: null, error: formatSupabaseError(error, "검수 상태 초기화 실패") };
+    }
     return { data: data as Content, error: null };
   } catch (err) {
-    console.error("[resetReviewStatus] 에러:", err);
-    return { data: null, error: "검수 상태 초기화 실패" };
+    console.error("[resetReviewStatus] 예외:", err);
+    return { data: null, error: formatSupabaseError(err, "검수 상태 초기화 실패") };
   }
 }
