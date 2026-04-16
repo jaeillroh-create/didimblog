@@ -315,6 +315,26 @@ export async function updateContentStatus(
   try {
     const supabase = await createClient();
 
+    // 인증 확인
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return {
+        data: null,
+        error: `상태 변경 실패: 인증 오류 — ${authError?.message ?? "세션 없음"}`,
+      };
+    }
+
+    // 현재 상태 조회 (전이 로그용)
+    const { data: current } = await supabase
+      .from("contents")
+      .select("status")
+      .eq("id", contentId)
+      .single();
+    const fromStatus = (current?.status as string) ?? "unknown";
+
     const updateData: Record<string, unknown> = {
       status: newStatus,
       updated_at: new Date().toISOString(),
@@ -338,12 +358,26 @@ export async function updateContentStatus(
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("[updateContentStatus] Supabase 에러:", JSON.stringify(error));
+      return { data: null, error: formatSupabaseError(error, "상태 변경 실패") };
+    }
+
+    // 전이 이력 기록 (실패해도 무시)
+    await supabase
+      .from("state_transitions_log")
+      .insert({
+        content_id: contentId,
+        from_status: fromStatus,
+        to_status: newStatus,
+        transitioned_by: user.id,
+      })
+      .then(() => {}, (err) => console.warn("[전이 이력] 기록 실패:", err));
 
     return { data: data as Content, error: null };
   } catch (err) {
-    console.error("[updateContentStatus] 에러:", err);
-    return { data: null, error: "상태 변경에 실패했습니다." };
+    console.error("[updateContentStatus] 예외:", err);
+    return { data: null, error: formatSupabaseError(err, "상태 변경 실패") };
   }
 }
 
@@ -383,12 +417,25 @@ export async function updateContentStatusWithMeta(
   try {
     const supabase = await createClient();
 
-    // 기존 content 조회 (notes append 를 위해)
+    // 인증 확인
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return {
+        data: null,
+        error: `상태 변경 실패: 인증 오류 — ${authError?.message ?? "세션 없음"}`,
+      };
+    }
+
+    // 기존 content 조회 (notes append + 전이 로그용)
     const { data: existing } = await supabase
       .from("contents")
-      .select("notes, views_1w")
+      .select("notes, views_1w, status")
       .eq("id", input.contentId)
       .single();
+    const fromStatus = (existing?.status as string) ?? "unknown";
 
     const updateData: Record<string, unknown> = {
       status: input.newStatus,
@@ -451,14 +498,30 @@ export async function updateContentStatusWithMeta(
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("[updateContentStatusWithMeta] Supabase 에러:", JSON.stringify(error));
+      return { data: null, error: formatSupabaseError(error, "상태 변경 실패") };
+    }
+
+    // 전이 이력 기록
+    await supabase
+      .from("state_transitions_log")
+      .insert({
+        content_id: input.contentId,
+        from_status: fromStatus,
+        to_status: input.newStatus,
+        transitioned_by: user.id,
+        is_forced: input.force ?? false,
+        force_reason: input.force ? (input.transitionReason ?? "강제 전환") : null,
+      })
+      .then(() => {}, (err) => console.warn("[전이 이력] 기록 실패:", err));
 
     return { data: data as Content, error: null };
   } catch (err) {
-    console.error("[updateContentStatusWithMeta] 에러:", err);
+    console.error("[updateContentStatusWithMeta] 예외:", err);
     return {
       data: null,
-      error: formatSupabaseError(err, "상태 변경에 실패했습니다"),
+      error: formatSupabaseError(err, "상태 변경 실패"),
     };
   }
 }
