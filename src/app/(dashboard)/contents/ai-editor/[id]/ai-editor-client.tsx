@@ -784,23 +784,18 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       if (isMounted.current) {
         setGeneratedText(phase2Body);
         setGeneratedTitle(title);
-        setEditText(phase2Body);
         setEditTitle(title);
         setStatus("completed");
         setPipelinePhase("phase3"); // Phase 3 트리거 가능 상태
         // Phase 2 완료 시점 SEO 점수 1차 계산 — Phase 3 완료 후 변화량 비교용.
-        // calculateSeoScore 는 (title, text, keyword) 시그니처라 keyword 가 비어있어도
-        // 0 을 반환하므로 안전.
         const seoNow = calculateSeoScore(title, phase2Body, targetKeyword || "").score;
         setSeoScoreBeforePhase3(seoNow);
         // 교차검증 전에 본문에 문단 ID 주입 — 매칭 정확도를 높이기 위함
-        if (isMounted.current && !hasParagraphIds(editText)) {
-          const withIds = injectParagraphIds(editText);
-          setEditText(withIds);
-        }
-        // Phase 2 완료 직후 교차검증 모달 자동 오픈 — 사용자가 검증/반영/Phase 3 흐름을
-        // 즉시 진행할 수 있도록 함. 닫기 버튼으로 언제든 닫을 수 있고, Phase 3 는
-        // 모달의 "Phase 3 진행" 버튼 또는 헤더의 "🔍 SEO 최적화" 버튼으로 트리거.
+        // ⚠️ phase2Body 를 직접 사용해야 함. editText 는 stale closure 로 아직 이전 값임.
+        const bodyWithIds = hasParagraphIds(phase2Body) ? phase2Body : injectParagraphIds(phase2Body);
+        setEditText(bodyWithIds);
+        console.log("[Phase 2] editText 설정 완료, 길이:", bodyWithIds.length);
+        // Phase 2 완료 직후 교차검증 모달 자동 오픈
         setShowValidation(true);
       }
     } catch (err) {
@@ -853,6 +848,16 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
 
       if (!result.success || !result.body) {
         throw new Error(result.error || "Phase 3 실패");
+      }
+
+      // Phase 3 본문 검증 — 빈 body 방지
+      const phase3BodyLength = result.body.replace(/\s/g, "").length;
+      console.log("[Phase 3] 완료, 원본 길이:", result.body.length, "공백 제외:", phase3BodyLength);
+      if (phase3BodyLength < 200) {
+        console.error("[Phase 3] 본문이 너무 짧음 — Phase 2 본문으로 폴백");
+        // Phase 3 가 본문을 깨트린 경우 Phase 2 원본(cleanBody)으로 폴백
+        result.body = cleanBody;
+        toast.error("Phase 3 결과가 너무 짧아 Phase 2 원본을 사용합니다");
       }
 
       // Disclaimer 자동 매칭 + CTA / 서명 / 태그 한 줄 append
@@ -1085,6 +1090,19 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
     startTransition(async () => {
       // 저장 시 문단 ID 주석 제거 (네이버 블로그에 불필요)
       const bodyForSave = stripParagraphIds(editText);
+
+      // ⚠️ 본문 비어있음 방어 — 빈 본문 저장 방지
+      const bodyContentLength = bodyForSave.replace(/\s/g, "").length;
+      if (bodyContentLength < 200) {
+        toast.error(
+          `본문이 너무 짧습니다 (${bodyContentLength}자). 저장을 중단합니다. Phase 2/3 가 정상 완료되었는지 확인하세요.`,
+          { duration: 8000 }
+        );
+        console.error("[저장 중단] 본문 길이:", bodyContentLength, "원본 editText 길이:", editText.length);
+        return;
+      }
+      console.log("[저장] body 길이:", bodyForSave.length, "공백 제외:", bodyContentLength);
+
       const result = await saveAiDraftToContent(currentGenerationId, {
         title: editTitle,
         body: bodyForSave,

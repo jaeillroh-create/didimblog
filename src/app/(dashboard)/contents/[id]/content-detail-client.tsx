@@ -30,6 +30,7 @@ import {
   updateContent,
   deleteContent,
 } from "@/actions/contents";
+import { recoverBodyFromGeneration } from "@/actions/ai";
 import { checkSla } from "@/lib/utils/sla-checker";
 import { CONTENT_STATES } from "@/lib/constants/content-states";
 import type {
@@ -509,6 +510,31 @@ export function ContentDetailClient({
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {/* 본문 복구 배너 — AI 생성인데 body 가 비어있을 때 (admin) */}
+              {isAdmin && content.ai_generation_id && (!body || body.replace(/\s/g, "").length < 100) && (
+                <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2">
+                  <p className="text-sm text-red-700 font-medium">
+                    본문이 비어 있습니다 — AI 생성 이력에서 복구할 수 있습니다.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 text-xs border-red-200 text-red-600 hover:bg-red-100"
+                    onClick={async () => {
+                      const res = await recoverBodyFromGeneration(content.id);
+                      if (res.success && res.body) {
+                        setBody(res.body);
+                        setContent((prev) => ({ ...prev, body: res.body! }));
+                        toast.success(`본문 복구 완료 (${res.body.length.toLocaleString()}자)`);
+                      } else {
+                        toast.error(res.error ?? "복구 실패");
+                      }
+                    }}
+                  >
+                    AI 생성 이력에서 본문 복구
+                  </Button>
+                </div>
+              )}
               {/* 대표 수정 요청 배너 */}
               {content.review_status === "revision_requested" && content.review_memo && (
                 <div className="mb-3 rounded-md border border-orange-200 bg-orange-50 px-3 py-2">
