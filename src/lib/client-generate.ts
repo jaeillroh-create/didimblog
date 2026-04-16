@@ -1234,6 +1234,12 @@ export function appendCtaAndSignature(params: {
     return cleanFinalText(params.body);
   }
 
+  // ⚠️ 본문 비어있음 방어 — body 가 비었는데 CTA/태그만 반환하면 안 됨
+  if (!params.body || params.body.replace(/\s/g, "").length < 50) {
+    console.error("[appendCtaAndSignature] body 가 비어있거나 너무 짧음:", params.body?.length ?? 0);
+    return params.body ?? "";
+  }
+
   // 안전망: PHASE3 가 우회 처리하지 못한 (확인 필요) 마커를 정리
   const cleaned = cleanFinalText(params.body);
 

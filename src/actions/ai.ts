@@ -649,6 +649,60 @@ export async function getCategoryName(
 }
 
 /**
+ * 본문 복구: ai_generations.generated_text 에서 contents.body 로 복원.
+ * 파이프라인 버그로 body 가 비어있는 기존 콘텐츠 복구용.
+ */
+export async function recoverBodyFromGeneration(
+  contentId: string
+): Promise<{ success: boolean; body?: string; error?: string }> {
+  try {
+    const supabase = await createClient();
+
+    const { data: content, error: cErr } = await supabase
+      .from("contents")
+      .select("ai_generation_id, body")
+      .eq("id", contentId)
+      .single();
+
+    if (cErr || !content) {
+      return { success: false, error: `콘텐츠 조회 실패: ${cErr?.message ?? "not found"}` };
+    }
+    if (!content.ai_generation_id) {
+      return { success: false, error: "AI 생성 이력이 없습니다 (ai_generation_id 없음)" };
+    }
+
+    const { data: gen, error: gErr } = await supabase
+      .from("ai_generations")
+      .select("generated_text, phase2_output")
+      .eq("id", content.ai_generation_id)
+      .single();
+
+    if (gErr || !gen) {
+      return { success: false, error: `생성 이력 조회 실패: ${gErr?.message ?? "not found"}` };
+    }
+
+    // generated_text (Phase 3 결과) 우선, 없으면 phase2_output
+    const recovered = gen.generated_text || gen.phase2_output;
+    if (!recovered || recovered.replace(/\s/g, "").length < 100) {
+      return { success: false, error: "복구할 본문이 없습니다 (generated_text/phase2_output 모두 비어있음)" };
+    }
+
+    const { error: uErr } = await supabase
+      .from("contents")
+      .update({ body: recovered, updated_at: new Date().toISOString() })
+      .eq("id", contentId);
+
+    if (uErr) {
+      return { success: false, error: `복구 저장 실패: ${uErr.message}` };
+    }
+
+    return { success: true, body: recovered };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "본문 복구 실패" };
+  }
+}
+
+/**
  * AI 초안을 콘텐츠로 저장 (S1 전이)
  * - content_id가 있으면 기존 콘텐츠 업데이트
  * - 없으면 새 콘텐츠 생성 후 연결
