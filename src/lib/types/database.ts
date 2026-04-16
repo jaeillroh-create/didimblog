@@ -88,9 +88,14 @@ export interface Content {
   ai_edited_by: string | null;
   ai_edit_ratio: number | null;
   notes: string | null;
+  // 대표 검수
+  review_status: ReviewStatus;
+  review_memo: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export type ReviewStatus = "pending" | "approved" | "revision_requested";
 
 // ── AI 콘텐츠 생성 엔진 타입 ──
 

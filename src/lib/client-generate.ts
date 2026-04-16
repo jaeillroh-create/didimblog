@@ -1295,3 +1295,96 @@ ${tagLine}`;
 
   return bodyWithoutTagsBlock.trimEnd() + block;
 }
+
+/**
+ * 코드 기반 태그 자동 생성 — LLM 호출 없이 규칙으로 10개 태그 생성.
+ *
+ * 구성 (우선순위):
+ *   1. 브랜드 태그 2개: 특허그룹디딤, 디딤변리사 (하드코딩)
+ *   2. 핵심 태그 ~3개: target_keyword 에서 공백 제거 + 접미사 조합
+ *   3. 연관 태그 ~3개: Phase 1 outline 의 keyword_plan 에서 추출
+ *   4. 롱테일 ~2개: 핵심키워드 + 카테고리 관련 수식어 조합
+ *   5. 카테고리 기본 태그로 10개 채움
+ *
+ * 다이어리 카테고리는 브랜드 태그만 반환.
+ */
+export function generateAutoTags(params: {
+  promptKey: PromptKey;
+  targetKeyword?: string;
+  phase1Outline?: Phase1Outline | null;
+  categoryId?: string;
+}): string[] {
+  const { promptKey, targetKeyword, phase1Outline, categoryId } = params;
+  const normalize = (t: string) => t.replace(/\s+/g, "").replace(/^#/, "");
+
+  const BRAND_TAGS = ["특허그룹디딤", "디딤변리사"];
+
+  if (promptKey === "PROMPT_DIARY") {
+    return [...BRAND_TAGS];
+  }
+
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  function push(raw: string) {
+    const t = normalize(raw);
+    if (!t || t.length < 2 || seen.has(t)) return;
+    seen.add(t);
+    tags.push(t);
+  }
+
+  // 1. 핵심 태그: target_keyword 변형
+  const kw = (targetKeyword ?? "").trim();
+  if (kw) {
+    // 공백 제거 버전
+    push(kw);
+    // 공백 제거 + 각 단어
+    const words = kw.split(/\s+/).filter((w) => w.length >= 2);
+    if (words.length >= 2) {
+      // 마지막 2단어 결합
+      push(words.slice(-2).join(""));
+      // 전체 결합
+      push(words.join(""));
+    }
+    // 키워드 + 접미사
+    const suffixes = getCategorySuffixes(categoryId ?? "");
+    for (const suffix of suffixes) {
+      push(normalize(kw) + suffix);
+      if (tags.length >= 5) break;
+    }
+  }
+
+  // 2. Phase 1 keyword_plan 에서 추출
+  if (phase1Outline?.keyword_plan) {
+    const positions = phase1Outline.keyword_plan.positions ?? [];
+    for (const pos of positions) {
+      // "도입부: 직무발명보상금 절세" → "직무발명보상금절세"
+      const afterColon = pos.includes(":") ? pos.split(":").slice(1).join(":") : pos;
+      const cleaned = afterColon.replace(/[,()]/g, "").trim();
+      if (cleaned.length >= 2) push(cleaned);
+      if (tags.length >= 8) break;
+    }
+  }
+
+  // 3. 카테고리 기본 태그로 채움
+  const defaults = DEFAULT_TAGS_BY_CATEGORY[promptKey] ?? [];
+  for (const d of defaults) {
+    push(d);
+    if (tags.length >= 8) break;
+  }
+
+  // 4. 브랜드 태그 (항상 마지막)
+  for (const b of BRAND_TAGS) push(b);
+
+  return tags.slice(0, 12);
+}
+
+/** 카테고리별 롱테일 접미사 */
+function getCategorySuffixes(categoryId: string): string[] {
+  if (categoryId.startsWith("CAT-A")) {
+    return ["절세", "세액공제", "중소기업", "방법"];
+  }
+  if (categoryId.startsWith("CAT-B")) {
+    return ["전략", "트렌드", "가이드", "분석"];
+  }
+  return ["후기", "이야기"];
+}

@@ -41,6 +41,7 @@ import {
   clientRunPhase2,
   clientRunPhase3,
   appendCtaAndSignature,
+  generateAutoTags,
   type ClientLLMProvider,
 } from "@/lib/client-generate";
 import {
@@ -803,8 +804,17 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         targetKeyword,
       });
 
+      // 태그 자동 생성 (코드 기반, LLM 호출 없음)
+      const autoTags = generateAutoTags({
+        promptKey,
+        targetKeyword,
+        phase1Outline,
+        categoryId,
+      });
+
       if (isMounted.current) {
         setEditText(finalBody);
+        setEditTags(autoTags);
         setBodyHighlight(true);
         setTimeout(() => setBodyHighlight(false), 3000);
         setPipelinePhase("completed");
@@ -815,11 +825,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       await saveGenerationResult(currentGenerationId, {
         generatedText: finalBody,
         generatedTitle: editTitle,
-        generatedTags: [],
+        generatedTags: autoTags,
         imageMarkers: [],
         generationTimeMs: 0,
       });
-      toast.success("Phase 3 SEO 최적화 완료");
+      toast.success("Phase 3 SEO 최적화 완료 · 태그 " + autoTags.length + "개 생성");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Phase 3 실패";
       console.error("[Phase 3] 에러:", err);

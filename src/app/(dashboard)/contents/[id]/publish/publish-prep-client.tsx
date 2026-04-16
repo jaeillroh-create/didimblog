@@ -40,6 +40,129 @@ interface PublishPrepClientProps {
   ctaTemplates: CtaTemplate[];
 }
 
+/**
+ * 하드코딩 CTA 폴백 — cta_templates 테이블이 비어있을 때 사용.
+ * key 는 categoryName 매칭에 사용 / text 는 실제 CTA 본문.
+ */
+const FALLBACK_CTA: Record<string, CtaTemplate> = {
+  "현장수첩_절세": {
+    key: "현장수첩_절세",
+    categoryName: "현장 수첩 · 절세 시뮬레이션",
+    text: `━━━━━━━━━━━━━━━━━━
+"우리 회사도 가능할까?" 궁금하시다면 재무제표를 보내주세요.
+48시간 안에 절세 시뮬레이션을 만들어 드립니다. (무료)
+
+📞 02-571-6613
+📧 admin@didimip.com (메일 제목에 '절세 시뮬레이션'이라고 적어주세요)
+
+특허그룹 디딤 | 기업을 아는 변리사`,
+    note: null,
+    conversionMethod: "이메일",
+    emailSubjectTag: "절세 시뮬레이션",
+  },
+  "현장수첩_인증": {
+    key: "현장수첩_인증",
+    categoryName: "현장 수첩 · 인증 가이드",
+    text: `━━━━━━━━━━━━━━━━━━
+우리 회사가 인증 요건에 해당하는지 5분이면 확인할 수 있습니다.
+
+📞 02-571-6613
+📧 admin@didimip.com (메일 제목에 '인증 진단'이라고 적어주세요)
+
+특허그룹 디딤 | 기업을 아는 변리사`,
+    note: null,
+    conversionMethod: "이메일",
+    emailSubjectTag: "인증 진단",
+  },
+  "현장수첩_연구소": {
+    key: "현장수첩_연구소",
+    categoryName: "현장 수첩 · 연구소 운영",
+    text: `━━━━━━━━━━━━━━━━━━
+연구소 운영 상태 점검, 무료 진단 가능합니다.
+
+📞 02-571-6613
+📧 admin@didimip.com (메일 제목에 '연구소 진단'이라고 적어주세요)
+
+특허그룹 디딤 | 기업을 아는 변리사`,
+    note: null,
+    conversionMethod: "이메일",
+    emailSubjectTag: "연구소 진단",
+  },
+  "IP라운지": {
+    key: "IP라운지",
+    categoryName: "IP 라운지",
+    text: `━━━━━━━━━━━━━━━━━━
+AI·IP 전략이 궁금하신 대표님, 편하게 연락 주세요.
+
+📞 02-571-6613
+📧 admin@didimip.com
+
+특허그룹 디딤 | 기업을 아는 변리사`,
+    note: null,
+    conversionMethod: "이메일",
+    emailSubjectTag: "상담 문의",
+  },
+};
+
+/** CTA 매칭: 콘텐츠의 카테고리로 가장 적합한 CTA 선택 */
+function matchCtaForContent(
+  content: Content,
+  categories: Category[],
+  ctaTemplates: CtaTemplate[]
+): CtaTemplate | null {
+  // 디딤 다이어리: CTA 없음
+  if (
+    content.category_id === "CAT-C" ||
+    content.category_id?.startsWith("CAT-C-")
+  ) {
+    return null;
+  }
+
+  const category = categories.find((c) => c.id === content.category_id);
+  if (!category) return null;
+
+  // cta_templates + fallback 합산 pool
+  const pool: CtaTemplate[] = [
+    ...ctaTemplates,
+    ...Object.values(FALLBACK_CTA),
+  ];
+  // 중복 key 제거 (DB 우선)
+  const deduped = new Map<string, CtaTemplate>();
+  for (const t of pool) deduped.set(t.key, deduped.get(t.key) ?? t);
+  const allTemplates = Array.from(deduped.values());
+
+  // Step 1: secondary_category 기반 매칭
+  if (content.secondary_category) {
+    const secondaryCat = categories.find((c) => c.id === content.secondary_category);
+    if (secondaryCat) {
+      const secName = secondaryCat.name.toLowerCase();
+      const match = allTemplates.find((t) => {
+        const cn = t.categoryName.toLowerCase();
+        // 2차 카테고리 이름의 처음 4자 포함 OR key에 포함
+        return cn.includes(secName.substring(0, 4)) || t.key.includes(secName.substring(0, 3));
+      });
+      if (match) return match;
+    }
+  }
+
+  // Step 2: primary category id 기반 매칭
+  const catId = content.category_id ?? "";
+  if (catId.startsWith("CAT-A")) {
+    // 서브카테고리로 더 세분화
+    const subId = content.secondary_category ?? catId;
+    if (subId === "CAT-A-02") return allTemplates.find((t) => t.key.includes("인증")) ?? null;
+    if (subId === "CAT-A-03") return allTemplates.find((t) => t.key.includes("연구소")) ?? null;
+    // 기본: 절세
+    return allTemplates.find((t) => t.key.includes("절세")) ?? null;
+  }
+  if (catId.startsWith("CAT-B")) {
+    return allTemplates.find((t) => t.key.includes("IP라운지") || t.key.includes("IP 라운지")) ?? null;
+  }
+
+  // Step 3: 범용 폴백 — pool 첫 번째 (CAT-C 는 위에서 이미 null 반환)
+  return allTemplates[0] ?? null;
+}
+
 // 발행 체크리스트 7항목
 const PUBLISH_CHECKLIST = [
   { id: "title", label: "제목 복사 완료" },
@@ -65,49 +188,31 @@ export function PublishPrepClient({
   const effectiveCategoryId =
     content.secondary_category || content.category_id || "";
 
-  // CTA 매칭: 카테고리 기반으로 site_settings CTA 조회
+  // CTA 매칭: 카테고리 기반 + 하드코딩 폴백
+  const autoMatchedCta = useMemo(
+    () => matchCtaForContent(content, categories, ctaTemplates),
+    [content, categories, ctaTemplates]
+  );
+
+  // CTA 수동 선택 오버라이드
+  const [ctaOverrideKey, setCtaOverrideKey] = useState<string | null>(null);
+
+  // 전체 사용 가능한 CTA 목록 (DB + fallback, 중복 제거)
+  const allCtaOptions = useMemo(() => {
+    const map = new Map<string, CtaTemplate>();
+    for (const t of ctaTemplates) map.set(t.key, t);
+    for (const [k, v] of Object.entries(FALLBACK_CTA)) {
+      if (!map.has(k)) map.set(k, v);
+    }
+    return Array.from(map.values());
+  }, [ctaTemplates]);
+
   const matchedCta = useMemo(() => {
-    if (!category) return null;
-
-    // 디딤 다이어리: CTA 없음
-    if (
-      content.category_id === "CAT-C" ||
-      content.category_id?.startsWith("CAT-C-")
-    ) {
-      return null;
+    if (ctaOverrideKey) {
+      return allCtaOptions.find((t) => t.key === ctaOverrideKey) ?? autoMatchedCta;
     }
-
-    // 1차: secondary_category로 매칭 시도
-    if (content.secondary_category) {
-      const secondaryCat = categories.find(
-        (c) => c.id === content.secondary_category
-      );
-      if (secondaryCat) {
-        const match = ctaTemplates.find((t) =>
-          t.categoryName
-            .toLowerCase()
-            .includes(secondaryCat.name.toLowerCase().substring(0, 4))
-        );
-        if (match) return match;
-      }
-    }
-
-    // 2차: primary category로 매칭
-    const primaryMatch = ctaTemplates.find(
-      (t) =>
-        t.categoryName
-          .toLowerCase()
-          .includes(category.name.toLowerCase().substring(0, 4)) ||
-        t.key.startsWith(
-          content.category_id === "CAT-A"
-            ? "현장수첩"
-            : content.category_id === "CAT-B"
-              ? "IP라운지"
-              : ""
-        )
-    );
-    return primaryMatch || null;
-  }, [content, category, categories, ctaTemplates]);
+    return autoMatchedCta;
+  }, [ctaOverrideKey, allCtaOptions, autoMatchedCta]);
 
   // CTA 텍스트 (이메일 강제 치환 적용)
   const ctaText = useMemo(() => {
@@ -316,16 +421,18 @@ export function PublishPrepClient({
                       </span>
                     )}
                   </CardTitle>
-                  {ctaText && (
-                    <CopyButton
-                      text={ctaText}
-                      label="CTA 복사"
-                      toastMessage="CTA가 복사되었습니다"
-                    />
-                  )}
+                  <div className="flex items-center gap-2">
+                    {ctaText && (
+                      <CopyButton
+                        text={ctaText}
+                        label="CTA 복사"
+                        toastMessage="CTA가 복사되었습니다"
+                      />
+                    )}
+                  </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
                 {ctaText ? (
                   <pre className="whitespace-pre-wrap text-sm bg-muted/50 rounded-lg p-4 font-sans">
                     {ctaText}
@@ -339,6 +446,28 @@ export function PublishPrepClient({
                   <p className="text-xs text-orange-600 mt-2">
                     참고: {matchedCta.note}
                   </p>
+                )}
+                {/* CTA 변경 드롭다운 */}
+                {allCtaOptions.length > 1 && (
+                  <div className="pt-2 border-t">
+                    <label className="text-xs text-muted-foreground font-medium block mb-1">
+                      다른 CTA 템플릿 선택
+                    </label>
+                    <select
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      value={ctaOverrideKey ?? matchedCta?.key ?? ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCtaOverrideKey(val || null);
+                      }}
+                    >
+                      {allCtaOptions.map((t) => (
+                        <option key={t.key} value={t.key}>
+                          {t.categoryName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 )}
               </CardContent>
             </Card>
