@@ -56,6 +56,13 @@ import {
   getPromptKey,
   getFieldCta,
 } from "@/lib/constants/prompts";
+import {
+  hasParagraphIds,
+  injectParagraphIds,
+  stripParagraphIds,
+  findParagraphIdForText,
+  getParagraphById,
+} from "@/lib/utils/paragraph-ids";
 import { checkImageGenAvailable, generateAllInfographics, getGeneratedImages } from "@/actions/image-gen";
 import { ImageGenPanel } from "@/components/contents/image-gen-panel";
 import type { GenerationStatus, ImageMarker, Phase1Outline, PipelinePhase } from "@/lib/types/database";
@@ -135,6 +142,35 @@ function fuzzyApplyFix(
   // 1) 정확 매칭
   if (body.includes(originalText)) {
     return { body: body.replace(originalText, replacementText), matched: true, mode: "exact" };
+  }
+
+  // 1.5) paragraph ID 기반 — 문단 내 정확/정규화 매칭
+  if (hasParagraphIds(body)) {
+    const pId = findParagraphIdForText(body, originalText);
+    if (pId !== null) {
+      const pText = getParagraphById(body, pId);
+      if (pText) {
+        // 문단 내에서 정확 매칭
+        if (pText.includes(originalText)) {
+          const newP = pText.replace(originalText, replacementText);
+          return { body: body.replace(pText, newP), matched: true, mode: "exact" };
+        }
+        // 문단 내 정규화 매칭
+        const trimmedO = originalText.trim();
+        if (trimmedO.length >= 5) {
+          const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const fuzzyPat = escapeRe(trimmedO).replace(/\s+/g, "\\s+");
+          try {
+            const re = new RegExp(fuzzyPat);
+            const m = pText.match(re);
+            if (m && m[0]) {
+              const newP = pText.replace(m[0], replacementText);
+              return { body: body.replace(pText, newP), matched: true, mode: "whitespace" };
+            }
+          } catch { /* 다음 단계 */ }
+        }
+      }
+    }
   }
 
   // 2) whitespace 정규화 매칭
@@ -246,7 +282,7 @@ function extractKoreanInfographic(rawTextOrDescription: string): string {
 
 // ── 문단 단위 fuzzy 매칭 (교차검증 [반영 + 다듬기] 전용) ──
 
-type ParagraphMatchMode = "exact" | "normalized" | "sentence" | "first-sentence" | "similarity";
+type ParagraphMatchMode = "exact" | "normalized" | "sentence" | "first-sentence" | "similarity" | "paragraph-id";
 
 interface ParagraphMatchResult {
   body: string;
@@ -309,6 +345,22 @@ function fuzzyApplyParagraph(
       mode: "exact",
       matchedText: originalParagraph,
     };
+  }
+
+  // ── 0.5) paragraph ID 기반 매칭 ──
+  if (hasParagraphIds(body)) {
+    const pId = findParagraphIdForText(body, originalParagraph);
+    if (pId !== null) {
+      const pText = getParagraphById(body, pId);
+      if (pText) {
+        return {
+          body: body.replace(pText, rewrittenParagraph),
+          matched: true,
+          mode: "paragraph-id",
+          matchedText: pText,
+        };
+      }
+    }
   }
 
   const paragraphs = body.split(/\n\n+/);
@@ -741,6 +793,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         // 0 을 반환하므로 안전.
         const seoNow = calculateSeoScore(title, phase2Body, targetKeyword || "").score;
         setSeoScoreBeforePhase3(seoNow);
+        // 교차검증 전에 본문에 문단 ID 주입 — 매칭 정확도를 높이기 위함
+        if (isMounted.current && !hasParagraphIds(editText)) {
+          const withIds = injectParagraphIds(editText);
+          setEditText(withIds);
+        }
         // Phase 2 완료 직후 교차검증 모달 자동 오픈 — 사용자가 검증/반영/Phase 3 흐름을
         // 즉시 진행할 수 있도록 함. 닫기 버튼으로 언제든 닫을 수 있고, Phase 3 는
         // 모달의 "Phase 3 진행" 버튼 또는 헤더의 "🔍 SEO 최적화" 버튼으로 트리거.
@@ -780,12 +837,15 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       const categoryName = await getCategoryName(categoryId);
       const phase3Prompt = PHASE3_PROMPT_BY_KEY[promptKey];
 
+      // Phase 3 에 보내기 전 문단 ID 주석 제거 (LLM 이 깨트릴 수 있음)
+      const cleanBody = stripParagraphIds(editText);
+
       const result = await clientRunPhase3({
         llm: baseLLMRef.current,
         phase3Prompt,
         targetKeyword,
         categoryName,
-        phase2Body: editText,
+        phase2Body: cleanBody,
         onProgress: (text) => {
           if (isMounted.current) setStreamingText(text);
         },
@@ -1023,9 +1083,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
   // 저장 실행
   function doSave() {
     startTransition(async () => {
+      // 저장 시 문단 ID 주석 제거 (네이버 블로그에 불필요)
+      const bodyForSave = stripParagraphIds(editText);
       const result = await saveAiDraftToContent(currentGenerationId, {
         title: editTitle,
-        body: editText,
+        body: bodyForSave,
         tags: editTags,
         keyword: keyword || undefined,
       });
@@ -1694,6 +1756,11 @@ ${koreanInfographics}`;
               onApplyParagraph={applyParagraphToBody}
               onUndoParagraph={undoParagraphInBody}
               onUndoFix={undoFixInBody}
+              onEnsureParagraphIds={() => {
+                if (!hasParagraphIds(editText)) {
+                  setEditText(injectParagraphIds(editText));
+                }
+              }}
               onProceedToPhase3={() => {
                 setCrossValidationDone(true);
                 setShowValidation(false);

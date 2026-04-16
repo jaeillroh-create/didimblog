@@ -60,6 +60,8 @@ interface CrossLLMValidationPanelProps {
   onUndoParagraph?: (originalParagraph: string, rewrittenParagraph: string) => boolean;
   /** "반영됨" 항목 되돌리기 — 본문에서 replacement → original 로 역치환. true 반환 시 성공 */
   onUndoFix?: (originalText: string, replacementText: string) => boolean;
+  /** 매칭 실패 시 본문에 문단 ID 강제 부여 후 재시도할 콜백 */
+  onEnsureParagraphIds?: () => void;
   /** "Phase 3 진행" 버튼 — 모든 항목 처리 후 활성화. 호출 시 Phase 3 SEO 최적화 시작 */
   onProceedToPhase3: () => void;
   onClose?: () => void;
@@ -205,6 +207,7 @@ export function CrossLLMValidationPanel({
   onApplyParagraph,
   onUndoParagraph,
   onUndoFix,
+  onEnsureParagraphIds,
   onProceedToPhase3,
   onClose,
 }: CrossLLMValidationPanelProps) {
@@ -349,16 +352,21 @@ export function CrossLLMValidationPanel({
       toast.error("원문/교체문이 누락된 항목입니다 — 수동 확인 필요");
       return;
     }
-    const ok = onApplyFix(iss.original_text, iss.replacement_text);
+    let ok = onApplyFix(iss.original_text, iss.replacement_text);
+
+    // 매칭 실패 시 문단 ID 자동 부여 후 재시도
+    if (!ok && onEnsureParagraphIds) {
+      onEnsureParagraphIds();
+      ok = onApplyFix(iss.original_text, iss.replacement_text);
+    }
+
     if (!ok) {
-      // fuzzy 4단계 fallback 도 매칭 실패 → 사용자가 직접 처리할 수 있게 클립보드에
-      // original / replacement 를 함께 복사하고 안내. 본문 textarea 에서 Ctrl+F 로
-      // original 검색 → 수동 교체.
+      // 모든 매칭 실패 → 클립보드 폴백
       const recoveryPayload = `[원문 — 본문에서 찾아 선택하세요]\n${iss.original_text}\n\n[교체할 내용]\n${iss.replacement_text}`;
       navigator.clipboard.writeText(recoveryPayload).then(
         () => {
           toast.error(
-            "본문에서 원문을 자동 매칭하지 못했습니다. 원문/교체안이 클립보드에 복사되었습니다 — 본문 편집기에서 Ctrl+F 로 원문을 찾아 직접 수정해주세요.",
+            "본문에서 원문을 자동 매칭하지 못했습니다. 원문/교체안이 클립보드에 복사되었습니다 — Ctrl+F 로 원문을 찾아 직접 수정해주세요.",
             { duration: 6000 }
           );
         },
@@ -419,14 +427,20 @@ export function CrossLLMValidationPanel({
       toast.error("문단 재작성 기능이 활성화되지 않았습니다");
       return false;
     }
-    const ok = onApplyParagraph(originalParagraph, rewrittenParagraph);
+    let ok = onApplyParagraph(originalParagraph, rewrittenParagraph);
+
+    // 매칭 실패 시 문단 ID 자동 부여 후 재시도
+    if (!ok && onEnsureParagraphIds) {
+      onEnsureParagraphIds();
+      ok = onApplyParagraph(originalParagraph, rewrittenParagraph);
+    }
+
     if (!ok) {
-      // 3단계 매칭 모두 실패 → 수동 모드: 재작성된 문단을 클립보드에 복사
       const recoveryPayload = `[다듬어진 문단 — 본문 편집기에 직접 붙여넣으세요]\n\n${rewrittenParagraph}\n\n[원본 문단 — 이 위치를 Ctrl+F 로 찾으세요]\n\n${originalParagraph}`;
       navigator.clipboard.writeText(recoveryPayload).then(
         () => {
           toast.error(
-            "자동 매칭에 실패했습니다. 다듬어진 문단과 원본이 클립보드에 복사되었습니다 — 본문 편집기에서 원본 문단을 Ctrl+F 로 찾아 직접 붙여넣으세요.",
+            "자동 매칭에 실패했습니다. 다듬어진 문단과 원본이 클립보드에 복사되었습니다 — Ctrl+F 로 원본 문단을 찾아 직접 붙여넣으세요.",
             { duration: 8000 }
           );
         },
