@@ -491,6 +491,18 @@ export async function updateContent(
   try {
     const supabase = await createClient();
 
+    // 인증 확인
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return {
+        data: null,
+        error: `저장 실패: 인증 오류 — ${authError?.message ?? "세션 없음"}. 다시 로그인 해주세요.`,
+      };
+    }
+
     const updateData: Record<string, unknown> = {
       ...input,
       updated_at: new Date().toISOString(),
@@ -503,12 +515,24 @@ export async function updateContent(
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("[updateContent] Supabase 에러:", JSON.stringify(error));
+      return { data: null, error: formatSupabaseError(error, "저장 실패") };
+    }
+
+    // RLS 가 UPDATE 를 무시(0 row)하면 .single() 이 PGRST116 에러를 반환하므로
+    // 여기까지 왔으면 실제로 1개 row 가 업데이트된 것이다.
+    if (!data) {
+      return {
+        data: null,
+        error: "저장 실패: 서버에서 업데이트된 데이터를 반환하지 않았습니다. RLS 정책 또는 콘텐츠 ID를 확인하세요.",
+      };
+    }
 
     return { data: data as Content, error: null };
   } catch (err) {
-    console.error("[updateContent] 에러:", err);
-    return { data: null, error: "저장에 실패했습니다." };
+    console.error("[updateContent] 예외:", err);
+    return { data: null, error: formatSupabaseError(err, "저장 실패") };
   }
 }
 

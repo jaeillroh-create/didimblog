@@ -120,7 +120,7 @@ export function ContentDetailClient({
     content.tags?.join(", ") ?? ""
   );
 
-  // 문단 ID 자동 부여 (기존 콘텐츠 호환) — 백그라운드, 1회만
+  // 문단 ID 자동 부여 (기존 콘텐츠 호환) — 백그라운드, 1회만, 로컬만
   const paragraphIdsInjected = useRef(false);
   useEffect(() => {
     if (paragraphIdsInjected.current) return;
@@ -128,8 +128,7 @@ export function ContentDetailClient({
       paragraphIdsInjected.current = true;
       const withIds = injectParagraphIds(body);
       setBody(withIds);
-      // DB 에 자동 저장 (실패해도 무시)
-      updateContent(content.id, { body: withIds }).catch(() => {});
+      // DB 저장은 사용자가 저장 버튼 누를 때 함께 반영됨 — 여기서 별도 저장하지 않음
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -230,26 +229,24 @@ export function ContentDetailClient({
       const { data, error } = await updateContent(content.id, updateData);
 
       if (error) {
-        toast.error("저장에 실패했습니다");
+        toast.error(error, { duration: 8000 });
         console.error("[저장 실패]", error);
         return;
       }
 
-      if (data) {
-        setContent(data);
-      } else {
-        // 폴백: 로컬 상태 업데이트
-        setContent((prev) => ({
-          ...prev,
-          ...updateData,
-          tags: parsedTags.length > 0 ? parsedTags : null,
-          updated_at: new Date().toISOString(),
-        }));
+      if (!data) {
+        toast.error(
+          "저장 실패: 서버에서 데이터를 반환하지 않았습니다. RLS 정책 또는 로그인 상태를 확인하세요.",
+          { duration: 8000 }
+        );
+        return;
       }
 
+      setContent(data);
       toast.success("저장되었습니다");
     } catch (err) {
-      toast.error("저장에 실패했습니다");
+      const msg = err instanceof Error ? err.message : "알 수 없는 오류";
+      toast.error(`저장 실패: ${msg}`, { duration: 8000 });
       console.error("[저장 에러]", err);
     } finally {
       setIsSavingContent(false);
