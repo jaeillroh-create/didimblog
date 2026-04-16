@@ -816,11 +816,16 @@ async function pickWeightedKeyword(
   return null;
 }
 
+export type RecommendationCategoryId = "CAT-A" | "CAT-B" | "CAT-C";
+
 export interface MultiSourceRecommendations {
   cards: Recommendation[];
   /** 현재 표시된 카드의 DB id 목록 — 새로고침 시 exclude 에 사용 */
   pendingIds: string[];
 }
+
+/** 카테고리별 구조화된 추천 결과 */
+export type CategoryRecommendationMap = Record<RecommendationCategoryId, Recommendation[]>;
 
 /**
  * 멀티소스 추천 — 3개 소스에서 각 1개씩 (최대 3개 카드).
@@ -894,13 +899,21 @@ async function persistRecommendation(
   }
 }
 
-async function buildKeywordCard(blacklist: Set<string>): Promise<Recommendation | null> {
-  // CAT-A 우선, 없으면 CAT-B 로 fallback
-  for (const catId of ["CAT-A", "CAT-B"]) {
+async function buildKeywordCard(
+  blacklist: Set<string>,
+  categoryId?: "CAT-A" | "CAT-B" | "CAT-C"
+): Promise<Recommendation | null> {
+  // categoryId 가 명시되면 해당 카테고리만, 아니면 CAT-A 우선 → CAT-B 폴백
+  const tryOrder: string[] = categoryId ? [categoryId] : ["CAT-A", "CAT-B"];
+  for (const catId of tryOrder) {
     const kw = await pickWeightedKeyword(catId, new Set(), blacklist);
     if (!kw) continue;
     const catName =
-      catId === "CAT-A" ? "변리사의 현장 수첩" : "IP 라운지";
+      catId === "CAT-A"
+        ? "변리사의 현장 수첩"
+        : catId === "CAT-B"
+          ? "IP 라운지"
+          : "디딤 다이어리";
     const rec: Recommendation = {
       priority: "PRIMARY",
       category: catName,
@@ -974,29 +987,45 @@ async function buildNewsCard(
   return null;
 }
 
-async function buildScheduleCard(blacklist: Set<string>): Promise<Recommendation | null> {
+/** 스케줄 아이템의 category 문자열 → CAT-A/B/C 매핑 */
+function scheduleCategoryToId(category: string): "CAT-A" | "CAT-B" | "CAT-C" {
+  if (category === "변리사의 현장 수첩" || category === "현장 수첩") return "CAT-A";
+  if (category === "IP 라운지") return "CAT-B";
+  return "CAT-C";
+}
+
+async function buildScheduleCard(
+  blacklist: Set<string>,
+  categoryId?: "CAT-A" | "CAT-B" | "CAT-C",
+  excludeTitles: Set<string> = new Set()
+): Promise<Recommendation | null> {
   const currentWeek = getCurrentWeek();
-  // 이번 주 기준 ±1 주의 스케줄 아이템 중 블랙리스트 아닌 것
-  const candidates = SCHEDULE_DATA.filter(
+  // 이번 주 기준 ±1 주의 스케줄 아이템 → 없으면 전체에서 폴백
+  let candidates = SCHEDULE_DATA.filter(
     (it) => it.week >= currentWeek && it.week <= currentWeek + 1
   );
-  const list = candidates.length > 0 ? candidates : [SCHEDULE_DATA[0]];
-  for (const item of list) {
+  if (categoryId) {
+    candidates = candidates.filter((it) => scheduleCategoryToId(it.category) === categoryId);
+  }
+  if (candidates.length === 0) {
+    // 해당 카테고리의 전체 스케줄 중 임의 선택 (블랙리스트/제외 통과하는 것)
+    const pool = categoryId
+      ? SCHEDULE_DATA.filter((it) => scheduleCategoryToId(it.category) === categoryId)
+      : SCHEDULE_DATA;
+    if (pool.length === 0) return null;
+    candidates = [pool[Math.floor(Math.random() * pool.length)]];
+  }
+
+  for (const item of candidates) {
+    if (excludeTitles.has(item.title)) continue;
     if (isBlacklisted(item.title, blacklist)) continue;
     if (item.keywords.some((k) => isBlacklisted(k, blacklist))) continue;
 
-    // 카테고리명 → categoryId 매핑
-    const categoryId =
-      item.category === "변리사의 현장 수첩" || item.category === "현장 수첩"
-        ? "CAT-A"
-        : item.category === "IP 라운지"
-          ? "CAT-B"
-          : "CAT-C";
-
+    const catId = scheduleCategoryToId(item.category);
     const rec: Recommendation = {
       priority: "PRIMARY",
       category: item.category,
-      categoryId,
+      categoryId: catId,
       subCategory: item.subCategory,
       title: item.title,
       reason: `12주 발행 스케줄 W${item.week} — ${item.subCategory}`,
@@ -1054,6 +1083,105 @@ export interface RejectRecommendationInput {
  * status='rejected' + acted_at + rejection_reason + 자동 추출한 rejection_keywords 저장.
  * 재추천 필터에서 이 키워드를 블랙리스트/필터링에 사용.
  */
+// ─────────────────────────────────────────────────────────────
+// 카테고리별 추천 — 탭 구조 위젯에서 사용
+// ─────────────────────────────────────────────────────────────
+
+/** 카테고리별 카드 최대 개수 */
+const CARDS_PER_CATEGORY: Record<RecommendationCategoryId, number> = {
+  "CAT-A": 2, // 현장 수첩: 월 2편 목표 → 2개
+  "CAT-B": 2, // IP 라운지: 월 1편 목표 → 2개까지 후보 제시
+  "CAT-C": 1, // 디딤 다이어리: 월 1편 목표 → 1개
+};
+
+/**
+ * 특정 카테고리의 추천 카드 생성.
+ *
+ * 카테고리별 소스 우선순위:
+ *   - CAT-A (현장 수첩): 키워드 풀 → 12주 스케줄
+ *   - CAT-B (IP 라운지): 뉴스 API → 키워드 풀 → 12주 스케줄
+ *   - CAT-C (디딤 다이어리): 12주 스케줄
+ *
+ * @param categoryId 대상 카테고리
+ * @param excludeRecIds 이미 표시 중/처리된 content_recommendations.id (새로고침용)
+ */
+export async function getCategoryRecommendations(
+  categoryId: RecommendationCategoryId,
+  excludeRecIds: string[] = []
+): Promise<Recommendation[]> {
+  const cards: Recommendation[] = [];
+  const { rejectedKeywords, blacklist } = await getRejectedKeywordStats();
+  const excludeSet = new Set(excludeRecIds);
+  const maxCards = CARDS_PER_CATEGORY[categoryId];
+
+  /** 중복 제목/id 방지 helper */
+  const usedTitles = new Set<string>();
+  const addIfNew = (rec: Recommendation | null): boolean => {
+    if (!rec) return false;
+    if (rec.recId && excludeSet.has(rec.recId)) return false;
+    if (usedTitles.has(rec.title)) return false;
+    cards.push(rec);
+    usedTitles.add(rec.title);
+    return true;
+  };
+
+  if (categoryId === "CAT-A") {
+    // 현장 수첩: 키워드 풀 → 스케줄
+    if (cards.length < maxCards) {
+      const kw = await buildKeywordCard(blacklist, "CAT-A");
+      addIfNew(kw);
+    }
+    if (cards.length < maxCards) {
+      const sched = await buildScheduleCard(blacklist, "CAT-A", usedTitles);
+      addIfNew(sched);
+    }
+    // 2개가 모두 키워드 풀에서 나올 수 있도록 한 번 더 시도
+    if (cards.length < maxCards) {
+      const kw2 = await buildKeywordCard(blacklist, "CAT-A");
+      addIfNew(kw2);
+    }
+  } else if (categoryId === "CAT-B") {
+    // IP 라운지: 뉴스 → 키워드 풀 → 스케줄
+    if (cards.length < maxCards) {
+      const news = await buildNewsCard(blacklist, rejectedKeywords);
+      // 뉴스는 기본적으로 CAT-B 로 세팅되어 있음
+      if (news && news.categoryId === "CAT-B") addIfNew(news);
+    }
+    if (cards.length < maxCards) {
+      const kw = await buildKeywordCard(blacklist, "CAT-B");
+      addIfNew(kw);
+    }
+    if (cards.length < maxCards) {
+      const sched = await buildScheduleCard(blacklist, "CAT-B", usedTitles);
+      addIfNew(sched);
+    }
+  } else if (categoryId === "CAT-C") {
+    // 디딤 다이어리: 스케줄 전용
+    if (cards.length < maxCards) {
+      const sched = await buildScheduleCard(blacklist, "CAT-C", usedTitles);
+      addIfNew(sched);
+    }
+  }
+
+  return cards;
+}
+
+/**
+ * 3개 카테고리의 추천을 병렬 생성해 map 으로 반환. 초기 페이지 로드용.
+ */
+export async function getAllCategoryRecommendations(): Promise<CategoryRecommendationMap> {
+  const [a, b, c] = await Promise.all([
+    getCategoryRecommendations("CAT-A"),
+    getCategoryRecommendations("CAT-B"),
+    getCategoryRecommendations("CAT-C"),
+  ]);
+  return {
+    "CAT-A": a,
+    "CAT-B": b,
+    "CAT-C": c,
+  };
+}
+
 export async function rejectRecommendation(
   input: RejectRecommendationInput
 ): Promise<AcceptRecommendationResult> {

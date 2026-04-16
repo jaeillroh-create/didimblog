@@ -6,8 +6,8 @@ import { MonthlySummaryCard } from "@/components/dashboard/monthly-summary";
 import { UpdateNeeded } from "@/components/dashboard/update-needed";
 import { TopPosts } from "@/components/dashboard/top-posts";
 import { NewsFeed } from "@/components/dashboard/news-feed";
-import type { Recommendation } from "@/lib/recommendation-engine";
 import type {
+  CategoryRecommendationMap,
   MonthlyPublishProgress,
   MonthlySummary,
   UpdateNeededPost,
@@ -16,7 +16,7 @@ import type {
 import type { Category, LLMConfig, NewsItem } from "@/lib/types/database";
 
 interface DashboardWidgetsProps {
-  recommendations: Recommendation[];
+  recommendationsByCategory: CategoryRecommendationMap;
   publishProgress: MonthlyPublishProgress[];
   monthlySummary: MonthlySummary;
   updateNeeded: UpdateNeededPost[];
@@ -27,7 +27,7 @@ interface DashboardWidgetsProps {
 }
 
 export function DashboardWidgets({
-  recommendations,
+  recommendationsByCategory,
   publishProgress,
   monthlySummary,
   updateNeeded,
@@ -41,7 +41,8 @@ export function DashboardWidgets({
       {/* 상단 2열: 이번 주 추천 | 월간 발행 현황 */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <WeeklyRecommendation
-          recommendations={recommendations}
+          recommendationsByCategory={recommendationsByCategory}
+          publishProgress={publishProgress}
           categories={categories}
           llmConfigs={llmConfigs}
         />
