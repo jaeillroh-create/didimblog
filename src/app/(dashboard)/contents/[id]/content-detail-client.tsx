@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { InternalLinksPanel } from "@/components/contents/internal-links-panel";
 import { StatusTransitionPanel } from "@/components/contents/status-transition-panel";
 import { ReviewPanel } from "@/components/contents/review-panel";
 import { calculateSeoScore } from "@/lib/seo-calculator";
+import { hasParagraphIds, injectParagraphIds } from "@/lib/utils/paragraph-ids";
 import {
   updateContent,
   deleteContent,
@@ -118,6 +119,19 @@ export function ContentDetailClient({
   const [tagsInput, setTagsInput] = useState(
     content.tags?.join(", ") ?? ""
   );
+
+  // 문단 ID 자동 부여 (기존 콘텐츠 호환) — 백그라운드, 1회만
+  const paragraphIdsInjected = useRef(false);
+  useEffect(() => {
+    if (paragraphIdsInjected.current) return;
+    if (body && body.length > 100 && !hasParagraphIds(body)) {
+      paragraphIdsInjected.current = true;
+      const withIds = injectParagraphIds(body);
+      setBody(withIds);
+      // DB 에 자동 저장 (실패해도 무시)
+      updateContent(content.id, { body: withIds }).catch(() => {});
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 삭제 다이얼로그
   const [deleteOpen, setDeleteOpen] = useState(false);
