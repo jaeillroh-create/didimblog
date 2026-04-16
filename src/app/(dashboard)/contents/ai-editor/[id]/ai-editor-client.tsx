@@ -42,6 +42,7 @@ import {
   clientRunPhase3,
   appendCtaAndSignature,
   generateAutoTags,
+  determineDisclaimerLevel,
   type ClientLLMProvider,
 } from "@/lib/client-generate";
 import {
@@ -794,7 +795,12 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         throw new Error(result.error || "Phase 3 실패");
       }
 
-      // CTA / 서명 / 태그 한 줄 append (다이어리는 자동으로 건너뜀)
+      // Disclaimer 자동 매칭 + CTA / 서명 / 태그 한 줄 append
+      const disclaimer = determineDisclaimerLevel({
+        categoryId,
+        body: result.body,
+        isAiGenerated: true,
+      });
       const cta = promptKey === "PROMPT_FIELD" ? getFieldCta(categoryId) : { cta: "", emailSubject: "" };
       const finalBody = appendCtaAndSignature({
         body: result.body,
@@ -802,6 +808,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         ctaText: cta.cta || FIELD_CTA["CAT-A-01"]?.cta,
         emailSubject: cta.emailSubject || FIELD_CTA["CAT-A-01"]?.emailSubject,
         targetKeyword,
+        disclaimerText: disclaimer.text,
       });
 
       // 태그 자동 생성 (코드 기반, LLM 호출 없음)

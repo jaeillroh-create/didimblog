@@ -19,6 +19,12 @@ import {
   generateImageGuide,
 } from "@/lib/utils/publish-helpers";
 import { updateContentStatus } from "@/actions/contents";
+import {
+  determineDisclaimerLevel,
+  getDisclaimerText,
+  DISCLAIMER_LEVEL_LABELS,
+  type DisclaimerLevel,
+} from "@/lib/client-generate";
 import { CONTENT_STATES } from "@/lib/constants/content-states";
 import type { Content, Category, ContentStatus } from "@/lib/types/database";
 import type { CtaTemplate } from "@/actions/settings";
@@ -187,6 +193,23 @@ export function PublishPrepClient({
   const category = categories.find((c) => c.id === content.category_id);
   const effectiveCategoryId =
     content.secondary_category || content.category_id || "";
+
+  // Disclaimer 자동 매칭
+  const autoDisclaimer = useMemo(
+    () =>
+      determineDisclaimerLevel({
+        categoryId: effectiveCategoryId,
+        body: content.body ?? "",
+        isAiGenerated: content.is_ai_generated,
+      }),
+    [effectiveCategoryId, content.body, content.is_ai_generated]
+  );
+  const [disclaimerOverride, setDisclaimerOverride] = useState<DisclaimerLevel | null>(null);
+  const activeDisclaimerLevel = disclaimerOverride ?? autoDisclaimer.level;
+  const activeDisclaimerText = useMemo(
+    () => getDisclaimerText(activeDisclaimerLevel, content.is_ai_generated),
+    [activeDisclaimerLevel, content.is_ai_generated]
+  );
 
   // CTA 매칭: 카테고리 기반 + 하드코딩 폴백
   const autoMatchedCta = useMemo(
@@ -406,6 +429,61 @@ export function PublishPrepClient({
               )}
             </CardContent>
           </Card>
+
+          {/* 면책조항(Disclaimer) 섹션 */}
+          {activeDisclaimerLevel !== "none" && activeDisclaimerText && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <BookOpen className="h-4 w-4" />
+                    면책조항
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                        activeDisclaimerLevel === "A"
+                          ? "bg-red-100 text-red-700"
+                          : activeDisclaimerLevel === "B"
+                            ? "bg-orange-100 text-orange-700"
+                            : "bg-blue-100 text-blue-700"
+                      }`}
+                    >
+                      Level {activeDisclaimerLevel}
+                    </span>
+                  </CardTitle>
+                  <CopyButton
+                    text={activeDisclaimerText}
+                    label="면책조항 복사"
+                    toastMessage="면책조항이 복사되었습니다"
+                  />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <pre className="whitespace-pre-wrap text-xs leading-relaxed bg-muted/50 rounded-lg p-3 font-sans text-muted-foreground">
+                  {activeDisclaimerText}
+                </pre>
+                <div className="pt-2 border-t">
+                  <label className="text-xs text-muted-foreground font-medium block mb-1">
+                    면책조항 레벨 변경
+                  </label>
+                  <select
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    value={activeDisclaimerLevel}
+                    onChange={(e) => {
+                      const val = e.target.value as DisclaimerLevel;
+                      setDisclaimerOverride(val === autoDisclaimer.level ? null : val);
+                    }}
+                  >
+                    {(["A", "B", "C", "none"] as DisclaimerLevel[]).map((lv) => (
+                      <option key={lv} value={lv}>
+                        Level {lv} — {DISCLAIMER_LEVEL_LABELS[lv]}
+                        {lv === autoDisclaimer.level ? " (자동 선택)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* CTA 섹션 (디딤 다이어리 제외) */}
           {!isDiary && (

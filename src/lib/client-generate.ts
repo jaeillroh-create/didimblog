@@ -1227,6 +1227,7 @@ export function appendCtaAndSignature(params: {
   ctaText?: string;
   emailSubject?: string;
   targetKeyword?: string;
+  disclaimerText?: string;
 }): string {
   if (params.promptKey === "PROMPT_DIARY") {
     // 다이어리도 (확인 필요) 표기 안전망은 적용 (CTA / 태그는 건너뜀)
@@ -1278,12 +1279,19 @@ export function appendCtaAndSignature(params: {
 
   const tagLine = merged.map((t) => `#${t}`).join(" ");
 
+  // Disclaimer 자동 삽입 (before_cta 위치)
+  const disclaimerText = params.disclaimerText?.trim() || "";
+
   const cta = params.ctaText?.trim() ||
     "관련해서 궁금하신 점이 있다면 admin@didimip.com 으로 편하게 연락주세요.";
   const subject = params.emailSubject?.trim() || "상담 문의";
 
-  const block = `
+  const disclaimerBlock = disclaimerText
+    ? `\n\n${disclaimerText}\n`
+    : "";
 
+  const block = `
+${disclaimerBlock}
 ━━━━━━━━━━━━━━━━━━
 ${cta}
 
@@ -1294,6 +1302,122 @@ ${cta}
 ${tagLine}`;
 
   return bodyWithoutTagsBlock.trimEnd() + block;
+}
+
+// ── Disclaimer 자동 매칭 (하드코딩 4단계) ──
+
+export type DisclaimerLevel = "A" | "B" | "C" | "none";
+
+const AI_NOTICE = "* 본 글은 AI 도구의 도움을 받아 작성되었으며, 변리사가 검수하였습니다.";
+
+const DISCLAIMER_TEMPLATES: Record<DisclaimerLevel, string> = {
+  A: `${AI_NOTICE}
+
+※ 본 글에 제시된 사례와 수치는 특정 조건의 개별 기업 상황을 기반으로 하며, 모든 기업에 동일하게 적용되지 않습니다. 직무발명보상 제도의 세제 혜택은 기업의 매출, 비용 구조, 연구개발 실태, 직무발명 규정의 정비 수준 등에 따라 달라집니다.
+
+실제 세무 신고는 귀사의 세무사와 협의하여 진행하시기 바라며, 본 글은 제도 이해를 위한 일반적인 정보 제공 목적입니다. 구체적인 절세 설계는 개별 상담을 통해 확인 가능합니다.`,
+
+  B: `${AI_NOTICE}
+
+※ 본 내용은 작성 시점의 법령 및 제도를 기준으로 합니다. 법령 개정이나 제도 운영 변경에 따라 내용이 달라질 수 있으며, 개별 기업의 상황에 따라 적용 결과가 다를 수 있습니다. 실제 적용 전 전문가 상담을 권장합니다.`,
+
+  C: `${AI_NOTICE}
+
+※ 본 글은 공개 보도자료 및 공식 통계를 참고하여 작성되었으며, 개별 해석과 전망은 필자의 견해입니다.`,
+
+  none: "",
+};
+
+/** Level A 트리거 키워드 — 구체 절세 수치/금액 포함 글 */
+const LEVEL_A_KEYWORDS = [
+  "절세", "세액공제", "법인세", "직무발명보상금", "보상금", "절감", "환급",
+  "만원", "억원", "천만원", "백만원",
+];
+
+/** Level B 트리거 키워드 — 법률/제도 해설 글 */
+const LEVEL_B_KEYWORDS = [
+  "인증", "벤처", "연구소", "특허법", "법률", "제도", "규정", "시행령",
+  "조항", "조세특례", "소득세법", "법인세법",
+];
+
+/**
+ * 콘텐츠의 카테고리 + 본문 키워드를 분석해 적절한 disclaimer 레벨을 결정.
+ *
+ * 우선순위: A > B > C > none
+ *   - CAT-C (다이어리) → none
+ *   - CAT-A + Level A 키워드 매칭 → A
+ *   - CAT-A(인증/연구소) 또는 CAT-B → B
+ *   - CAT-B-03 (뉴스) → C
+ *   - 그 외 fallback → B
+ */
+export function determineDisclaimerLevel(params: {
+  categoryId: string;
+  body: string;
+  isAiGenerated?: boolean;
+}): { level: DisclaimerLevel; text: string } {
+  const { categoryId, body, isAiGenerated = true } = params;
+
+  // 디딤 다이어리 → none
+  if (categoryId.startsWith("CAT-C")) {
+    return { level: "none", text: "" };
+  }
+
+  // AI 생성이 아닌 경우에도 법적 면책은 필요하지만 AI 고지 문구 제거
+  const bodyLower = body.toLowerCase();
+
+  // Level A 체크: CAT-A + 절세/금액 키워드
+  if (categoryId.startsWith("CAT-A")) {
+    const hasLevelAKeyword = LEVEL_A_KEYWORDS.some((kw) => bodyLower.includes(kw));
+    // 금액 패턴 (1억, 5천만원 등)
+    const hasAmountPattern = /\d+[만백천]?\s*[억만원]/.test(body);
+    if (hasLevelAKeyword || hasAmountPattern) {
+      const text = isAiGenerated
+        ? DISCLAIMER_TEMPLATES.A
+        : DISCLAIMER_TEMPLATES.A.replace(AI_NOTICE + "\n\n", "");
+      return { level: "A", text };
+    }
+  }
+
+  // Level C 체크: CAT-B-03 (IP 뉴스 한 입)
+  if (categoryId === "CAT-B-03") {
+    const text = isAiGenerated
+      ? DISCLAIMER_TEMPLATES.C
+      : DISCLAIMER_TEMPLATES.C.replace(AI_NOTICE + "\n\n", "");
+    return { level: "C", text };
+  }
+
+  // Level B 체크: CAT-A(비절세) 또는 CAT-B
+  if (categoryId.startsWith("CAT-A") || categoryId.startsWith("CAT-B")) {
+    const text = isAiGenerated
+      ? DISCLAIMER_TEMPLATES.B
+      : DISCLAIMER_TEMPLATES.B.replace(AI_NOTICE + "\n\n", "");
+    return { level: "B", text };
+  }
+
+  // 기타 → B (안전 기본값)
+  const text = isAiGenerated
+    ? DISCLAIMER_TEMPLATES.B
+    : DISCLAIMER_TEMPLATES.B.replace(AI_NOTICE + "\n\n", "");
+  return { level: "B", text };
+}
+
+/** 레벨별 라벨 (UI 표시용) */
+export const DISCLAIMER_LEVEL_LABELS: Record<DisclaimerLevel, string> = {
+  A: "강한 면책 (절세 사례)",
+  B: "기본 면책 (법률 해설)",
+  C: "약한 면책 (뉴스 분석)",
+  none: "면책 없음 (다이어리)",
+};
+
+/** 특정 레벨의 면책 텍스트 반환 */
+export function getDisclaimerText(
+  level: DisclaimerLevel,
+  isAiGenerated = true
+): string {
+  const template = DISCLAIMER_TEMPLATES[level];
+  if (!template) return "";
+  if (!isAiGenerated) return template.replace(AI_NOTICE + "\n\n", "");
+  return template;
 }
 
 /**
