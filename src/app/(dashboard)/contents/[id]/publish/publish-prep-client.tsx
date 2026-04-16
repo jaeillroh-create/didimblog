@@ -320,7 +320,7 @@ export function PublishPrepClient({
       const newStatus: ContentStatus = "S4";
       const { error } = await updateContentStatus(content.id, newStatus);
       if (error) {
-        toast.error("상태 변경에 실패했습니다");
+        toast.error(error, { duration: 8000 });
         return;
       }
       toast.success(
@@ -357,6 +357,17 @@ export function PublishPrepClient({
           <StatusBadge status={content.status} />
         </div>
       </PageHeader>
+
+      {/* S1/S2 미리보기 배너 */}
+      {!["S3", "S4", "S5"].includes(content.status) && (
+        <div className="rounded-md border border-orange-200 bg-orange-50 px-4 py-3 flex items-center gap-2 text-sm text-orange-700">
+          <span>⚠️</span>
+          <span>
+            <strong>미리보기 모드</strong> — 현재 상태가 {CONTENT_STATES[content.status]?.label ?? content.status}이므로
+            본문/CTA/태그 확인 및 복사만 가능합니다. 발행 완료 처리는 S3(발행예정) 이상에서 활성화됩니다.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 왼쪽 메인 (2/3) */}

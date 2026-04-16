@@ -488,7 +488,7 @@ export async function saveGenerationResult(
 
     const estimatedTokens = Math.ceil(data.generatedText.length / 4);
 
-    await supabase
+    const { error: genError } = await supabase
       .from("ai_generations")
       .update({
         status: "completed",
@@ -501,20 +501,29 @@ export async function saveGenerationResult(
       })
       .eq("id", generationId);
 
-    // 토큰 사용량 업데이트 (활성 기본 LLM)
+    if (genError) {
+      console.error("[saveGenerationResult] ai_generations 업데이트 실패:", JSON.stringify(genError));
+      return { success: false, error: `결과 저장 실패: (${genError.code}) ${genError.message}` };
+    }
+
+    // 토큰 사용량 업데이트 (활성 기본 LLM — 실패해도 결과 저장 자체는 성공)
     const llmConfig = await getActiveLLMConfig(supabase);
     if (llmConfig) {
-      await supabase
+      const { error: tokenError } = await supabase
         .from("llm_configs")
         .update({
           monthly_tokens_used: llmConfig.monthly_tokens_used + estimatedTokens,
         })
         .eq("id", llmConfig.id);
+      if (tokenError) {
+        console.warn("[saveGenerationResult] 토큰 사용량 업데이트 실패:", tokenError.message);
+      }
     }
 
     return { success: true };
-  } catch {
-    return { success: false, error: "결과 저장 실패" };
+  } catch (err) {
+    console.error("[saveGenerationResult] 예외:", err);
+    return { success: false, error: err instanceof Error ? `결과 저장 실패: ${err.message}` : "결과 저장 실패" };
   }
 }
 
@@ -709,7 +718,7 @@ export async function saveAiDraftToContent(
       contentId = newContent.id;
 
       // body, tags, status 업데이트 (createContent는 S0으로 생성하므로)
-      await supabase
+      const { error: updateError } = await supabase
         .from("contents")
         .update({
           body,
@@ -721,15 +730,26 @@ export async function saveAiDraftToContent(
         })
         .eq("id", contentId);
 
+      if (updateError) {
+        console.error("[saveAiDraftToContent] 콘텐츠 업데이트 실패:", JSON.stringify(updateError));
+        return { success: false, error: `콘텐츠 업데이트 실패: (${updateError.code}) ${updateError.message}` };
+      }
+
       // generation에 content_id 연결
-      await supabase
+      const { error: linkError } = await supabase
         .from("ai_generations")
         .update({ content_id: contentId })
         .eq("id", generationId);
+
+      if (linkError) {
+        console.warn("[saveAiDraftToContent] generation 연결 실패:", linkError.message);
+        // 콘텐츠 자체는 저장되었으므로 경고만
+      }
     }
 
     return { success: true, contentId };
   } catch (err) {
+    console.error("[saveAiDraftToContent] 예외:", err);
     const msg = err instanceof Error ? err.message : "저장 실패";
     return { success: false, error: msg };
   }
