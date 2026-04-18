@@ -133,6 +133,10 @@ function findParagraphContaining(
   originalText: string
 ): { paragraph: string } | null {
   if (!originalText) return null;
+  // LLM 이 <!-- p:N --> 주석을 섞어 보내는 경우 제거 (가짜 ID 포함)
+  const PARA_ID_RE = /<!--\s*p:\d+\s*-->\n?/g;
+  originalText = originalText.replace(PARA_ID_RE, "").trim();
+  if (!originalText) return null;
   const paragraphs = body.split(/\n\n+/);
 
   // 1) 정확 매칭
