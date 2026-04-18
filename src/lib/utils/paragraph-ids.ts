@@ -98,7 +98,9 @@ export function findParagraphIdForText(body: string, text: string): number | nul
   const map = extractParagraphMap(body);
   if (map.size === 0) return null;
 
-  const trimmedText = text.trim();
+  // LLM 이 응답에 <!-- p:N --> 주석을 포함시키는 경우 (종종 가짜 ID) 제거
+  const cleanedText = text.replace(/<!--\s*p:\d+\s*-->\n?/g, "").trim();
+  const trimmedText = cleanedText;
   if (!trimmedText) return null;
 
   // 1) 정확 포함

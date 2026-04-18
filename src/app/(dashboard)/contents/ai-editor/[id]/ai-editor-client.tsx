@@ -139,6 +139,13 @@ function fuzzyApplyFix(
 ): FuzzyApplyResult {
   if (!originalText) return { body, matched: false };
 
+  // ⚠️ LLM 이 <!-- p:N --> 주석을 포함해서 original_text 를 보내거나, 존재하지 않는
+  // 가짜 ID (예: p:55) 를 섞어 보내는 경우가 많다. 매칭 전에 모두 제거.
+  const PARA_ID_RE = /<!--\s*p:\d+\s*-->\n?/g;
+  originalText = originalText.replace(PARA_ID_RE, "").trim();
+  replacementText = replacementText.replace(PARA_ID_RE, "");
+  if (!originalText) return { body, matched: false };
+
   // 1) 정확 매칭
   if (body.includes(originalText)) {
     return { body: body.replace(originalText, replacementText), matched: true, mode: "exact" };
@@ -335,6 +342,12 @@ function fuzzyApplyParagraph(
   originalParagraph: string,
   rewrittenParagraph: string
 ): ParagraphMatchResult {
+  if (!originalParagraph) return { body, matched: false };
+
+  // ⚠️ LLM 이 <!-- p:N --> 주석을 섞어 보내는 경우 (존재하지 않는 ID 포함) 대비
+  const PARA_ID_RE = /<!--\s*p:\d+\s*-->\n?/g;
+  originalParagraph = originalParagraph.replace(PARA_ID_RE, "").trim();
+  rewrittenParagraph = rewrittenParagraph.replace(PARA_ID_RE, "").trim();
   if (!originalParagraph) return { body, matched: false };
 
   // ── 0) 정확 매칭 ──
