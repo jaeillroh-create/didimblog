@@ -818,6 +818,141 @@ function findOverlap(a: string, b: string): number {
   return 0;
 }
 
+// ── Phase 2.5 인포그래픽 설계 결과 타입 ──
+
+export interface InfographicDesign {
+  position: string;
+  type: string;
+  type_name: string;
+  selection_reason: string;
+  korean_prompt: string;
+  english_prompt: string;
+  emotion: string;
+  data_source: string[];
+}
+
+export interface Phase25Result {
+  success: boolean;
+  infographics?: InfographicDesign[];
+  error?: string;
+}
+
+/**
+ * Phase 2.5 — 인포그래픽 설계 (본문 완성 후 별도 LLM 호출).
+ * 완성된 본문 전체를 분석해서 데이터 기반 인포그래픽을 설계.
+ */
+export async function clientRunPhase25(params: {
+  llm: ClientPhaseLLMConfig;
+  phase25Prompt: string;
+  phase2Body: string;
+  categoryName: string;
+  targetKeyword: string;
+  onProgress?: (text: string) => void;
+}): Promise<Phase25Result> {
+  const userMessage = replaceTemplate(params.phase25Prompt, {
+    phase2_output: params.phase2Body,
+    category_name: params.categoryName,
+    target_keyword: params.targetKeyword,
+  });
+
+  let body = "";
+  try {
+    body = await streamLLM({
+      ...params.llm,
+      messages: [{ role: "user", content: userMessage }],
+      maxTokens: 3000,
+      temperature: 0.5,
+      onProgress: (text) => {
+        params.onProgress?.(text);
+      },
+    });
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Phase 2.5 스트리밍 실패" };
+  }
+
+  // JSON 파싱
+  const jsonMatch = body.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    return { success: false, error: "Phase 2.5 JSON 파싱 실패" };
+  }
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    const infographics = parsed.infographics as InfographicDesign[] | undefined;
+    if (!infographics || !Array.isArray(infographics) || infographics.length === 0) {
+      return { success: false, error: "인포그래픽 설계 결과가 비어있습니다" };
+    }
+
+    // 다양성 검증
+    const diversity = parsed.diversity_check;
+    if (diversity && (!diversity.all_different || diversity.bf_conflict)) {
+      console.warn("[Phase 2.5] 다양성 검증 실패:", diversity);
+    }
+
+    return { success: true, infographics };
+  } catch (err) {
+    return { success: false, error: `Phase 2.5 JSON 파싱 오류: ${err instanceof Error ? err.message : "unknown"}` };
+  }
+}
+
+/**
+ * Phase 2.5 결과를 본문에 마커로 삽입.
+ * position 이 "p:N 뒤" 형태면 해당 문단 뒤에, 아니면 소제목 기준으로 삽입.
+ */
+export function insertInfographicMarkers(
+  body: string,
+  infographics: InfographicDesign[]
+): string {
+  let result = body;
+
+  // 삽입 위치를 뒤에서부터 처리 (앞에서 하면 인덱스 밀림)
+  const sorted = [...infographics].reverse();
+
+  for (const info of sorted) {
+    const marker = `\n\n━━ 📷 이미지 ━━\n[IMAGE: ${info.korean_prompt} | ${info.type}(${info.type_name})]\n\n(1) 한국어: ${info.korean_prompt}\n(2) English: ${info.english_prompt}\n━━━━━━━━━━━━━━\n`;
+
+    // p:N 형태의 위치 지정
+    const pMatch = info.position.match(/p:(\d+)/);
+    if (pMatch) {
+      const pId = parseInt(pMatch[1], 10);
+      // <!-- p:N --> 다음 문단의 끝 위치를 찾아 마커 삽입
+      const pRe = new RegExp(`(<!-- p:${pId} -->[\\s\\S]*?)(\n\n<!-- p:|$)`);
+      const m = result.match(pRe);
+      if (m && m.index !== undefined) {
+        const insertPos = m.index + m[1].length;
+        result = result.slice(0, insertPos) + marker + result.slice(insertPos);
+        continue;
+      }
+    }
+
+    // ## 소제목 기반 삽입
+    const headingMatch = info.position.match(/##\s*(.+)/);
+    if (headingMatch) {
+      const heading = headingMatch[1].trim();
+      const hIdx = result.indexOf(heading);
+      if (hIdx !== -1) {
+        // 해당 소제목 다음 빈 줄 뒤에 삽입
+        const nextPara = result.indexOf("\n\n", hIdx);
+        if (nextPara !== -1) {
+          const insertPos = nextPara;
+          result = result.slice(0, insertPos) + marker + result.slice(insertPos);
+          continue;
+        }
+      }
+    }
+
+    // 폴백: 본문 중간에 삽입 (60% 위치)
+    const fallbackPos = Math.floor(result.length * 0.6);
+    const nearestBreak = result.indexOf("\n\n", fallbackPos);
+    if (nearestBreak !== -1) {
+      result = result.slice(0, nearestBreak) + marker + result.slice(nearestBreak);
+    } else {
+      result += marker;
+    }
+  }
+
+  return result;
+}
+
 /**
  * Phase 3 — SEO 정량 체크 + 마무리 (스트리밍).
  * PHASE3_PROMPT 또는 PHASE3_PROMPT_DIARY 의 placeholder 채워서 user 메시지로 보냄.
