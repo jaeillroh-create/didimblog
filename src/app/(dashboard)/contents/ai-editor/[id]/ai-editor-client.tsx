@@ -157,12 +157,20 @@ function fuzzyApplyFix(
     const pId = findParagraphIdForText(body, originalText);
     if (pId !== null) {
       const pText = getParagraphById(body, pId);
-      if (pText) {
-        // 문단 내에서 정확 매칭
-        if (pText.includes(originalText)) {
-          const newP = pText.replace(originalText, replacementText);
-          return { body: body.replace(pText, newP), matched: true, mode: "exact" };
+      if (pText && pText.includes(originalText)) {
+        // 문단 내에서 원문을 교체한 뒤, 교체된 문단으로 본문 내 문단을 치환
+        const newP = pText.replace(originalText, replacementText);
+        // ⚠️ pText 가 trim 되어 body 에서 못 찾을 수 있으므로 indexOf 확인
+        const pIdx = body.indexOf(pText);
+        if (pIdx !== -1) {
+          return {
+            body: body.slice(0, pIdx) + newP + body.slice(pIdx + pText.length),
+            matched: true,
+            mode: "exact",
+          };
         }
+      }
+      if (pText) {
         // 문단 내 정규화 매칭
         const trimmedO = originalText.trim();
         if (trimmedO.length >= 5) {
@@ -173,7 +181,14 @@ function fuzzyApplyFix(
             const m = pText.match(re);
             if (m && m[0]) {
               const newP = pText.replace(m[0], replacementText);
-              return { body: body.replace(pText, newP), matched: true, mode: "whitespace" };
+              const pIdx = body.indexOf(pText);
+              if (pIdx !== -1) {
+                return {
+                  body: body.slice(0, pIdx) + newP + body.slice(pIdx + pText.length),
+                  matched: true,
+                  mode: "whitespace",
+                };
+              }
             }
           } catch { /* 다음 단계 */ }
         }
@@ -367,12 +382,16 @@ function fuzzyApplyParagraph(
     if (pId !== null) {
       const pText = getParagraphById(body, pId);
       if (pText) {
-        return {
-          body: body.replace(pText, rewrittenParagraph),
-          matched: true,
-          mode: "paragraph-id",
-          matchedText: pText,
-        };
+        // ⚠️ pText 가 trim 되어 body.replace 가 실패할 수 있으므로 indexOf 확인
+        const pIdx = body.indexOf(pText);
+        if (pIdx !== -1) {
+          return {
+            body: body.slice(0, pIdx) + rewrittenParagraph + body.slice(pIdx + pText.length),
+            matched: true,
+            mode: "paragraph-id",
+            matchedText: pText,
+          };
+        }
       }
     }
   }
@@ -1066,6 +1085,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       });
       return false;
     }
+    // 교체 검증: body 가 실제로 변경되었는지 확인
+    if (result.body === editText) {
+      console.warn("[applyFixToBody] matched=true 이지만 body 변경 없음 — replace 실패");
+      return false;
+    }
     setEditText(result.body);
     setBodyHighlight(true);
     setTimeout(() => setBodyHighlight(false), 3000);
@@ -1092,6 +1116,11 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         originalLen: originalParagraph.length,
         bodyLen: editText.length,
       });
+      return false;
+    }
+    // 교체 검증
+    if (result.body === editText) {
+      console.warn("[applyParagraphToBody] matched=true 이지만 body 변경 없음 — replace 실패");
       return false;
     }
     setEditText(result.body);
