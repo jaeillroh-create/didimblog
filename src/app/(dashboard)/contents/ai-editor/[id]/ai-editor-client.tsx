@@ -54,7 +54,6 @@ import {
   PHASE3_PROMPT_BY_KEY,
   CATEGORY_TONE_RULES,
   COMMON_WRITING_RULES,
-  FIELD_CTA,
   getPromptKey,
   getFieldCta,
 } from "@/lib/constants/prompts";
@@ -778,7 +777,12 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       await savePhase2Output(genId, phase2Body);
 
       // ── Phase 2.5: 인포그래픽 설계 (본문 완성 후 별도 LLM 분석) ──
-      console.log("[Phase 2.5] 인포그래픽 설계 시작");
+      // Phase 2.5 에 문단 ID 가 필요하므로 먼저 주입
+      if (!hasParagraphIds(phase2Body)) {
+        phase2Body = injectParagraphIds(phase2Body);
+      }
+      const pIdCount = (phase2Body.match(/<!-- p:\d+ -->/g) || []).length;
+      console.log("[Phase 2.5] 시작, 본문:", phase2Body.length, "자, 문단 ID:", pIdCount, "개");
       if (isMounted.current) {
         setPipelinePhase("phase25");
         setStreamingText("📊 인포그래픽 설계 중...");
@@ -907,12 +911,13 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         body: result.body,
         isAiGenerated: true,
       });
-      const cta = promptKey === "PROMPT_FIELD" ? getFieldCta(categoryId) : { cta: "", emailSubject: "" };
+      // CTA 매칭: 2차 분류 → 키워드 기반 → 1차 폴백 → 범용 (다이어리는 건너뜀)
+      const cta = getFieldCta(categoryId, targetKeyword);
       const finalBody = appendCtaAndSignature({
         body: result.body,
         promptKey,
-        ctaText: cta.cta || FIELD_CTA["CAT-A-01"]?.cta,
-        emailSubject: cta.emailSubject || FIELD_CTA["CAT-A-01"]?.emailSubject,
+        ctaText: cta.cta,
+        emailSubject: cta.emailSubject,
         targetKeyword,
         disclaimerText: disclaimer.text,
       });

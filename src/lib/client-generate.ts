@@ -1413,9 +1413,9 @@ export function appendCtaAndSignature(params: {
 
   // 최소 10개 보장이 안 되면 (LLM 태그 + 카테고리 기본 다 합쳐도 부족) — 브랜드는 항상 포함
   // 최대 12개로 자르되, 브랜드 2개는 반드시 살림
-  let merged = ordered.slice(0, 12);
+  let merged = ordered.slice(0, 10);
   for (const b of fixedBrand) {
-    if (!merged.includes(normalize(b))) merged = [...merged.slice(0, 11), normalize(b)];
+    if (!merged.includes(normalize(b))) merged = [...merged.slice(0, 9), normalize(b)];
   }
 
   const tagLine = merged.map((t) => `#${t}`).join(" ");
@@ -1506,17 +1506,15 @@ export function determineDisclaimerLevel(params: {
   // AI 생성이 아닌 경우에도 법적 면책은 필요하지만 AI 고지 문구 제거
   const bodyLower = body.toLowerCase();
 
-  // Level A 체크: CAT-A + 절세/금액 키워드
-  if (categoryId.startsWith("CAT-A")) {
-    const hasLevelAKeyword = LEVEL_A_KEYWORDS.some((kw) => bodyLower.includes(kw));
-    // 금액 패턴 (1억, 5천만원 등)
-    const hasAmountPattern = /\d+[만백천]?\s*[억만원]/.test(body);
-    if (hasLevelAKeyword || hasAmountPattern) {
-      const text = isAiGenerated
-        ? DISCLAIMER_TEMPLATES.A
-        : DISCLAIMER_TEMPLATES.A.replace(AI_NOTICE + "\n\n", "");
-      return { level: "A", text };
-    }
+  // Level A 체크: 절세/세액공제 관련 콘텐츠 (카테고리 무관, 본문 키워드로 판단)
+  // CAT-A-01(절세) 이거나, 본문에 절세 핵심 키워드 + 금액 패턴이 동시 존재
+  const hasLevelAKeyword = LEVEL_A_KEYWORDS.some((kw) => bodyLower.includes(kw));
+  const hasAmountPattern = /\d+[만백천]?\s*[억만원]/.test(body);
+  if (categoryId === "CAT-A-01" || (hasLevelAKeyword && hasAmountPattern)) {
+    const text = isAiGenerated
+      ? DISCLAIMER_TEMPLATES.A
+      : DISCLAIMER_TEMPLATES.A.replace(AI_NOTICE + "\n\n", "");
+    return { level: "A", text };
   }
 
   // Level C 체크: CAT-B-03 (IP 뉴스 한 입)
@@ -1640,7 +1638,7 @@ export function generateAutoTags(params: {
   // 4. 브랜드 태그 (항상 마지막)
   for (const b of BRAND_TAGS) push(b);
 
-  return tags.slice(0, 12);
+  return tags.slice(0, 10);
 }
 
 /** 카테고리별 롱테일 접미사 */
