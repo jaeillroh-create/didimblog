@@ -907,12 +907,14 @@ export function insertInfographicMarkers(
   for (let idx = infographics.length - 1; idx >= 0; idx--) {
     const info = infographics[idx];
     const num = idx + 1;
+    // extractImageMarkers regex: /\[IMAGE:\s*([\s\S]*?)\]\s*\n\s*━━/
+    // → [IMAGE: 내용 (줄바꿈 포함)] 다음 줄에 ━━ 가 있어야 매칭됨
     const marker = [
       "",
       `━━ 📷 이미지 ${num} ━━`,
-      `[IMAGE: ${info.korean_prompt} | ${info.type}(${info.type_name})]`,
+      `[IMAGE: ${info.korean_prompt} | ${info.type}(${info.type_name})`,
       `(1) 한국어: ${info.korean_prompt}`,
-      `(2) English: ${info.english_prompt}`,
+      `(2) English: ${info.english_prompt}]`,
       `━━━━━━━━━━━━━━`,
       "",
     ].join("\n");

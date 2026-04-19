@@ -890,6 +890,10 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       // Phase 3 에 보내기 전 문단 ID 주석 제거 (LLM 이 깨트릴 수 있음)
       const cleanBody = stripParagraphIds(editText);
 
+      // 마커 보존: Phase 3 이 마커를 손실할 경우 복원하기 위해 미리 추출
+      const prePhase3Markers = cleanBody.match(/━━ 📷 이미지[^\n]*━━[\s\S]*?━━━━━━━━━━━━━━/g) || [];
+      console.log("[Phase 3] 시작, 입력 마커 수:", prePhase3Markers.length);
+
       const result = await clientRunPhase3({
         llm: baseLLMRef.current,
         phase3Prompt,
@@ -910,9 +914,37 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       console.log("[Phase 3] 완료, 원본 길이:", result.body.length, "공백 제외:", phase3BodyLength);
       if (phase3BodyLength < 200) {
         console.error("[Phase 3] 본문이 너무 짧음 — Phase 2 본문으로 폴백");
-        // Phase 3 가 본문을 깨트린 경우 Phase 2 원본(cleanBody)으로 폴백
         result.body = cleanBody;
         toast.error("Phase 3 결과가 너무 짧아 Phase 2 원본을 사용합니다");
+      }
+
+      // 마커 복원: Phase 3 가 마커를 손실했으면 Phase 2.5 마커를 재삽입
+      if (prePhase3Markers.length > 0) {
+        const postPhase3Markers = (result.body.match(/━━ 📷 이미지[^\n]*━━[\s\S]*?━━━━━━━━━━━━━━/g) || []).length;
+        console.log("[Phase 3] 마커 보존 체크:", postPhase3Markers, "/", prePhase3Markers.length);
+        if (postPhase3Markers < prePhase3Markers.length) {
+          console.warn("[Phase 3] 마커 손실 감지 — Phase 2.5 마커 복원 시작");
+          // Phase 3 결과에서 마커가 빠졌으면, 본문을 균등 분할하여 마커 재삽입
+          let restored = result.body;
+          for (let i = prePhase3Markers.length - 1; i >= 0; i--) {
+            const markerBlock = prePhase3Markers[i];
+            // 이미 존재하면 건너뛰기
+            if (restored.includes(markerBlock.slice(0, 30))) continue;
+            // 균등 위치에 삽입
+            const fraction = (i + 1) / (prePhase3Markers.length + 1);
+            const approxPos = Math.floor(restored.length * fraction);
+            const nearBreak = restored.indexOf("\n\n", approxPos);
+            if (nearBreak !== -1 && nearBreak < restored.length - 100) {
+              restored = restored.slice(0, nearBreak) + "\n\n" + markerBlock + restored.slice(nearBreak);
+            } else {
+              restored += "\n\n" + markerBlock;
+            }
+          }
+          result.body = restored;
+          const finalCount = (restored.match(/\[IMAGE:/g) || []).length;
+          toast.info(`Phase 3에서 손실된 인포그래픽 마커 ${prePhase3Markers.length - postPhase3Markers}개를 복원했습니다`);
+          console.log("[Phase 3] 마커 복원 완료, 최종 마커 수:", finalCount);
+        }
       }
 
       // Disclaimer 자동 매칭 + CTA / 서명 / 태그 한 줄 append
