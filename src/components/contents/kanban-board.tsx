@@ -83,7 +83,16 @@ export function KanbanBoard({
     description: string;
     contentId: string | null;
     failedConditions: string[];
-  }>({ open: false, title: "", description: "", contentId: null, failedConditions: [] });
+    /** blocked = 전이 차단 (확인만), warning = 권장 미충족 (확인 + 진행 옵션) */
+    kind: "blocked" | "warning";
+  }>({ open: false, title: "", description: "", contentId: null, failedConditions: [], kind: "blocked" });
+
+  // 경고 다이얼로그에서 "진행" 선택 시 사용할 대기 중 전이 정보
+  const [pendingTransition, setPendingTransition] = useState<{
+    contentId: string;
+    fromStatus: ContentStatus;
+    toStatus: ContentStatus;
+  } | null>(null);
 
   // Zustand 필터 스토어
   const {
@@ -164,24 +173,40 @@ export function KanbanBoard({
         prev.map((c) => (c.id === contentId ? { ...c, status: toStatus } : c))
       );
 
-      // 전이 검증
-      const { valid, failedConditions } = await validateTransition(
+      // 전이 검증 — 전이 규칙 존재 여부만 확인 (세부 조건은 상세 페이지에서 처리)
+      const { transition, failedConditions } = await validateTransition(
         contentId,
         fromStatus,
         toStatus
       );
 
-      if (!valid) {
-        // 검증 실패: 롤백 + 에러 다이얼로그
+      // 전이 규칙 자체가 없으면 차단 (예: S0→S5 직행)
+      if (!transition) {
         setContents(prevContents);
         setErrorDialog({
           open: true,
           title: "상태 전이 불가",
           description:
-            `${CONTENT_STATES[fromStatus].label}에서 ${CONTENT_STATES[toStatus].label}(으)로 이동할 수 없습니다. ` +
-            `미충족 조건을 확인하세요.`,
+            `${CONTENT_STATES[fromStatus].label}에서 ${CONTENT_STATES[toStatus].label}(으)로 이동할 수 없습니다 — 허용되지 않은 전이입니다.`,
+          contentId,
+          failedConditions: [],
+          kind: "blocked",
+        });
+        return;
+      }
+
+      // 권장 조건 미충족 — 경고 + 진행 옵션
+      if (failedConditions.length > 0) {
+        setContents(prevContents);
+        setPendingTransition({ contentId, fromStatus, toStatus });
+        setErrorDialog({
+          open: true,
+          title: "권장 항목 미완료",
+          description:
+            `${CONTENT_STATES[fromStatus].label} → ${CONTENT_STATES[toStatus].label} 전이 시 다음 항목이 완료되지 않았습니다. 그대로 진행하시겠습니까?`,
           contentId,
           failedConditions,
+          kind: "warning",
         });
         return;
       }
@@ -197,11 +222,39 @@ export function KanbanBoard({
           description: error,
           contentId,
           failedConditions: [],
+          kind: "blocked",
         });
       }
     },
     [contents]
   );
+
+  // 경고 다이얼로그에서 "진행" 선택 시 전이 수행
+  async function handleProceedAnyway() {
+    if (!pendingTransition) return;
+    const { contentId, toStatus } = pendingTransition;
+    setErrorDialog((prev) => ({ ...prev, open: false }));
+    setPendingTransition(null);
+
+    // 낙관적 업데이트 재실행
+    setContents((prev) =>
+      prev.map((c) => (c.id === contentId ? { ...c, status: toStatus } : c))
+    );
+
+    const { error } = await updateContentStatus(contentId, toStatus);
+    if (error) {
+      // 실패 시 새로고침으로 롤백
+      router.refresh();
+      setErrorDialog({
+        open: true,
+        title: "상태 변경 실패",
+        description: error,
+        contentId,
+        failedConditions: [],
+        kind: "blocked",
+      });
+    }
+  }
 
   // 콘텐츠 생성 후 새로고침
   function handleContentCreated() {
@@ -375,21 +428,34 @@ export function KanbanBoard({
           <DialogFooter className="gap-2 sm:gap-2">
             <button
               className="btn btn-ghost btn-md"
-              onClick={() => setErrorDialog((prev) => ({ ...prev, open: false }))}
+              onClick={() => {
+                setErrorDialog((prev) => ({ ...prev, open: false }));
+                setPendingTransition(null);
+              }}
             >
-              닫기
+              취소
             </button>
             {errorDialog.contentId && (
               <button
-                className="btn btn-primary btn-md inline-flex items-center gap-1"
+                className="btn btn-ghost btn-md inline-flex items-center gap-1"
                 onClick={() => {
                   const id = errorDialog.contentId;
                   setErrorDialog((prev) => ({ ...prev, open: false }));
+                  setPendingTransition(null);
                   if (id) router.push(`/contents/${id}`);
                 }}
               >
                 <ExternalLink className="h-4 w-4" />
-                상세 페이지에서 조건 확인
+                상세 페이지
+              </button>
+            )}
+            {errorDialog.kind === "warning" && pendingTransition && (
+              <button
+                className="btn btn-md inline-flex items-center gap-1"
+                style={{ backgroundColor: "#f97316", color: "white" }}
+                onClick={handleProceedAnyway}
+              >
+                그대로 진행
               </button>
             )}
           </DialogFooter>

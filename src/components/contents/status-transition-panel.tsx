@@ -254,6 +254,9 @@ export function StatusTransitionPanel({
   const [neighborAdded, setNeighborAdded] = useState("");
   const [consultation, setConsultation] = useState<"yes" | "no">("no");
 
+  // 권장 조건 미충족 확인 모달
+  const [recommendConfirmOpen, setRecommendConfirmOpen] = useState(false);
+
   // 역행 전이 사유
   const [reverseTransition, setReverseTransition] = useState<StateTransition | null>(null);
   const [reverseReason, setReverseReason] = useState("");
@@ -324,8 +327,22 @@ export function StatusTransitionPanel({
       return;
     }
     if (hasUnmetRecommendations) {
-      toast.info("권장 조건 미충족 항목이 있지만 전이를 진행합니다.");
+      // 권장 미충족 시 확인 모달
+      setRecommendConfirmOpen(true);
+      return;
     }
+    startTransition(async () => {
+      await runStatusUpdate({
+        contentId: content.id,
+        newStatus: nextStatus,
+      });
+    });
+  }
+
+  function handleConfirmRecommendedUnmet() {
+    if (!forwardTransition) return;
+    const nextStatus = forwardTransition.to_status as ContentStatus;
+    setRecommendConfirmOpen(false);
     startTransition(async () => {
       await runStatusUpdate({
         contentId: content.id,
@@ -709,6 +726,48 @@ export function StatusTransitionPanel({
               className="bg-red-600 hover:bg-red-700"
             >
               되돌리기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 권장 조건 미충족 확인 모달 */}
+      <Dialog open={recommendConfirmOpen} onOpenChange={setRecommendConfirmOpen}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <AlertTriangle className="h-5 w-5" />
+              권장 항목 미완료
+            </DialogTitle>
+            <DialogDescription>
+              필수 조건은 충족되었지만, 다음 권장 항목이 완료되지 않았습니다.
+              그래도 전이를 진행하시겠습니까?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-1">
+            {recommendedChecks
+              .filter((c) => !c.passed)
+              .map((c) => (
+                <div key={c.id} className="flex items-center gap-2 text-sm text-orange-700">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  <span>{c.label}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{c.detail}</span>
+                </div>
+              ))}
+            <p className="text-xs text-muted-foreground mt-2">
+              미완료 항목은 콘텐츠 상세 페이지에 배너로 표시되어 언제든 보완할 수 있습니다.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRecommendConfirmOpen(false)} disabled={isPending}>
+              취소
+            </Button>
+            <Button
+              onClick={handleConfirmRecommendedUnmet}
+              disabled={isPending}
+              className="bg-orange-500 hover:bg-orange-600"
+            >
+              확인 — 진행
             </Button>
           </DialogFooter>
         </DialogContent>

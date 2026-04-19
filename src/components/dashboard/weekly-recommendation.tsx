@@ -175,7 +175,9 @@ export function WeeklyRecommendation({
             ...current.map((r) => r.recId).filter((id): id is string => !!id),
             ...Array.from(processedIds),
           ];
-          const newCards = await getCategoryRecommendations(categoryId, excludeIds);
+          // 로테이션: 현재 표시 중인 첫 번째 2차 분류는 다음 새로고침에서 제외
+          const currentSubId = current.find((r) => r.subCategoryId)?.subCategoryId ?? null;
+          const newCards = await getCategoryRecommendations(categoryId, excludeIds, currentSubId);
           setByCategory((prev) => ({ ...prev, [categoryId]: newCards }));
           // 해당 카테고리에 처리된 카드들의 id 는 더이상 보이지 않으므로 제거 가능
           if (newCards.length === 0) {
