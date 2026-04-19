@@ -6,21 +6,50 @@ export type PromptKey =
   | "PROMPT_LOUNGE_BITE"
   | "PROMPT_DIARY";
 
-// ── 현장수첩 subCategory별 CTA ──
+// ── 모든 subCategory별 CTA ──
 
 export const FIELD_CTA: Record<string, { cta: string; emailSubject: string }> = {
+  // 현장수첩 > 절세 시뮬레이션
   "CAT-A-01": {
-    cta: "재무제표를 보내주세요. 48시간 안에 절세 시뮬레이션을 만들어 드립니다.",
+    cta: "재무제표를 보내주세요. 48시간 안에 절세 시뮬레이션을 만들어 드립니다. (무료)",
     emailSubject: "절세 시뮬레이션",
   },
+  // 현장수첩 > 인증 가이드
   "CAT-A-02": {
     cta: "인증 요건 해당 여부, 무료 진단해드립니다.",
     emailSubject: "인증 진단",
   },
+  // 현장수첩 > 연구소 운영 실무
   "CAT-A-03": {
-    cta: "연구소 운영 상태 점검, 무료 진단 가능합니다.",
-    emailSubject: "연구소 진단",
+    cta: "연구소 사후관리가 걱정되시면 연락 주세요. 연구활동조사표부터 연차보고까지 도와드립니다.",
+    emailSubject: "연구소 관리",
   },
+  // 현장수첩 > 특허·상표 출원 실무
+  "CAT-A-04": {
+    cta: "출원 전략이 궁금하시면 편하게 연락 주세요. 기술 내용을 보내주시면 출원 가능성과 전략을 검토해 드립니다.",
+    emailSubject: "출원 상담",
+  },
+  // IP 라운지 > 특허 전략 노트
+  "CAT-B-01": {
+    cta: "특허 포트폴리오 전략이 궁금하시면 편하게 연락 주세요.",
+    emailSubject: "상담 문의",
+  },
+  // IP 라운지 > AI와 IP
+  "CAT-B-02": {
+    cta: "AI 기술의 특허 가능성이 궁금하시면 편하게 연락 주세요.",
+    emailSubject: "상담 문의",
+  },
+  // IP 라운지 > IP 뉴스 한 입
+  "CAT-B-03": {
+    cta: "IP 이슈에 대해 더 알고 싶으시면 이웃 추가 해주세요.",
+    emailSubject: "상담 문의",
+  },
+};
+
+/** 범용 CTA — 어디에도 매칭 안 될 때 */
+const DEFAULT_CTA = {
+  cta: "궁금하신 점이 있으시면 편하게 연락 주세요.",
+  emailSubject: "상담 문의",
 };
 
 // ── getPromptKey: category + subCategory → PromptKey ──
@@ -52,16 +81,41 @@ export function getPromptKey(categoryId: string): PromptKey {
 
 // ── getFieldCta: 현장수첩 subCategory별 CTA 반환 ──
 
-export function getFieldCta(categoryId: string): {
-  cta: string;
-  emailSubject: string;
-} {
-  return (
-    FIELD_CTA[categoryId] ?? {
-      cta: "재무제표를 보내주세요. 48시간 안에 절세 시뮬레이션을 만들어 드립니다.",
-      emailSubject: "절세 시뮬레이션",
-    }
-  );
+/**
+ * 카테고리 + 키워드 기반 CTA 매칭.
+ * 2차 분류 정확 매칭 → 키워드 기반 추론 → 1차 카테고리 폴백 → 범용.
+ */
+export function getFieldCta(
+  categoryId: string,
+  targetKeyword?: string
+): { cta: string; emailSubject: string } {
+  // 1) 2차 분류 정확 매칭
+  if (FIELD_CTA[categoryId]) return FIELD_CTA[categoryId];
+
+  // 2) 키워드 기반 추론 (2차 분류 ID가 없을 때)
+  const kw = (targetKeyword ?? "").toLowerCase();
+  if (kw.includes("절세") || kw.includes("세액공제") || kw.includes("법인세") || kw.includes("보상금")) {
+    return FIELD_CTA["CAT-A-01"];
+  }
+  if (kw.includes("인증") || kw.includes("벤처") || kw.includes("이노비즈")) {
+    return FIELD_CTA["CAT-A-02"];
+  }
+  if (kw.includes("연구소") || kw.includes("연구활동") || kw.includes("사후관리")) {
+    return FIELD_CTA["CAT-A-03"];
+  }
+  if (kw.includes("출원") || kw.includes("상표") || kw.includes("특허출원") || kw.includes("pct")) {
+    return FIELD_CTA["CAT-A-04"];
+  }
+  if (kw.includes("ai") || kw.includes("인공지능") || kw.includes("생성형")) {
+    return FIELD_CTA["CAT-B-02"];
+  }
+
+  // 3) 1차 카테고리 폴백 — 해당 1차의 첫 번째 2차 CTA
+  if (categoryId.startsWith("CAT-A")) return FIELD_CTA["CAT-A-04"]; // 출원 실무 (가장 범용)
+  if (categoryId.startsWith("CAT-B")) return FIELD_CTA["CAT-B-01"]; // 전략 노트
+
+  // 4) 범용
+  return DEFAULT_CTA;
 }
 
 // ── 공통 글쓰기 규칙 ──
