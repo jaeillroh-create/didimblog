@@ -358,6 +358,64 @@ export function ContentDetailClient({
         />
       )}
 
+      {/* 미완료 항목 배너 — S1~S3 에서 권장 항목 미충족 시 표시 */}
+      {(() => {
+        const incompleteItems: Array<{ label: string; scrollTarget?: string; action?: () => void }> = [];
+        if (statusIndex >= 1 && statusIndex <= 3) {
+          const tagCount = content.tags?.length ?? 0;
+          if (tagCount < 10) {
+            incompleteItems.push({
+              label: `태그 ${tagCount}/10개`,
+              scrollTarget: "tags-input",
+            });
+          }
+          if (imageMarkerCount < 3) {
+            incompleteItems.push({
+              label: `이미지 ${imageMarkerCount}/3개 (권장)`,
+              scrollTarget: "body-editor",
+            });
+          }
+          if (seoScore < 70) {
+            incompleteItems.push({
+              label: `SEO ${seoScore}/70점 (권장)`,
+              scrollTarget: "seo-panel",
+            });
+          }
+          if (statusIndex >= 3 && !content.publish_date && !content.publish_due) {
+            incompleteItems.push({
+              label: "발행예정일 미설정",
+              scrollTarget: "publish-date",
+            });
+          }
+        }
+        if (incompleteItems.length === 0) return null;
+        return (
+          <div className="rounded-md border border-orange-200 bg-orange-50 px-4 py-3">
+            <p className="text-sm font-medium text-orange-700 flex items-center gap-1.5">
+              <span>⚠️</span>
+              발행 전 미완료 항목 ({incompleteItems.length}건)
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {incompleteItems.map((item, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    if (item.scrollTarget) {
+                      const el = document.querySelector(`[data-scroll-id="${item.scrollTarget}"]`);
+                      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }
+                  }}
+                  className="text-xs px-2 py-1 rounded border border-orange-200 bg-white text-orange-700 hover:bg-orange-100 transition-colors"
+                >
+                  {item.label} →
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 2-column 레이아웃 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 왼쪽 메인 (2/3) */}

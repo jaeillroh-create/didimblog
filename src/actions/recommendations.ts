@@ -2,6 +2,12 @@
 
 import { createClient } from "@/lib/supabase/server";
 import {
+  DIARY_TOPIC_POOL,
+  getSubCategoriesFor,
+  getSubCategoryMeta,
+  type SubCategoryMeta,
+} from "@/lib/constants/sub-category-pool";
+import {
   type Recommendation,
   type MonthlyPublishStats,
   determineNeededCategory,
@@ -1095,60 +1101,173 @@ const CARDS_PER_CATEGORY: Record<RecommendationCategoryId, number> = {
 };
 
 /**
+/**
+ * 2차 분류 풀에서 랜덤 키워드 1개 선택 — rejected/블랙리스트 필터링 적용.
+ * preferredSubId 가 주어지면 해당 2차 분류를 우선 시도.
+ */
+function pickSubCategoryKeyword(
+  parentId: "CAT-A" | "CAT-B" | "CAT-C",
+  blacklist: Set<string>,
+  excludeKeywords: Set<string> = new Set(),
+  preferredSubId?: string | null
+): { sub: SubCategoryMeta; keyword: string } | null {
+  const allSubs = getSubCategoriesFor(parentId).filter((s) => s.keywords.length > 0);
+  if (allSubs.length === 0) return null;
+
+  // preferred 를 제외한 나머지를 우선 시도 (로테이션)
+  const rotated = preferredSubId
+    ? [...allSubs.filter((s) => s.id !== preferredSubId), ...allSubs.filter((s) => s.id === preferredSubId)]
+    : [...allSubs].sort(() => Math.random() - 0.5);
+
+  for (const sub of rotated) {
+    const candidates = sub.keywords.filter(
+      (k) => !excludeKeywords.has(k.toLowerCase()) && !isBlacklisted(k, blacklist)
+    );
+    if (candidates.length === 0) continue;
+    const keyword = candidates[Math.floor(Math.random() * candidates.length)];
+    return { sub, keyword };
+  }
+  return null;
+}
+
+/**
+ * 2차 분류 기반 키워드 카드 생성 — 2차 분류를 로테이션하며 키워드 선택.
+ */
+async function buildSubCategoryKeywordCard(
+  parentId: "CAT-A" | "CAT-B" | "CAT-C",
+  blacklist: Set<string>,
+  excludeKeywords: Set<string>,
+  preferredSubId?: string | null
+): Promise<Recommendation | null> {
+  const picked = pickSubCategoryKeyword(parentId, blacklist, excludeKeywords, preferredSubId);
+  if (!picked) return null;
+
+  const { sub, keyword } = picked;
+  const catName =
+    parentId === "CAT-A"
+      ? "변리사의 현장 수첩"
+      : parentId === "CAT-B"
+        ? "IP 라운지"
+        : "디딤 다이어리";
+
+  const rec: Recommendation = {
+    priority: "PRIMARY",
+    category: catName,
+    categoryId: parentId,
+    subCategory: sub.name,
+    subCategoryId: sub.id,
+    title: generateTitleSuggestion(keyword),
+    reason: `${sub.name} — '${keyword}' 키워드 기반 추천`,
+    keywords: [keyword],
+  };
+  return persistRecommendation(rec, "keyword_pool", {
+    sub_category_id: sub.id,
+    keyword,
+  });
+}
+
+/**
+ * 디딤 다이어리 주제 풀 기반 카드 생성 — 키워드 대신 사전 정의된 주제 샘플링.
+ */
+async function buildDiaryTopicCard(
+  blacklist: Set<string>,
+  excludeTitles: Set<string>
+): Promise<Recommendation | null> {
+  const pool = DIARY_TOPIC_POOL.filter(
+    (t) =>
+      !excludeTitles.has(t.title) &&
+      !isBlacklisted(t.title, blacklist) &&
+      !t.keywords.some((k) => isBlacklisted(k, blacklist))
+  );
+  if (pool.length === 0) return null;
+
+  const picked = pool[Math.floor(Math.random() * pool.length)];
+  const subMeta = getSubCategoryMeta(picked.subCategoryId);
+  const rec: Recommendation = {
+    priority: "PRIMARY",
+    category: "디딤 다이어리",
+    categoryId: "CAT-C",
+    subCategory: subMeta?.name ?? picked.subCategoryId,
+    subCategoryId: picked.subCategoryId,
+    title: picked.title,
+    reason: `디딤 다이어리 — ${subMeta?.name ?? ""} 주제 풀에서 샘플링`,
+    keywords: picked.keywords,
+  };
+  return persistRecommendation(rec, "schedule", {
+    diary_topic: true,
+    sub_category_id: picked.subCategoryId,
+  });
+}
+
+/**
  * 특정 카테고리의 추천 카드 생성.
  *
  * 카테고리별 소스 우선순위:
- *   - CAT-A (현장 수첩): 키워드 풀 → 12주 스케줄
- *   - CAT-B (IP 라운지): 뉴스 API → 키워드 풀 → 12주 스케줄
- *   - CAT-C (디딤 다이어리): 12주 스케줄
+ *   - CAT-A (현장 수첩): 2차 분류 키워드 풀 → 12주 스케줄
+ *   - CAT-B (IP 라운지): 2차 분류 뉴스 → 2차 분류 키워드 풀 → 스케줄
+ *   - CAT-C (디딤 다이어리): 주제 풀 → 12주 스케줄
  *
  * @param categoryId 대상 카테고리
  * @param excludeRecIds 이미 표시 중/처리된 content_recommendations.id (새로고침용)
+ * @param preferredSubId 로테이션용 — 이 2차 분류는 우선순위를 낮춤 (이미 표시 중인 것 회피)
  */
 export async function getCategoryRecommendations(
   categoryId: RecommendationCategoryId,
-  excludeRecIds: string[] = []
+  excludeRecIds: string[] = [],
+  preferredSubId?: string | null
 ): Promise<Recommendation[]> {
   const cards: Recommendation[] = [];
   const { rejectedKeywords, blacklist } = await getRejectedKeywordStats();
   const excludeSet = new Set(excludeRecIds);
   const maxCards = CARDS_PER_CATEGORY[categoryId];
 
-  /** 중복 제목/id 방지 helper */
+  /** 중복 제목/id/키워드 방지 */
   const usedTitles = new Set<string>();
+  const usedKeywords = new Set<string>();
+  const usedSubIds = new Set<string>(preferredSubId ? [preferredSubId] : []);
+
   const addIfNew = (rec: Recommendation | null): boolean => {
     if (!rec) return false;
     if (rec.recId && excludeSet.has(rec.recId)) return false;
     if (usedTitles.has(rec.title)) return false;
     cards.push(rec);
     usedTitles.add(rec.title);
+    for (const k of rec.keywords ?? []) usedKeywords.add(k.toLowerCase());
+    if (rec.subCategoryId) usedSubIds.add(rec.subCategoryId);
     return true;
   };
 
   if (categoryId === "CAT-A") {
-    // 현장 수첩: 키워드 풀 → 스케줄
-    if (cards.length < maxCards) {
-      const kw = await buildKeywordCard(blacklist, "CAT-A");
-      addIfNew(kw);
+    // 현장 수첩: 2차 분류 로테이션 (4개 서브카테고리 순환)
+    while (cards.length < maxCards) {
+      // 이미 사용된 서브와 preferred 제외하고 다음 서브 시도
+      const firstExcluded = Array.from(usedSubIds)[0];
+      const kw = await buildSubCategoryKeywordCard(
+        "CAT-A",
+        blacklist,
+        usedKeywords,
+        firstExcluded
+      );
+      if (!addIfNew(kw)) break;
     }
     if (cards.length < maxCards) {
       const sched = await buildScheduleCard(blacklist, "CAT-A", usedTitles);
       addIfNew(sched);
     }
-    // 2개가 모두 키워드 풀에서 나올 수 있도록 한 번 더 시도
-    if (cards.length < maxCards) {
-      const kw2 = await buildKeywordCard(blacklist, "CAT-A");
-      addIfNew(kw2);
-    }
   } else if (categoryId === "CAT-B") {
-    // IP 라운지: 뉴스 → 키워드 풀 → 스케줄
+    // IP 라운지: 뉴스 → 2차 분류 키워드 풀 → 스케줄
     if (cards.length < maxCards) {
       const news = await buildNewsCard(blacklist, rejectedKeywords);
-      // 뉴스는 기본적으로 CAT-B 로 세팅되어 있음
       if (news && news.categoryId === "CAT-B") addIfNew(news);
     }
     if (cards.length < maxCards) {
-      const kw = await buildKeywordCard(blacklist, "CAT-B");
+      const firstExcluded = Array.from(usedSubIds)[0];
+      const kw = await buildSubCategoryKeywordCard(
+        "CAT-B",
+        blacklist,
+        usedKeywords,
+        firstExcluded
+      );
       addIfNew(kw);
     }
     if (cards.length < maxCards) {
@@ -1156,7 +1275,11 @@ export async function getCategoryRecommendations(
       addIfNew(sched);
     }
   } else if (categoryId === "CAT-C") {
-    // 디딤 다이어리: 스케줄 전용
+    // 디딤 다이어리: 주제 풀 → 스케줄 폴백
+    if (cards.length < maxCards) {
+      const diary = await buildDiaryTopicCard(blacklist, usedTitles);
+      addIfNew(diary);
+    }
     if (cards.length < maxCards) {
       const sched = await buildScheduleCard(blacklist, "CAT-C", usedTitles);
       addIfNew(sched);
