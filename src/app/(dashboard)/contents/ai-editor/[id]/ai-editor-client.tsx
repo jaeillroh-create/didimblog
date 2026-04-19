@@ -1571,7 +1571,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           </Card>
 
           {/* 이미지 마커 목록 + 이미지 생성 */}
-          {imageMarkers.length > 0 && (
+          {imageMarkers.length > 0 ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm flex items-center justify-between">
@@ -1710,7 +1710,69 @@ ${koreanInfographics}`;
                 </div>
               </CardContent>
             </Card>
-          )}
+          ) : status === "completed" || pipelinePhase === "completed" || pipelinePhase === "phase3" ? (
+            <Card>
+              <CardContent className="py-4">
+                <div className="text-center space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    본문에 이미지 마커가 없습니다.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Phase 2.5 인포그래픽 설계가 실행되지 않았거나 결과가 없습니다.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={phase3Loading}
+                    onClick={async () => {
+                      if (!baseLLMRef.current) {
+                        toast.error("LLM 설정이 없습니다");
+                        return;
+                      }
+                      toast.info("📊 인포그래픽 재설계 시작...");
+                      try {
+                        const meta = await getGenerationMeta(currentGenerationId);
+                        const catName = meta.data?.category_id
+                          ? await getCategoryName(meta.data.category_id)
+                          : "";
+                        const kw = meta.data?.target_keyword ?? "";
+
+                        let bodyForDesign = stripParagraphIds(editText);
+                        if (!hasParagraphIds(bodyForDesign)) {
+                          bodyForDesign = injectParagraphIds(bodyForDesign);
+                        }
+
+                        console.log("[Phase 2.5 재실행] 본문:", bodyForDesign.length, "자");
+                        const result = await clientRunPhase25({
+                          llm: baseLLMRef.current,
+                          phase25Prompt: PHASE25_INFOGRAPHIC_PROMPT,
+                          phase2Body: bodyForDesign,
+                          categoryName: catName,
+                          targetKeyword: kw,
+                        });
+
+                        if (result.success && result.infographics && result.infographics.length > 0) {
+                          const updated = insertInfographicMarkers(editText, result.infographics);
+                          const count = (updated.match(/\[IMAGE:/g) || []).length;
+                          setEditText(updated);
+                          toast.success(`📊 인포그래픽 ${count}개 삽입 완료`);
+                          console.log("[Phase 2.5 재실행] 마커", count, "개 삽입");
+                        } else {
+                          toast.error(`인포그래픽 설계 실패: ${result.error ?? "결과 없음"}`);
+                          console.error("[Phase 2.5 재실행] 실패:", result.error);
+                        }
+                      } catch (err) {
+                        toast.error(`인포그래픽 설계 오류: ${err instanceof Error ? err.message : "알 수 없음"}`);
+                      }
+                    }}
+                  >
+                    <ImageIcon className="h-3.5 w-3.5 mr-1" />
+                    인포그래픽 재설계
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
         </div>
 

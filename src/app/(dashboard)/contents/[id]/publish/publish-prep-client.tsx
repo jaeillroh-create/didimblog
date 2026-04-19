@@ -80,6 +80,21 @@ const FALLBACK_CTA: Record<string, CtaTemplate> = {
     conversionMethod: "이메일",
     emailSubjectTag: "인증 진단",
   },
+  "현장수첩_출원": {
+    key: "현장수첩_출원",
+    categoryName: "현장 수첩 · 특허·상표 출원 실무",
+    text: `━━━━━━━━━━━━━━━━━━
+출원 전략이 궁금하시면 편하게 연락 주세요.
+기술 내용을 보내주시면 출원 가능성과 전략을 검토해 드립니다.
+
+📞 02-571-6613
+📧 admin@didimip.com (메일 제목에 '출원 상담'이라고 적어주세요)
+
+특허그룹 디딤 | 기업을 아는 변리사`,
+    note: null,
+    conversionMethod: "이메일",
+    emailSubjectTag: "출원 상담",
+  },
   "현장수첩_연구소": {
     key: "현장수첩_연구소",
     categoryName: "현장 수첩 · 연구소 운영",
@@ -110,7 +125,18 @@ AI·IP 전략이 궁금하신 대표님, 편하게 연락 주세요.
   },
 };
 
-/** CTA 매칭: 콘텐츠의 카테고리로 가장 적합한 CTA 선택 */
+/** 키워드 → CTA key 매핑 (정규식 기반) */
+const CTA_KEYWORD_MAP: Array<{ pattern: RegExp; key: string }> = [
+  { pattern: /절세|세액공제|법인세|직무발명보상|비과세|보상금/i, key: "현장수첩_절세" },
+  { pattern: /출원|상표|특허출원|등록|심사|우선심사|pct|디자인출원/i, key: "현장수첩_출원" },
+  { pattern: /인증|벤처|이노비즈|메인비즈/i, key: "현장수첩_인증" },
+  { pattern: /연구소|연구전담|koita|사후관리|연구활동/i, key: "현장수첩_연구소" },
+  { pattern: /ai|인공지능|저작권|생성형/i, key: "IP라운지" },
+  { pattern: /특허전략|포트폴리오|ip전략|기술가치/i, key: "IP라운지" },
+  { pattern: /뉴스|분쟁|판례|정책변화/i, key: "IP라운지" },
+];
+
+/** CTA 매칭: 키워드 → 카테고리 → 범용 순서로 가장 적합한 CTA 선택 */
 function matchCtaForContent(
   content: Content,
   categories: Category[],
@@ -124,48 +150,62 @@ function matchCtaForContent(
     return null;
   }
 
-  const category = categories.find((c) => c.id === content.category_id);
-  if (!category) return null;
-
-  // cta_templates + fallback 합산 pool
-  const pool: CtaTemplate[] = [
-    ...ctaTemplates,
-    ...Object.values(FALLBACK_CTA),
-  ];
-  // 중복 key 제거 (DB 우선)
+  // cta_templates + fallback 합산 pool (중복 key 제거, DB 우선)
+  const pool: CtaTemplate[] = [...ctaTemplates, ...Object.values(FALLBACK_CTA)];
   const deduped = new Map<string, CtaTemplate>();
   for (const t of pool) deduped.set(t.key, deduped.get(t.key) ?? t);
   const allTemplates = Array.from(deduped.values());
 
-  // Step 1: secondary_category 기반 매칭
-  if (content.secondary_category) {
-    const secondaryCat = categories.find((c) => c.id === content.secondary_category);
-    if (secondaryCat) {
-      const secName = secondaryCat.name.toLowerCase();
-      const match = allTemplates.find((t) => {
-        const cn = t.categoryName.toLowerCase();
-        // 2차 카테고리 이름의 처음 4자 포함 OR key에 포함
-        return cn.includes(secName.substring(0, 4)) || t.key.includes(secName.substring(0, 3));
-      });
-      if (match) return match;
+  const kw = (content.target_keyword ?? "").toLowerCase();
+  const catId = content.category_id ?? "";
+
+  // 1순위: 키워드 기반 매칭
+  if (kw) {
+    for (const { pattern, key } of CTA_KEYWORD_MAP) {
+      if (pattern.test(kw)) {
+        const match = allTemplates.find((t) => t.key === key);
+        if (match) {
+          console.log("[CTA 매칭] 키워드:", kw, "→", key);
+          return match;
+        }
+      }
     }
   }
 
-  // Step 2: primary category id 기반 매칭
-  const catId = content.category_id ?? "";
-  if (catId.startsWith("CAT-A")) {
-    // 서브카테고리로 더 세분화
-    const subId = content.secondary_category ?? catId;
+  // 2순위: secondary_category ID 정확 매칭
+  if (content.secondary_category) {
+    const subId = content.secondary_category;
+    if (subId === "CAT-A-01") return allTemplates.find((t) => t.key.includes("절세")) ?? null;
     if (subId === "CAT-A-02") return allTemplates.find((t) => t.key.includes("인증")) ?? null;
     if (subId === "CAT-A-03") return allTemplates.find((t) => t.key.includes("연구소")) ?? null;
-    // 기본: 절세
-    return allTemplates.find((t) => t.key.includes("절세")) ?? null;
-  }
-  if (catId.startsWith("CAT-B")) {
-    return allTemplates.find((t) => t.key.includes("IP라운지") || t.key.includes("IP 라운지")) ?? null;
+    if (subId === "CAT-A-04") return allTemplates.find((t) => t.key.includes("출원")) ?? null;
+    if (subId.startsWith("CAT-B")) return allTemplates.find((t) => t.key.includes("IP라운지") || t.key.includes("IP 라운지")) ?? null;
   }
 
-  // Step 3: 범용 폴백 — pool 첫 번째 (CAT-C 는 위에서 이미 null 반환)
+  // 3순위: categoryName 부분 매칭 (DB 템플릿의 categoryName 에서 1차 카테고리 포함 검색)
+  const category = categories.find((c) => c.id === catId);
+  if (category) {
+    // "변리사의 현장 수첩" → "현장 수첩" 으로 정규화
+    const catName = category.name.replace(/변리사의\s*/, "").trim().toLowerCase();
+    const partial = allTemplates.find((t) =>
+      t.categoryName.toLowerCase().includes(catName.slice(0, 4))
+    );
+    if (partial) {
+      console.log("[CTA 매칭] 카테고리 부분:", catName, "→", partial.key);
+      return partial;
+    }
+  }
+
+  // 4순위: 1차 카테고리 ID 기반 범용
+  if (catId.startsWith("CAT-A")) {
+    return allTemplates.find((t) => t.key.includes("출원")) ?? allTemplates[0] ?? null;
+  }
+  if (catId.startsWith("CAT-B")) {
+    return allTemplates.find((t) => t.key.includes("IP라운지")) ?? allTemplates[0] ?? null;
+  }
+
+  // 5순위: 아무 템플릿이라도 (CTA 없는 것보다 나음)
+  console.log("[CTA 매칭] 범용 폴백");
   return allTemplates[0] ?? null;
 }
 
