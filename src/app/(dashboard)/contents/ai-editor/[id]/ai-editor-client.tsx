@@ -40,6 +40,8 @@ import {
   clientRunPhase1,
   clientRunPhase2,
   clientRunPhase3,
+  clientRunPhase25,
+  insertInfographicMarkers,
   appendCtaAndSignature,
   generateAutoTags,
   determineDisclaimerLevel,
@@ -48,10 +50,10 @@ import {
 import {
   PHASE1_PROMPT,
   PHASE2_PROMPT,
+  PHASE25_INFOGRAPHIC_PROMPT,
   PHASE3_PROMPT_BY_KEY,
   CATEGORY_TONE_RULES,
   COMMON_WRITING_RULES,
-  VISUAL_RULES,
   FIELD_CTA,
   getPromptKey,
   getFieldCta,
@@ -757,7 +759,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         phase2Prompt: PHASE2_PROMPT,
         categoryToneRules: CATEGORY_TONE_RULES[promptKey],
         commonWritingRules: COMMON_WRITING_RULES,
-        visualRules: VISUAL_RULES,
+        visualRules: "",
         phase1Outline: phase1Result.outline,
         onProgress: (text) => {
           if (isMounted.current) setStreamingText(text);
@@ -772,10 +774,37 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       }
 
       console.log("[Phase 2] 완료, 길이:", phase2Result.body.length);
-      const phase2Body = phase2Result.body;
+      let phase2Body = phase2Result.body;
       await savePhase2Output(genId, phase2Body);
 
-      // 본문에서 이미지 마커 추출 (Phase 2 결과 기준) — 박스/단순 형식 모두 지원
+      // ── Phase 2.5: 인포그래픽 설계 (본문 완성 후 별도 LLM 분석) ──
+      console.log("[Phase 2.5] 인포그래픽 설계 시작");
+      if (isMounted.current) {
+        setPipelinePhase("phase25");
+        setStreamingText("📊 인포그래픽 설계 중...");
+      }
+
+      try {
+        const phase25Result = await clientRunPhase25({
+          llm,
+          phase25Prompt: PHASE25_INFOGRAPHIC_PROMPT,
+          phase2Body,
+          categoryName,
+          targetKeyword,
+        });
+
+        if (phase25Result.success && phase25Result.infographics && phase25Result.infographics.length > 0) {
+          console.log("[Phase 2.5] 완료, 인포그래픽:", phase25Result.infographics.length, "개");
+          phase2Body = insertInfographicMarkers(phase2Body, phase25Result.infographics);
+          await savePhase2Output(genId, phase2Body);
+        } else {
+          console.warn("[Phase 2.5] 인포그래픽 설계 실패 (본문은 유지):", phase25Result.error);
+        }
+      } catch (err) {
+        console.warn("[Phase 2.5] 예외 (본문은 유지):", err);
+      }
+
+      // 본문에서 이미지 마커 추출 (Phase 2.5 결과 포함)
       const imageMarkers = extractImageMarkers(phase2Body).map((mk) => ({
         position: mk.position,
         description: mk.description,
@@ -785,7 +814,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
       const title = phase1Result.outline.title;
       const generationTimeMs = Date.now() - startTime;
 
-      // 저장 — Phase 3 는 사용자가 별도 트리거 (생략 가능)
+      // 저장
       await saveGenerationResult(genId, {
         generatedText: phase2Body,
         generatedTitle: title,
@@ -800,10 +829,9 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
         setEditTitle(title);
         setStatus("completed");
         setPipelinePhase("phase3"); // Phase 3 트리거 가능 상태
-        // Phase 2 완료 시점 SEO 점수 1차 계산 — Phase 3 완료 후 변화량 비교용.
         const seoNow = calculateSeoScore(title, phase2Body, targetKeyword || "").score;
         setSeoScoreBeforePhase3(seoNow);
-        // 교차검증 전에 본문에 문단 ID 주입 — 매칭 정확도를 높이기 위함
+        // 교차검증 전에 본문에 문단 ID 주입
         // ⚠️ phase2Body 를 직접 사용해야 함. editText 는 stale closure 로 아직 이전 값임.
         const bodyWithIds = hasParagraphIds(phase2Body) ? phase2Body : injectParagraphIds(phase2Body);
         setEditText(bodyWithIds);
@@ -1873,7 +1901,7 @@ ${koreanInfographics}`;
 
 /**
  * 4단계 파이프라인 진행 인디케이터:
- *   Phase 1: 구조 설계  →  Phase 2: 본문 작성  →  교차검증  →  Phase 3: SEO
+ *   Phase 1 → Phase 2 → 📊 인포그래픽 → 교차검증 → Phase 3: SEO
  *
  * - 현재 단계: 🔄 (애니메이션 pulse + 브랜드 컬러)
  * - 완료 단계: ✅
@@ -1889,38 +1917,41 @@ function PipelineStepper({
   crossValidationDone: boolean;
   phase3Loading: boolean;
 }) {
-  type StepKey = "phase1" | "phase2" | "crossValidation" | "phase3";
+  type StepKey = "phase1" | "phase2" | "phase25" | "crossValidation" | "phase3";
   const steps: { key: StepKey; label: string }[] = [
-    { key: "phase1", label: "Phase 1: 구조 설계" },
-    { key: "phase2", label: "Phase 2: 본문 작성" },
+    { key: "phase1", label: "구조 설계" },
+    { key: "phase2", label: "본문 작성" },
+    { key: "phase25", label: "📊 인포그래픽" },
     { key: "crossValidation", label: "교차검증" },
-    { key: "phase3", label: "Phase 3: SEO" },
+    { key: "phase3", label: "SEO" },
   ];
 
-  // 각 step 의 상태를 결정
+  const phaseOrder = ["phase1", "phase2", "phase25", "phase3"];
+  const currentIdx = phaseOrder.indexOf(phase);
+
   function statusFor(key: StepKey): "done" | "active" | "pending" {
     if (phase === "failed") return "pending";
 
     if (key === "phase1") {
-      if (phase === "phase1") return "active";
-      return "done";
+      return phase === "phase1" ? "active" : "done";
     }
     if (key === "phase2") {
       if (phase === "phase1") return "pending";
-      if (phase === "phase2") return "active";
-      return "done";
+      return phase === "phase2" ? "active" : "done";
+    }
+    if (key === "phase25") {
+      if (currentIdx < 2) return "pending";
+      return (phase as string) === "phase25" ? "active" : "done";
     }
     if (key === "crossValidation") {
-      if (phase === "phase1" || phase === "phase2") return "pending";
-      // phase === 'phase3' (Phase 2 완료, Phase 3 대기 또는 진행 중)
-      if (phase3Loading) return "done"; // Phase 3 가 시작되었으면 교차검증은 끝났다고 봄
+      if (currentIdx < 2) return "pending";
+      if (phase3Loading) return "done";
       return crossValidationDone ? "done" : "active";
     }
     // phase3
-    if (phase === "phase1" || phase === "phase2") return "pending";
+    if (currentIdx < 2) return "pending";
     if (phase === "phase3") {
-      if (phase3Loading) return "active";
-      return crossValidationDone ? "pending" : "pending";
+      return phase3Loading ? "active" : "pending";
     }
     return "pending";
   }
