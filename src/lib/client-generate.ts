@@ -904,49 +904,82 @@ export function insertInfographicMarkers(
 ): string {
   let result = body;
 
-  // 삽입 위치를 뒤에서부터 처리 (앞에서 하면 인덱스 밀림)
-  const sorted = [...infographics].reverse();
+  for (let idx = infographics.length - 1; idx >= 0; idx--) {
+    const info = infographics[idx];
+    const num = idx + 1;
+    const marker = [
+      "",
+      `━━ 📷 이미지 ${num} ━━`,
+      `[IMAGE: ${info.korean_prompt} | ${info.type}(${info.type_name})]`,
+      `(1) 한국어: ${info.korean_prompt}`,
+      `(2) English: ${info.english_prompt}`,
+      `━━━━━━━━━━━━━━`,
+      "",
+    ].join("\n");
 
-  for (const info of sorted) {
-    const marker = `\n\n━━ 📷 이미지 ━━\n[IMAGE: ${info.korean_prompt} | ${info.type}(${info.type_name})]\n\n(1) 한국어: ${info.korean_prompt}\n(2) English: ${info.english_prompt}\n━━━━━━━━━━━━━━\n`;
+    let inserted = false;
 
-    // p:N 형태의 위치 지정
+    // 1) p:N 기반 삽입 — "p:3", "p:3 뒤", "p:3 뒤에" 등에서 숫자 추출
     const pMatch = info.position.match(/p:(\d+)/);
     if (pMatch) {
       const pId = parseInt(pMatch[1], 10);
-      // <!-- p:N --> 다음 문단의 끝 위치를 찾아 마커 삽입
-      const pRe = new RegExp(`(<!-- p:${pId} -->[\\s\\S]*?)(\n\n<!-- p:|$)`);
-      const m = result.match(pRe);
-      if (m && m.index !== undefined) {
-        const insertPos = m.index + m[1].length;
-        result = result.slice(0, insertPos) + marker + result.slice(insertPos);
-        continue;
+      const pTag = `<!-- p:${pId} -->`;
+      const pIdx = result.indexOf(pTag);
+      if (pIdx !== -1) {
+        // 해당 문단 태그 다음의 다음 빈 줄(\n\n) 또는 다음 문단 ID 찾기
+        const afterTag = pIdx + pTag.length;
+        const nextP = result.indexOf("\n\n<!-- p:", afterTag);
+        const insertAt = nextP !== -1 ? nextP : result.length;
+        result = result.slice(0, insertAt) + "\n" + marker + result.slice(insertAt);
+        inserted = true;
+        console.log(`[insertMarker] #${num} → p:${pId} 뒤 삽입 (위치 ${insertAt})`);
       }
     }
 
-    // ## 소제목 기반 삽입
-    const headingMatch = info.position.match(/##\s*(.+)/);
-    if (headingMatch) {
-      const heading = headingMatch[1].trim();
-      const hIdx = result.indexOf(heading);
-      if (hIdx !== -1) {
-        // 해당 소제목 다음 빈 줄 뒤에 삽입
-        const nextPara = result.indexOf("\n\n", hIdx);
-        if (nextPara !== -1) {
-          const insertPos = nextPara;
-          result = result.slice(0, insertPos) + marker + result.slice(insertPos);
-          continue;
+    // 2) ## 소제목 기반 삽입
+    if (!inserted) {
+      const headingMatch = info.position.match(/##\s*(.+)/);
+      if (headingMatch) {
+        const heading = headingMatch[1].trim();
+        const hIdx = result.indexOf(heading);
+        if (hIdx !== -1) {
+          const nextBreak = result.indexOf("\n\n", hIdx);
+          if (nextBreak !== -1) {
+            result = result.slice(0, nextBreak) + "\n" + marker + result.slice(nextBreak);
+            inserted = true;
+            console.log(`[insertMarker] #${num} → "##${heading}" 뒤 삽입`);
+          }
         }
       }
     }
 
-    // 폴백: 본문 중간에 삽입 (60% 위치)
-    const fallbackPos = Math.floor(result.length * 0.6);
-    const nearestBreak = result.indexOf("\n\n", fallbackPos);
-    if (nearestBreak !== -1) {
-      result = result.slice(0, nearestBreak) + marker + result.slice(nearestBreak);
-    } else {
-      result += marker;
+    // 3) position_after_paragraph 숫자 직접 (프롬프트가 숫자만 반환한 경우)
+    if (!inserted && /^\d+$/.test(info.position.trim())) {
+      const pId = parseInt(info.position.trim(), 10);
+      const pTag = `<!-- p:${pId} -->`;
+      const pIdx = result.indexOf(pTag);
+      if (pIdx !== -1) {
+        const afterTag = pIdx + pTag.length;
+        const nextP = result.indexOf("\n\n<!-- p:", afterTag);
+        const insertAt = nextP !== -1 ? nextP : result.length;
+        result = result.slice(0, insertAt) + "\n" + marker + result.slice(insertAt);
+        inserted = true;
+        console.log(`[insertMarker] #${num} → p:${pId} (숫자) 뒤 삽입`);
+      }
+    }
+
+    // 4) 폴백: 균등 분배
+    if (!inserted) {
+      const fraction = (idx + 1) / (infographics.length + 1);
+      const approxPos = Math.floor(result.length * fraction);
+      const nearBreak = result.indexOf("\n\n", approxPos);
+      if (nearBreak !== -1 && nearBreak < result.length - 100) {
+        result = result.slice(0, nearBreak) + "\n" + marker + result.slice(nearBreak);
+        console.log(`[insertMarker] #${num} → 균등 분배 위치 (${Math.round(fraction * 100)}%)`);
+      } else {
+        result += "\n" + marker;
+        console.log(`[insertMarker] #${num} → 본문 끝 (폴백)`);
+      }
     }
   }
 

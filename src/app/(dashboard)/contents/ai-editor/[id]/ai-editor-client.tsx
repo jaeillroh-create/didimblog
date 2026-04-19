@@ -795,17 +795,27 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           phase2Body,
           categoryName,
           targetKeyword,
+          onProgress: (text) => {
+            if (isMounted.current) setStreamingText(text);
+          },
         });
 
         if (phase25Result.success && phase25Result.infographics && phase25Result.infographics.length > 0) {
-          console.log("[Phase 2.5] 완료, 인포그래픽:", phase25Result.infographics.length, "개");
+          const count = phase25Result.infographics.length;
+          console.log("[Phase 2.5] 완료, 인포그래픽:", count, "개, 유형:", phase25Result.infographics.map((i) => i.type).join(","));
+          const beforeLen = phase2Body.length;
           phase2Body = insertInfographicMarkers(phase2Body, phase25Result.infographics);
+          const markerCount = (phase2Body.match(/\[IMAGE:/g) || []).length;
+          console.log("[Phase 2.5] 마커 삽입 후:", phase2Body.length, "자 (삽입 전:", beforeLen, "), 마커 수:", markerCount);
           await savePhase2Output(genId, phase2Body);
+          if (isMounted.current) toast.success(`📊 인포그래픽 ${markerCount}개 삽입 완료`);
         } else {
-          console.warn("[Phase 2.5] 인포그래픽 설계 실패 (본문은 유지):", phase25Result.error);
+          console.warn("[Phase 2.5] 설계 실패:", phase25Result.error);
+          if (isMounted.current) toast.info(`인포그래픽 설계 건너뜀: ${phase25Result.error ?? "결과 없음"}`);
         }
       } catch (err) {
-        console.warn("[Phase 2.5] 예외 (본문은 유지):", err);
+        console.error("[Phase 2.5] 예외:", err);
+        if (isMounted.current) toast.error(`인포그래픽 설계 오류: ${err instanceof Error ? err.message : "알 수 없는 오류"}`);
       }
 
       // 본문에서 이미지 마커 추출 (Phase 2.5 결과 포함)
