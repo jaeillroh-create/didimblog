@@ -860,7 +860,7 @@ export async function clientRunPhase25(params: {
     body = await streamLLM({
       ...params.llm,
       messages: [{ role: "user", content: userMessage }],
-      maxTokens: 3000,
+      maxTokens: 6000,
       temperature: 0.5,
       onProgress: (text) => {
         params.onProgress?.(text);
@@ -870,32 +870,100 @@ export async function clientRunPhase25(params: {
     return { success: false, error: err instanceof Error ? err.message : "Phase 2.5 스트리밍 실패" };
   }
 
-  // JSON 파싱
-  console.log("[clientRunPhase25] LLM 응답 길이:", body.length, "자, 처음 200자:", body.slice(0, 200));
-  const jsonMatch = body.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error("[clientRunPhase25] JSON 매칭 실패. 응답 전체:", body.slice(0, 500));
-    return { success: false, error: `Phase 2.5 JSON 파싱 실패 — LLM 응답이 JSON 형식이 아닙니다 (${body.length}자)` };
+  // JSON 파싱 (3단계 복구)
+  console.log("[clientRunPhase25] LLM 응답 길이:", body.length, "자");
+  const parsed = parsePhase25Json(body);
+  if (!parsed) {
+    return { success: false, error: `Phase 2.5 JSON 파싱 완전 실패 (${body.length}자)` };
   }
+  const infographics = parsed.infographics as InfographicDesign[] | undefined;
+  console.log("[clientRunPhase25] 파싱 성공, infographics:", infographics?.length ?? "없음");
+  if (!infographics || !Array.isArray(infographics) || infographics.length === 0) {
+    console.error("[clientRunPhase25] infographics 비어있음. keys:", Object.keys(parsed));
+    return { success: false, error: "인포그래픽 설계 결과가 비어있습니다" };
+  }
+
+  return { success: true, infographics };
+}
+
+/**
+ * Phase 2.5 LLM 응답에서 JSON 파싱 — 3단계 복구.
+ * LLM 이 max_tokens 에 걸려 JSON 이 잘리거나 따옴표가 깨지는 경우 대비.
+ */
+function parsePhase25Json(raw: string): Record<string, unknown> | null {
+  const cleaned = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+
+  // 1차: 그대로 파싱
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.warn("[Phase 2.5] 1차 파싱 실패:", (e as Error).message);
+    }
+  }
+
+  // 2차: 잘린 JSON 복구 — 마지막 완전한 } 까지 잘라내고 배열/객체 닫기
   try {
-    const parsed = JSON.parse(jsonMatch[0]);
-    const infographics = parsed.infographics as InfographicDesign[] | undefined;
-    console.log("[clientRunPhase25] 파싱 성공, infographics:", infographics?.length ?? "없음");
-    if (!infographics || !Array.isArray(infographics) || infographics.length === 0) {
-      console.error("[clientRunPhase25] infographics 비어있음. parsed keys:", Object.keys(parsed));
-      return { success: false, error: "인포그래픽 설계 결과가 비어있습니다" };
-    }
+    let text = cleaned;
+    const firstBrace = text.indexOf("{");
+    if (firstBrace === -1) throw new Error("{ 없음");
+    text = text.slice(firstBrace);
 
-    // 다양성 검증
-    const diversity = parsed.diversity_check;
-    if (diversity && (!diversity.all_different || diversity.bf_conflict)) {
-      console.warn("[Phase 2.5] 다양성 검증 실패:", diversity);
+    // 마지막 완전한 } 찾기
+    const lastBrace = text.lastIndexOf("}");
+    if (lastBrace > 0) {
+      text = text.slice(0, lastBrace + 1);
     }
+    // 열린 [ ] 개수 맞추기
+    const openBrackets = (text.match(/\[/g) || []).length - (text.match(/\]/g) || []).length;
+    for (let i = 0; i < openBrackets; i++) text += "]";
+    const openBraces = (text.match(/\{/g) || []).length - (text.match(/\}/g) || []).length;
+    for (let i = 0; i < openBraces; i++) text += "}";
 
-    return { success: true, infographics };
-  } catch (err) {
-    return { success: false, error: `Phase 2.5 JSON 파싱 오류: ${err instanceof Error ? err.message : "unknown"}` };
+    return JSON.parse(text);
+  } catch (e) {
+    console.warn("[Phase 2.5] 2차 복구 파싱 실패:", (e as Error).message);
   }
+
+  // 3차: 개별 인포그래픽 객체 추출
+  try {
+    const objectRe = /\{\s*"position"\s*:\s*"[^"]*"[\s\S]*?"type"\s*:\s*"[^"]*"[\s\S]*?"korean_prompt"\s*:\s*"[^"]*"/g;
+    const matches = cleaned.match(objectRe);
+    if (matches && matches.length > 0) {
+      const infographics: InfographicDesign[] = [];
+      for (const m of matches) {
+        // 이 부분 문자열에서 완전한 {} 추출 시도
+        let obj = m;
+        const braceStart = obj.indexOf("{");
+        obj = obj.slice(braceStart);
+        // 닫기
+        if (!obj.endsWith("}")) obj += '"}';
+        // 필드 채우기
+        try {
+          const partial = JSON.parse(obj + "}");
+          infographics.push({
+            position: partial.position ?? "p:3",
+            type: partial.type ?? "C",
+            type_name: partial.type_name ?? "숫자 카드",
+            selection_reason: partial.selection_reason ?? "",
+            korean_prompt: partial.korean_prompt ?? "",
+            english_prompt: partial.english_prompt ?? "",
+            emotion: partial.emotion ?? "",
+            data_source: partial.data_source ?? [],
+          });
+        } catch { /* 건너뜀 */ }
+      }
+      if (infographics.length > 0) {
+        console.log("[Phase 2.5] 3차 개별 추출 성공:", infographics.length, "개");
+        return { infographics };
+      }
+    }
+  } catch (e) {
+    console.warn("[Phase 2.5] 3차 추출 실패:", (e as Error).message);
+  }
+
+  return null;
 }
 
 /**
