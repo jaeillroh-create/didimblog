@@ -5,6 +5,7 @@
 
 import type { Phase1Outline } from "@/lib/types/database";
 import type { PromptKey } from "@/lib/constants/prompts";
+import { replaceDeprecatedNames } from "@/lib/constants/name-mappings";
 
 export type ClientLLMProvider = "claude" | "openai" | "gemini";
 
@@ -1335,7 +1336,7 @@ const DEFAULT_TAGS_BY_CATEGORY: Record<PromptKey, string[]> = {
  * (Phase 3 후처리에서 appendCtaAndSignature 직전에 호출).
  */
 export function cleanFinalText(body: string): string {
-  let t = body;
+  let t = replaceDeprecatedNames(body);
 
   // 1) 구체적 법령 번호 + (확인 필요) → 일반화
   t = t.replace(
