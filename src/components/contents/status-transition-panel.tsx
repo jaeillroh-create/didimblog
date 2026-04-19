@@ -53,8 +53,9 @@ interface ConditionCheck {
   label: string;
   passed: boolean;
   detail: string;
-  /** 미충족 시 스크롤할 DOM id (content-detail-client 에 data-scroll-id 로 마킹해야 함) */
   scrollTarget?: string;
+  /** required=true: 미충족 시 전이 차단. false: 경고만 표시 */
+  required: boolean;
 }
 
 /**
@@ -78,41 +79,28 @@ function buildChecks(
     // S1 → S2 (초안완료 → 검토완료)
     return [
       {
-        id: "seo-70",
-        label: "SEO 점수 70점 이상",
-        passed: props.seoScore >= 70,
-        detail: `현재 ${props.seoScore}점`,
-        scrollTarget: "seo-panel",
-      },
-      {
-        id: "cross-validation",
-        label: "교차검증 수행 + 심각 이슈 0건",
-        passed: props.crossValidationRun && props.crossValidationCriticalCount === 0,
-        detail: props.crossValidationRun
-          ? `심각 ${props.crossValidationCriticalCount}건`
-          : "미수행",
-        scrollTarget: "body-editor",
-      },
-      {
-        id: "body-1500",
-        label: "본문 1,500자 이상 (공백 제외)",
-        passed: bodyCharCount >= 1500,
+        id: "body-500",
+        label: "본문 500자 이상",
+        passed: bodyCharCount >= 500,
         detail: `${bodyCharCount.toLocaleString()}자`,
         scrollTarget: "body-editor",
+        required: true,
       },
       {
         id: "tags-10",
-        label: "태그 10개 이상",
+        label: "태그 10개",
         passed: tagCount >= 10,
         detail: `현재 ${tagCount}개`,
         scrollTarget: "tags-input",
+        required: true,
       },
       {
-        id: "images-3",
-        label: "이미지 마커 3개 이상",
-        passed: props.imageMarkerCount >= 3,
-        detail: `현재 ${props.imageMarkerCount}개`,
+        id: "cta-exists",
+        label: isDiary ? "CTA 불필요 (다이어리)" : "CTA 블록 존재",
+        passed: isDiary || body.includes("━━") || body.includes("admin@didimip"),
+        detail: isDiary ? "면제" : (body.includes("━━") ? "있음" : "없음"),
         scrollTarget: "body-editor",
+        required: !isDiary,
       },
       {
         id: "review-approved",
@@ -125,6 +113,33 @@ function buildChecks(
               ? "수정 요청됨"
               : "미검수",
         scrollTarget: "review-panel",
+        required: true,
+      },
+      {
+        id: "seo-70",
+        label: "SEO 점수 70점 이상 (권장)",
+        passed: props.seoScore >= 70,
+        detail: `현재 ${props.seoScore}점`,
+        scrollTarget: "seo-panel",
+        required: false,
+      },
+      {
+        id: "cross-validation",
+        label: "교차검증 완료 (권장)",
+        passed: props.crossValidationRun && props.crossValidationCriticalCount === 0,
+        detail: props.crossValidationRun
+          ? `심각 ${props.crossValidationCriticalCount}건`
+          : "미수행",
+        scrollTarget: "body-editor",
+        required: false,
+      },
+      {
+        id: "images-3",
+        label: "이미지 마커 3개 이상 (권장)",
+        passed: props.imageMarkerCount >= 3,
+        detail: `현재 ${props.imageMarkerCount}개`,
+        scrollTarget: "body-editor",
+        required: false,
       },
     ];
   }
@@ -132,14 +147,6 @@ function buildChecks(
   if (status === "S2") {
     // S2 → S3 (검토완료 → 발행예정)
     const hasPublishDate = !!(content.publish_date || content.publish_due);
-    const hasCta =
-      isDiary ||
-      body.includes("상담") ||
-      body.includes("연락") ||
-      body.includes("이웃") ||
-      body.includes("admin@didimip");
-    const hasSignature =
-      isDiary || body.includes("특허그룹 디딤") || body.includes("디딤변리사");
     return [
       {
         id: "publish-date",
@@ -149,20 +156,15 @@ function buildChecks(
           ? (content.publish_date ?? content.publish_due ?? "").slice(0, 10)
           : "미설정",
         scrollTarget: "publish-date",
+        required: true,
       },
       {
-        id: "cta",
-        label: isDiary ? "CTA 불필요 (다이어리)" : "CTA 배치",
-        passed: hasCta,
-        detail: hasCta ? "있음" : "없음",
+        id: "images-ready",
+        label: "이미지 준비 (권장)",
+        passed: props.imageMarkerCount >= 1,
+        detail: `이미지 ${props.imageMarkerCount}개`,
         scrollTarget: "body-editor",
-      },
-      {
-        id: "signature",
-        label: isDiary ? "서명 불필요 (다이어리)" : "디딤 서명 블록 포함",
-        passed: hasSignature,
-        detail: hasSignature ? "있음" : "없음",
-        scrollTarget: "body-editor",
+        required: false,
       },
     ];
   }
@@ -181,6 +183,7 @@ function buildChecks(
           label: "발행일시 필요",
           passed: false,
           detail: "발행일시가 기록되지 않음",
+          required: true,
         },
       ];
     }
@@ -192,6 +195,7 @@ function buildChecks(
         label: "발행 후 7일 경과",
         passed: daysSince >= 7,
         detail: `D+${daysSince}일`,
+        required: true,
       },
     ];
   }
@@ -271,9 +275,13 @@ export function StatusTransitionPanel({
   const forwardTransition = findForwardTransition(content.status as ContentStatus, transitions);
   const reverseTransitions = findReverseTransitions(content.status as ContentStatus, transitions);
 
-  const metCount = checks.filter((c) => c.passed).length;
-  const totalCount = checks.length;
-  const allMet = totalCount === 0 || metCount === totalCount;
+  const requiredChecks = checks.filter((c) => c.required);
+  const recommendedChecks = checks.filter((c) => !c.required);
+  const requiredMet = requiredChecks.filter((c) => c.passed).length;
+  const requiredTotal = requiredChecks.length;
+  const allRequiredMet = requiredTotal === 0 || requiredMet === requiredTotal;
+  const recommendedMet = recommendedChecks.filter((c) => c.passed).length;
+  const hasUnmetRecommendations = recommendedMet < recommendedChecks.length;
 
   function scrollToTarget(scrollTarget?: string) {
     if (!scrollTarget) return;
@@ -311,9 +319,12 @@ export function StatusTransitionPanel({
     }
 
     // S1→S2, S2→S3 — 조건 체크만 확인 후 바로 전이
-    if (!allMet) {
-      toast.error("조건이 충족되지 않았습니다. 체크리스트를 확인해주세요.");
+    if (!allRequiredMet) {
+      toast.error("필수 조건이 충족되지 않았습니다. 체크리스트를 확인해주세요.");
       return;
+    }
+    if (hasUnmetRecommendations) {
+      toast.info("권장 조건 미충족 항목이 있지만 전이를 진행합니다.");
     }
     startTransition(async () => {
       await runStatusUpdate({
@@ -432,9 +443,9 @@ export function StatusTransitionPanel({
                 variant="default"
                 className="w-full"
                 onClick={handleForwardClick}
-                disabled={isPending || (!allMet && totalCount > 0)}
+                disabled={isPending || (!allRequiredMet && requiredTotal > 0)}
                 style={{
-                  backgroundColor: allMet || totalCount === 0 ? "var(--brand-accent)" : undefined,
+                  backgroundColor: allRequiredMet || requiredTotal === 0 ? "var(--brand-accent)" : undefined,
                 }}
               >
                 {isPending ? (
@@ -457,11 +468,13 @@ export function StatusTransitionPanel({
               </Button>
 
               {/* 조건 체크리스트 */}
-              {totalCount > 0 && (
+              {checks.length > 0 && (
                 <div className="space-y-1.5 rounded-md border bg-muted/30 p-2">
                   <p className="text-[11px] text-muted-foreground">
-                    조건 충족 현황: <strong>{metCount}/{totalCount}</strong>
-                    {!allMet && " — 아래 항목을 해결하세요"}
+                    필수 충족: <strong>{requiredMet}/{requiredTotal}</strong>
+                    {recommendedChecks.length > 0 &&
+                      ` · 권장 ${recommendedMet}/${recommendedChecks.length}`}
+                    {!allRequiredMet && " — 아래 필수 항목을 해결하세요"}
                   </p>
                   {checks.map((check) => (
                     <button
@@ -475,12 +488,18 @@ export function StatusTransitionPanel({
                           className="h-3.5 w-3.5 shrink-0"
                           style={{ color: "var(--quality-excellent)" }}
                         />
-                      ) : (
+                      ) : check.required ? (
                         <XCircle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                      ) : (
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-orange-400" />
                       )}
                       <span
                         className={
-                          check.passed ? "text-muted-foreground" : "text-foreground font-medium"
+                          check.passed
+                            ? "text-muted-foreground"
+                            : check.required
+                              ? "text-foreground font-medium"
+                              : "text-muted-foreground"
                         }
                       >
                         {check.label}
@@ -494,7 +513,7 @@ export function StatusTransitionPanel({
               )}
 
               {/* admin 강제 전환 */}
-              {!allMet && totalCount > 0 && isAdmin && (
+              {!allRequiredMet && requiredTotal > 0 && isAdmin && (
                 <Button
                   size="sm"
                   variant="outline"
