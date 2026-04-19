@@ -871,14 +871,18 @@ export async function clientRunPhase25(params: {
   }
 
   // JSON 파싱
+  console.log("[clientRunPhase25] LLM 응답 길이:", body.length, "자, 처음 200자:", body.slice(0, 200));
   const jsonMatch = body.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    return { success: false, error: "Phase 2.5 JSON 파싱 실패" };
+    console.error("[clientRunPhase25] JSON 매칭 실패. 응답 전체:", body.slice(0, 500));
+    return { success: false, error: `Phase 2.5 JSON 파싱 실패 — LLM 응답이 JSON 형식이 아닙니다 (${body.length}자)` };
   }
   try {
     const parsed = JSON.parse(jsonMatch[0]);
     const infographics = parsed.infographics as InfographicDesign[] | undefined;
+    console.log("[clientRunPhase25] 파싱 성공, infographics:", infographics?.length ?? "없음");
     if (!infographics || !Array.isArray(infographics) || infographics.length === 0) {
+      console.error("[clientRunPhase25] infographics 비어있음. parsed keys:", Object.keys(parsed));
       return { success: false, error: "인포그래픽 설계 결과가 비어있습니다" };
     }
 
