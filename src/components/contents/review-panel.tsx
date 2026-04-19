@@ -15,6 +15,7 @@ import {
   approveReview,
   requestRevision,
   resetReviewStatus,
+  updateContentStatusWithMeta,
 } from "@/actions/contents";
 import type { Content, Profile } from "@/lib/types/database";
 import {
@@ -91,8 +92,46 @@ export function ReviewPanel({
         toast.error(res.error ?? "검수 승인 실패");
         return;
       }
-      onContentUpdated(res.data);
+
+      let latest = res.data;
       toast.success("검수 승인 완료");
+
+      // ── 연쇄 자동 전이: S1→S2 ──
+      if (latest.status === "S1") {
+        const body = latest.body ?? "";
+        const bodyLen = body.replace(/\s/g, "").length;
+        const tagCount = latest.tags?.length ?? 0;
+        const hasCta = body.includes("━━") || body.includes("admin@didimip");
+        const isDiary = latest.category_id?.startsWith("CAT-C") ?? false;
+
+        if (bodyLen >= 500 && tagCount >= 10 && (isDiary || hasCta)) {
+          const s2Res = await updateContentStatusWithMeta({
+            contentId: content.id,
+            newStatus: "S2",
+          });
+          if (s2Res.data) {
+            latest = s2Res.data;
+            toast.success("→ 검토완료(S2) 자동 전이");
+          }
+        }
+      }
+
+      // ── 연쇄 자동 전이: S2→S3 ──
+      if (latest.status === "S2") {
+        const hasDate = !!(latest.publish_date || latest.publish_due);
+        if (hasDate) {
+          const s3Res = await updateContentStatusWithMeta({
+            contentId: content.id,
+            newStatus: "S3",
+          });
+          if (s3Res.data) {
+            latest = s3Res.data;
+            toast.success("→ 발행예정(S3) 자동 전이");
+          }
+        }
+      }
+
+      onContentUpdated(latest);
     });
   }
 
