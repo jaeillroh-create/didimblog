@@ -51,6 +51,7 @@ import {
   PHASE1_PROMPT,
   PHASE2_PROMPT,
   PHASE25_INFOGRAPHIC_PROMPT,
+  FIRST_IMAGE_RULES,
   PHASE3_PROMPT_BY_KEY,
   CATEGORY_TONE_RULES,
   COMMON_WRITING_RULES,
@@ -814,6 +815,7 @@ export function AiEditorClient({ generationId }: AiEditorClientProps) {
           phase2Body,
           categoryName,
           targetKeyword,
+          firstImageRules: FIRST_IMAGE_RULES,
           onProgress: (text) => {
             if (isMounted.current) setStreamingText(text);
           },
@@ -1778,6 +1780,7 @@ ${koreanInfographics}`;
                           phase2Body: bodyForDesign,
                           categoryName: catName,
                           targetKeyword: kw,
+                          firstImageRules: FIRST_IMAGE_RULES,
                         });
 
                         if (result.success && result.infographics && result.infographics.length > 0) {
