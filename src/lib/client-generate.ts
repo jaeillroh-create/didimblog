@@ -4,7 +4,8 @@
  */
 
 import type { Phase1Outline } from "@/lib/types/database";
-import type { PromptKey } from "@/lib/constants/prompts";
+import { type PromptKey, FIRST_IMAGE_RULES } from "@/lib/constants/prompts";
+import { replaceDeprecatedNames } from "@/lib/constants/name-mappings";
 
 export type ClientLLMProvider = "claude" | "openai" | "gemini";
 
@@ -847,12 +848,21 @@ export async function clientRunPhase25(params: {
   phase2Body: string;
   categoryName: string;
   targetKeyword: string;
+  /** 첫 이미지 타이포 규칙 (디딤 다이어리는 빈 문자열) */
+  firstImageRules?: string;
   onProgress?: (text: string) => void;
 }): Promise<Phase25Result> {
+  // 디딤 다이어리는 첫 이미지 T타입 제외 → 인포그래픽 3개만
+  const isDiary = params.categoryName.includes("다이어리");
+  const hasFirstImageRule = !isDiary && (params.firstImageRules ?? "").length > 0;
+  const totalCount = hasFirstImageRule ? "정확히 4" : "정확히 3";
+
   const userMessage = replaceTemplate(params.phase25Prompt, {
     phase2_output: params.phase2Body,
     category_name: params.categoryName,
     target_keyword: params.targetKeyword,
+    first_image_rules: hasFirstImageRule ? params.firstImageRules! : "",
+    total_image_count: totalCount,
   });
 
   let body = "";
@@ -992,6 +1002,20 @@ export function insertInfographicMarkers(
     ].join("\n");
 
     let inserted = false;
+
+    // 0) T타입(타이포그래피 썸네일) — 본문 최상단에 삽입
+    if (info.type === "T" || info.position === "top") {
+      // 제목(# ...) 다음 빈 줄 위치에 삽입, 없으면 맨 앞
+      const titleEnd = result.match(/^#[^\n]*\n/);
+      if (titleEnd && titleEnd.index !== undefined) {
+        const insertAt = titleEnd.index + titleEnd[0].length;
+        result = result.slice(0, insertAt) + marker + "\n" + result.slice(insertAt);
+      } else {
+        result = marker + "\n" + result;
+      }
+      inserted = true;
+      console.log(`[insertMarker] #${num} → T타입(썸네일) 본문 최상단 삽입`);
+    }
 
     // 1) p:N 기반 삽입 — "p:3", "p:3 뒤", "p:3 뒤에" 등에서 숫자 추출
     const pMatch = info.position.match(/p:(\d+)/);
@@ -1335,7 +1359,7 @@ const DEFAULT_TAGS_BY_CATEGORY: Record<PromptKey, string[]> = {
  * (Phase 3 후처리에서 appendCtaAndSignature 직전에 호출).
  */
 export function cleanFinalText(body: string): string {
-  let t = body;
+  let t = replaceDeprecatedNames(body);
 
   // 1) 구체적 법령 번호 + (확인 필요) → 일반화
   t = t.replace(
