@@ -1247,10 +1247,16 @@ export async function clientCrossValidateV2(
       ? params.legalReferences.map((r) => `- ${r}`).join("\n")
       : "(Phase 1 에서 legal_references 가 추출되지 않음)";
 
+  const now = new Date();
+  const currentYear = String(now.getFullYear());
+  const currentDate = now.toISOString().slice(0, 10);
+
   const userMessage = params.promptTemplate
     .split("{{legal_references}}").join(legalRefBlock)
     .split("{{category_name}}").join(params.categoryName || "")
     .split("{{target_keyword}}").join(params.targetKeyword || "")
+    .split("{{current_year}}").join(currentYear)
+    .split("{{current_date}}").join(currentDate)
     .split("{{phase2_output}}").join(params.body);
 
   const promises = params.providers.map(async (cfg): Promise<CrossValidationProviderResult> => {
