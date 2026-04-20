@@ -6,6 +6,7 @@
 import type { Phase1Outline } from "@/lib/types/database";
 import { type PromptKey, FIRST_IMAGE_RULES } from "@/lib/constants/prompts";
 import { replaceDeprecatedNames } from "@/lib/constants/name-mappings";
+import { filterRelevantFacts, formatFactsForPrompt } from "@/lib/constants/legal-facts";
 
 export type ClientLLMProvider = "claude" | "openai" | "gemini";
 
@@ -1247,8 +1248,13 @@ export async function clientCrossValidateV2(
       ? params.legalReferences.map((r) => `- ${r}`).join("\n")
       : "(Phase 1 에서 legal_references 가 추출되지 않음)";
 
+  // Known Facts Table — 본문과 관련된 팩트만 필터링해서 주입 (토큰 절약)
+  const relevantFacts = filterRelevantFacts(params.body);
+  const legalFactsBlock = formatFactsForPrompt(relevantFacts);
+
   const userMessage = params.promptTemplate
     .split("{{legal_references}}").join(legalRefBlock)
+    .split("{{legal_facts}}").join(legalFactsBlock)
     .split("{{category_name}}").join(params.categoryName || "")
     .split("{{target_keyword}}").join(params.targetKeyword || "")
     .split("{{phase2_output}}").join(params.body);
