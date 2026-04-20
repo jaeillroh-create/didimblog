@@ -73,6 +73,35 @@ const SEVERITY_STYLES: Record<string, { color: string; bg: string; label: string
   low: { color: "#6b7280", bg: "#f3f4f6", label: "경미", weight: 1 },
 };
 
+/**
+ * 카테고리 표시 정규화 — 내부 분류(숫자팩트/숫자일관/숫자완화)를 UI 그룹으로 통합.
+ * 기존 "숫자" 카테고리와 하위 호환 유지 (모두 "숫자 오류" 로 표시).
+ */
+function normalizeCategoryDisplay(category: string): {
+  label: string;
+  color: string;
+  bg: string;
+} {
+  const c = category ?? "";
+  if (c === "숫자팩트" || c === "숫자일관" || c === "숫자") {
+    return { label: "숫자 오류", color: "#dc2626", bg: "#fee2e2" };
+  }
+  if (c === "숫자완화") {
+    return { label: "표현 완화", color: "#d97706", bg: "#fef3c7" };
+  }
+  if (c === "법률팩트") {
+    return { label: "법률팩트", color: "#7c3aed", bg: "#ede9fe" };
+  }
+  if (c === "광고규정") {
+    return { label: "광고규정", color: "#dc2626", bg: "#fee2e2" };
+  }
+  if (c === "기관명") {
+    return { label: "기관명", color: "#2563eb", bg: "#dbeafe" };
+  }
+  // 논리/단정/출처 등 기타
+  return { label: c, color: "#374151", bg: "#f3f4f6" };
+}
+
 type SeverityLevel = "high" | "medium" | "low";
 
 function upgradeSeverity(s: SeverityLevel): SeverityLevel {
@@ -104,16 +133,31 @@ type ItemStatus = "pending" | "applied" | "ignored";
 /**
  * 이 이슈가 "단순 치환" 이 아니라 "문단 재작성" 을 필요로 하는지 결정.
  *
- * 단순 치환 조건: category in (숫자, 법률팩트) AND severity === "low"
- * 그 외에는 모두 재작성 필요:
- *   - severity 가 high 또는 medium
- *   - category 가 논리 / 단정 / 출처
+ * 단순 치환 조건:
+ *   - 숫자팩트 / 숫자일관 / 숫자완화 / 법률팩트 / 기관명: 항상 단순 치환
+ *     (값 교정 또는 단어 대체만 필요)
+ *   - 기타 카테고리 + severity=low: 단순 치환
+ *
+ * 그 외에는 재작성 필요:
+ *   - severity 가 high 또는 medium AND 숫자 계열이 아님
+ *   - category 가 논리 / 단정 / 출처 / 광고규정
  *   - suggested_text 길이가 original_text 대비 50% 이상 차이
  */
 function needsParagraphRewrite(issue: FactCheckIssue): boolean {
-  if (issue.severity === "high" || issue.severity === "medium") return true;
   const cat = issue.category ?? "";
-  if (cat.includes("논리") || cat.includes("단정") || cat.includes("출처")) return true;
+  // 숫자 계열 / 법률팩트 / 기관명 은 항상 단순 치환
+  if (
+    cat === "숫자팩트" ||
+    cat === "숫자일관" ||
+    cat === "숫자완화" ||
+    cat === "숫자" ||
+    cat === "법률팩트" ||
+    cat === "기관명"
+  ) {
+    return false;
+  }
+  if (issue.severity === "high" || issue.severity === "medium") return true;
+  if (cat.includes("논리") || cat.includes("단정") || cat.includes("출처") || cat.includes("광고규정")) return true;
   const orig = issue.original_text ?? "";
   const repl = issue.replacement_text ?? "";
   if (orig.length > 0) {
@@ -381,7 +425,7 @@ export function CrossLLMValidationPanel({
       return;
     }
     setGroupStatus((prev) => ({ ...prev, [group.groupKey]: "applied" }));
-    toast.success(`${iss.category} 반영 완료`);
+    toast.success(`${normalizeCategoryDisplay(iss.category).label} 반영 완료`);
   }
 
   /**
@@ -455,7 +499,7 @@ export function CrossLLMValidationPanel({
       return false;
     }
     setGroupStatus((prev) => ({ ...prev, [group.groupKey]: "applied" }));
-    toast.success(`${group.primary.issue.category} 반영 + 다듬기 완료`);
+    toast.success(`${normalizeCategoryDisplay(group.primary.issue.category).label} 반영 + 다듬기 완료`);
     return true;
   }
 
@@ -819,7 +863,17 @@ function IssueGroupCard({
           {sev.label}
           {isMultiLLM && ` ⬆`}
         </span>
-        <span className="font-semibold text-sm">{iss.category}</span>
+        {(() => {
+          const catDisplay = normalizeCategoryDisplay(iss.category);
+          return (
+            <span
+              className="px-2 py-0.5 rounded text-xs font-semibold"
+              style={{ backgroundColor: catDisplay.bg, color: catDisplay.color }}
+            >
+              {catDisplay.label}
+            </span>
+          );
+        })()}
         {requiresRewrite && (
           <Badge variant="outline" className="text-[10px] py-0 border-blue-300 text-blue-700">
             문단 재작성
