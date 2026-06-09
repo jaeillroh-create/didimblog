@@ -728,6 +728,25 @@ const REJECT_LOOKBACK_DAYS = 30;
 const BLACKLIST_REJECT_COUNT = 3;
 
 /**
+ * generateTitleSuggestion 템플릿 등에서 나오는 무의미 토큰 — 부적합 키워드
+ * 추출 시 제외해 무관한 추천이 과도하게 필터링되는 것을 방지.
+ */
+const TITLE_STOPWORDS = new Set<string>([
+  "실무에서",
+  "대표님이",
+  "확인해야",
+  "알아야",
+  "완벽",
+  "가이드",
+  "최신",
+  "핵심",
+  "정리",
+  "이유",
+  "직접",
+  "후속편",
+]);
+
+/**
  * 최근 REJECT_LOOKBACK_DAYS 일 이내에 rejected 된 추천에서 rejection_keywords 를
  * 집계. BLACKLIST_REJECT_COUNT 회 이상 반복 rejected 된 키워드는 블랙리스트.
  *
@@ -774,13 +793,108 @@ export async function getRejectedKeywordStats(): Promise<{
   }
 }
 
-function isBlacklisted(text: string, blacklist: Set<string>): boolean {
-  if (blacklist.size === 0) return false;
+// ─────────────────────────────────────────────────────────────
+// 통합 추천 필터 (avoid / rejected / blacklist)
+//
+// - blacklist: 3회 이상 거부된 키워드 — 절대 노출 금지(hard)
+// - rejected:  최근 30일 내 1회라도 거부된 키워드 — 노출 금지(hard)
+// - avoid:     최근 48시간 내 이미 노출된 주제/키워드 — 회피하되,
+//              대안이 없으면 노출 허용(soft)
+//
+// 기존 구현은 "이미 본 추천"을 content_recommendations.id 로만 제외했는데,
+// 새로고침마다 새 row(새 UUID)가 생성돼 제외가 전혀 작동하지 않았다.
+// 그래서 제목/키워드(콘텐츠) 기준 회피로 전환한다.
+// ─────────────────────────────────────────────────────────────
+
+interface RecoFilters {
+  /** 최근 노출 주제/키워드 (soft — 대안 없으면 허용) */
+  avoid: Set<string>;
+  /** 30일 내 거부된 키워드 (hard) */
+  rejected: Set<string>;
+  /** 3회 이상 거부된 키워드 (hard) */
+  blacklist: Set<string>;
+}
+
+const RECENT_SHOWN_WINDOW_HOURS = 48;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** set 의 항목 중 하나라도 text 에 포함되면 true */
+function containsAny(text: string, set: Set<string>): boolean {
+  if (set.size === 0) return false;
   const lower = text.toLowerCase();
-  for (const k of blacklist) {
+  for (const k of set) {
     if (k && lower.includes(k)) return true;
   }
   return false;
+}
+
+/** 절대 노출 금지 (블랙리스트 또는 거부 키워드) */
+function isHardBlocked(text: string, f: RecoFilters): boolean {
+  return containsAny(text, f.blacklist) || containsAny(text, f.rejected);
+}
+
+/** 최근 노출되어 회피 대상 (대안 없으면 허용) */
+function isSoftAvoided(text: string, f: RecoFilters): boolean {
+  return containsAny(text, f.avoid);
+}
+
+/** Fisher-Yates 셔플 (원본 불변) */
+function shuffle<T>(arr: readonly T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/**
+ * 최근 RECENT_SHOWN_WINDOW_HOURS 시간 내 content_recommendations 에 기록된
+ * 모든 주제/키워드를 정규화하여 반환 (status 무관).
+ * 페이지 로드/새로고침 때마다 row 가 쌓이므로, 직전에 노출된 주제를
+ * 콘텐츠 단위로 회피할 수 있다.
+ */
+async function getRecentlyShownTopics(): Promise<Set<string>> {
+  const set = new Set<string>();
+  try {
+    const supabase = await createClient();
+    const since = new Date(
+      Date.now() - RECENT_SHOWN_WINDOW_HOURS * 60 * 60 * 1000
+    );
+    const { data, error } = await supabase
+      .from("content_recommendations")
+      .select("recommended_topic, recommended_keywords")
+      .gte("created_at", since.toISOString());
+    if (error) return set;
+    for (const row of data ?? []) {
+      const topic = (row.recommended_topic as string | null)?.trim().toLowerCase();
+      if (topic) set.add(topic);
+      for (const k of (row.recommended_keywords as string[] | null) ?? []) {
+        const nk = k?.trim().toLowerCase();
+        if (nk) set.add(nk);
+      }
+    }
+  } catch (err) {
+    console.warn("[getRecentlyShownTopics] 조회 실패:", err);
+  }
+  return set;
+}
+
+/**
+ * 추천 생성에 필요한 모든 필터를 한 번에 로드.
+ * @param excludeRecIds 클라이언트가 넘긴 제외 식별자. UUID 가 아닌 값(제목 폴백)은
+ *                      avoid 셋에 직접 추가한다.
+ */
+async function loadRecoFilters(excludeRecIds: string[] = []): Promise<RecoFilters> {
+  const [{ rejectedKeywords, blacklist }, avoid] = await Promise.all([
+    getRejectedKeywordStats(),
+    getRecentlyShownTopics(),
+  ]);
+  for (const id of excludeRecIds) {
+    if (id && !UUID_RE.test(id)) avoid.add(id.trim().toLowerCase());
+  }
+  return { avoid, rejected: rejectedKeywords, blacklist };
 }
 
 /**
@@ -791,7 +905,7 @@ function isBlacklisted(text: string, blacklist: Set<string>): boolean {
 async function pickWeightedKeyword(
   categoryId: string,
   excludeKeywordIds: Set<string>,
-  blacklist: Set<string>
+  filters: RecoFilters
 ): Promise<KeywordPool | null> {
   const supabase = await createClient();
 
@@ -811,12 +925,14 @@ async function pickWeightedKeyword(
       .is("covered_content_id", null)
       .limit(30);
 
-    const candidates = ((data ?? []) as KeywordPool[]).filter(
-      (k) => !excludeKeywordIds.has(k.id) && !isBlacklisted(k.keyword, blacklist)
+    // hard 차단(블랙리스트/거부) 제외 → 그중 최근 노출(soft) 회피, 없으면 전체
+    const hard = ((data ?? []) as KeywordPool[]).filter(
+      (k) => !excludeKeywordIds.has(k.id) && !isHardBlocked(k.keyword, filters)
     );
-    if (candidates.length > 0) {
-      // 랜덤 1개
-      return candidates[Math.floor(Math.random() * candidates.length)];
+    const soft = hard.filter((k) => !isSoftAvoided(k.keyword, filters));
+    const pool = soft.length > 0 ? soft : hard;
+    if (pool.length > 0) {
+      return pool[Math.floor(Math.random() * pool.length)];
     }
   }
   return null;
@@ -843,23 +959,23 @@ export async function getMultiSourceRecommendations(
   excludeRecIds: string[] = []
 ): Promise<MultiSourceRecommendations> {
   const cards: Recommendation[] = [];
-  const { rejectedKeywords, blacklist } = await getRejectedKeywordStats();
+  const filters = await loadRecoFilters(excludeRecIds);
   const excludeSet = new Set(excludeRecIds);
 
   // ── 1) 키워드 풀 기반 (가중치 샘플링) ──
-  const keywordCard = await buildKeywordCard(blacklist);
+  const keywordCard = await buildKeywordCard(filters);
   if (keywordCard && !excludeSet.has(keywordCard.recId ?? "")) {
     cards.push(keywordCard);
   }
 
   // ── 2) 뉴스 API 기반 ──
-  const newsCard = await buildNewsCard(blacklist, rejectedKeywords);
+  const newsCard = await buildNewsCard(filters);
   if (newsCard && !excludeSet.has(newsCard.recId ?? "")) {
     cards.push(newsCard);
   }
 
   // ── 3) 12주 스케줄 기반 ──
-  const scheduleCard = await buildScheduleCard(blacklist);
+  const scheduleCard = await buildScheduleCard(filters);
   if (scheduleCard && !excludeSet.has(scheduleCard.recId ?? "")) {
     cards.push(scheduleCard);
   }
@@ -906,13 +1022,13 @@ async function persistRecommendation(
 }
 
 async function buildKeywordCard(
-  blacklist: Set<string>,
+  filters: RecoFilters,
   categoryId?: "CAT-A" | "CAT-B" | "CAT-C"
 ): Promise<Recommendation | null> {
   // categoryId 가 명시되면 해당 카테고리만, 아니면 CAT-A 우선 → CAT-B 폴백
   const tryOrder: string[] = categoryId ? [categoryId] : ["CAT-A", "CAT-B"];
   for (const catId of tryOrder) {
-    const kw = await pickWeightedKeyword(catId, new Set(), blacklist);
+    const kw = await pickWeightedKeyword(catId, new Set(), filters);
     if (!kw) continue;
     const catName =
       catId === "CAT-A"
@@ -938,8 +1054,7 @@ async function buildKeywordCard(
 }
 
 async function buildNewsCard(
-  blacklist: Set<string>,
-  rejectedKeywords: Set<string>
+  filters: RecoFilters
 ): Promise<Recommendation | null> {
   try {
     const supabase = await createClient();
@@ -953,40 +1068,46 @@ async function buildNewsCard(
       .limit(15);
 
     const items = (data ?? []) as NewsItem[];
-    for (const item of items) {
-      const titleLower = item.title.toLowerCase();
-      if (isBlacklisted(titleLower, blacklist)) continue;
-      // 최근 30일 내 rejected 된 키워드와 60% 이상 겹치면 skip
-      let hits = 0;
-      for (const k of rejectedKeywords) {
-        if (k && titleLower.includes(k)) hits++;
-      }
-      if (hits >= 2) continue;
 
-      const cleanTitle = item.title.replace(/<\/?b>/g, "");
-      const rec: Recommendation = {
-        priority: "URGENT",
-        category: "IP 라운지",
-        categoryId: "CAT-B",
-        subCategory: "IP 뉴스 한 입",
-        subCategoryId: "CAT-B-03",
-        title: cleanTitle,
-        reason:
-          item.blog_angle ??
-          item.ai_summary ??
-          `최근 7일 뉴스 — 검색 키워드: ${item.search_keyword}`,
-        keywords: [item.search_keyword],
-        newsUrl: item.link,
-        relevanceReason: item.ai_summary ?? undefined,
-        suggestedAngle: item.blog_angle ?? undefined,
-      };
-      return persistRecommendation(rec, "news_api", {
-        news_id: item.id,
-        link: item.link,
-        search_keyword: item.search_keyword,
-        source: item.source,
-      });
-    }
+    // hard 차단(블랙리스트/거부 키워드) 제외 → soft 회피(최근 노출) → 랜덤 선택.
+    // 기존엔 정렬 첫 기사를 항상 반환해 새로고침마다 동일 뉴스가 반복됐다.
+    const usable = items.filter(
+      (it) =>
+        !isHardBlocked(it.title, filters) &&
+        !isHardBlocked(it.search_keyword ?? "", filters)
+    );
+    const preferred = usable.filter(
+      (it) =>
+        !isSoftAvoided(it.title, filters) &&
+        !isSoftAvoided(it.search_keyword ?? "", filters)
+    );
+    const pool = shuffle(preferred.length > 0 ? preferred : usable);
+    if (pool.length === 0) return null;
+
+    const item = pool[0];
+    const cleanTitle = item.title.replace(/<\/?b>/g, "");
+    const rec: Recommendation = {
+      priority: "URGENT",
+      category: "IP 라운지",
+      categoryId: "CAT-B",
+      subCategory: "IP 뉴스 한 입",
+      subCategoryId: "CAT-B-03",
+      title: cleanTitle,
+      reason:
+        item.blog_angle ??
+        item.ai_summary ??
+        `최근 7일 뉴스 — 검색 키워드: ${item.search_keyword}`,
+      keywords: [item.search_keyword],
+      newsUrl: item.link,
+      relevanceReason: item.ai_summary ?? undefined,
+      suggestedAngle: item.blog_angle ?? undefined,
+    };
+    return persistRecommendation(rec, "news_api", {
+      news_id: item.id,
+      link: item.link,
+      search_keyword: item.search_keyword,
+      source: item.source,
+    });
   } catch (err) {
     console.warn("[buildNewsCard] news_items 조회 실패:", err);
   }
@@ -1001,49 +1122,57 @@ function scheduleCategoryToId(category: string): "CAT-A" | "CAT-B" | "CAT-C" {
 }
 
 async function buildScheduleCard(
-  blacklist: Set<string>,
+  filters: RecoFilters,
   categoryId?: "CAT-A" | "CAT-B" | "CAT-C",
   excludeTitles: Set<string> = new Set()
 ): Promise<Recommendation | null> {
   const currentWeek = getCurrentWeek();
-  // 이번 주 기준 ±1 주의 스케줄 아이템 → 없으면 전체에서 폴백
-  let candidates = SCHEDULE_DATA.filter(
+  // 이번 주 기준 ±1 주의 스케줄 아이템 → 없으면 해당 카테고리 전체로 폴백
+  let pool = SCHEDULE_DATA.filter(
     (it) => it.week >= currentWeek && it.week <= currentWeek + 1
   );
   if (categoryId) {
-    candidates = candidates.filter((it) => scheduleCategoryToId(it.category) === categoryId);
+    pool = pool.filter((it) => scheduleCategoryToId(it.category) === categoryId);
   }
-  if (candidates.length === 0) {
-    // 해당 카테고리의 전체 스케줄 중 임의 선택 (블랙리스트/제외 통과하는 것)
-    const pool = categoryId
+  if (pool.length === 0) {
+    pool = categoryId
       ? SCHEDULE_DATA.filter((it) => scheduleCategoryToId(it.category) === categoryId)
-      : SCHEDULE_DATA;
-    if (pool.length === 0) return null;
-    candidates = [pool[Math.floor(Math.random() * pool.length)]];
+      : [...SCHEDULE_DATA];
   }
+  if (pool.length === 0) return null;
 
-  for (const item of candidates) {
-    if (excludeTitles.has(item.title)) continue;
-    if (isBlacklisted(item.title, blacklist)) continue;
-    if (item.keywords.some((k) => isBlacklisted(k, blacklist))) continue;
+  // hard 차단/명시적 제외 통과 → soft 회피(최근 노출) → 랜덤 선택.
+  // 기존엔 후보 첫 항목을 항상 반환해 같은 주 동안 동일 주제가 고정됐다.
+  const usable = pool.filter(
+    (it) =>
+      !excludeTitles.has(it.title) &&
+      !isHardBlocked(it.title, filters) &&
+      !it.keywords.some((k) => isHardBlocked(k, filters))
+  );
+  const preferred = usable.filter(
+    (it) =>
+      !isSoftAvoided(it.title, filters) &&
+      !it.keywords.some((k) => isSoftAvoided(k, filters))
+  );
+  const finalPool = preferred.length > 0 ? preferred : usable;
+  if (finalPool.length === 0) return null;
 
-    const catId = scheduleCategoryToId(item.category);
-    const rec: Recommendation = {
-      priority: "PRIMARY",
-      category: item.category,
-      categoryId: catId,
-      subCategory: item.subCategory,
-      title: item.title,
-      reason: `12주 발행 스케줄 W${item.week} — ${item.subCategory}`,
-      keywords: item.keywords,
-    };
-    return persistRecommendation(rec, "schedule", {
-      week: item.week,
-      sub_category: item.subCategory,
-      cta: item.cta,
-    });
-  }
-  return null;
+  const item = finalPool[Math.floor(Math.random() * finalPool.length)];
+  const catId = scheduleCategoryToId(item.category);
+  const rec: Recommendation = {
+    priority: "PRIMARY",
+    category: item.category,
+    categoryId: catId,
+    subCategory: item.subCategory,
+    title: item.title,
+    reason: `12주 발행 스케줄 W${item.week} — ${item.subCategory}`,
+    keywords: item.keywords,
+  };
+  return persistRecommendation(rec, "schedule", {
+    week: item.week,
+    sub_category: item.subCategory,
+    cta: item.cta,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1101,30 +1230,30 @@ const CARDS_PER_CATEGORY: Record<RecommendationCategoryId, number> = {
 };
 
 /**
-/**
- * 2차 분류 풀에서 랜덤 키워드 1개 선택 — rejected/블랙리스트 필터링 적용.
- * preferredSubId 가 주어지면 해당 2차 분류를 우선 시도.
+ * 2차 분류 풀에서 랜덤 키워드 1개 선택 — hard(블랙리스트/거부)/soft(최근 노출) 필터 적용.
+ * excludeSubIds 에 든 2차 분류는 우선 회피(이미 노출/사용 중) — 모두 소진되면 전체에서 재시도.
  */
 function pickSubCategoryKeyword(
   parentId: "CAT-A" | "CAT-B" | "CAT-C",
-  blacklist: Set<string>,
+  filters: RecoFilters,
   excludeKeywords: Set<string> = new Set(),
-  preferredSubId?: string | null
+  excludeSubIds: Set<string> = new Set()
 ): { sub: SubCategoryMeta; keyword: string } | null {
   const allSubs = getSubCategoriesFor(parentId).filter((s) => s.keywords.length > 0);
   if (allSubs.length === 0) return null;
 
-  // preferred 를 제외한 나머지를 우선 시도 (로테이션)
-  const rotated = preferredSubId
-    ? [...allSubs.filter((s) => s.id !== preferredSubId), ...allSubs.filter((s) => s.id === preferredSubId)]
-    : [...allSubs].sort(() => Math.random() - 0.5);
+  // 아직 안 쓴 2차 분류 우선, 없으면 전체 — 매번 셔플로 로테이션
+  const fresh = allSubs.filter((s) => !excludeSubIds.has(s.id));
+  const order = shuffle(fresh.length > 0 ? fresh : allSubs);
 
-  for (const sub of rotated) {
-    const candidates = sub.keywords.filter(
-      (k) => !excludeKeywords.has(k.toLowerCase()) && !isBlacklisted(k, blacklist)
+  for (const sub of order) {
+    const hard = sub.keywords.filter(
+      (k) => !excludeKeywords.has(k.toLowerCase()) && !isHardBlocked(k, filters)
     );
-    if (candidates.length === 0) continue;
-    const keyword = candidates[Math.floor(Math.random() * candidates.length)];
+    const soft = hard.filter((k) => !isSoftAvoided(k, filters));
+    const pool = soft.length > 0 ? soft : hard;
+    if (pool.length === 0) continue;
+    const keyword = pool[Math.floor(Math.random() * pool.length)];
     return { sub, keyword };
   }
   return null;
@@ -1135,11 +1264,11 @@ function pickSubCategoryKeyword(
  */
 async function buildSubCategoryKeywordCard(
   parentId: "CAT-A" | "CAT-B" | "CAT-C",
-  blacklist: Set<string>,
+  filters: RecoFilters,
   excludeKeywords: Set<string>,
-  preferredSubId?: string | null
+  excludeSubIds: Set<string> = new Set()
 ): Promise<Recommendation | null> {
-  const picked = pickSubCategoryKeyword(parentId, blacklist, excludeKeywords, preferredSubId);
+  const picked = pickSubCategoryKeyword(parentId, filters, excludeKeywords, excludeSubIds);
   if (!picked) return null;
 
   const { sub, keyword } = picked;
@@ -1170,15 +1299,21 @@ async function buildSubCategoryKeywordCard(
  * 디딤 다이어리 주제 풀 기반 카드 생성 — 키워드 대신 사전 정의된 주제 샘플링.
  */
 async function buildDiaryTopicCard(
-  blacklist: Set<string>,
+  filters: RecoFilters,
   excludeTitles: Set<string>
 ): Promise<Recommendation | null> {
-  const pool = DIARY_TOPIC_POOL.filter(
+  const usable = DIARY_TOPIC_POOL.filter(
     (t) =>
       !excludeTitles.has(t.title) &&
-      !isBlacklisted(t.title, blacklist) &&
-      !t.keywords.some((k) => isBlacklisted(k, blacklist))
+      !isHardBlocked(t.title, filters) &&
+      !t.keywords.some((k) => isHardBlocked(k, filters))
   );
+  const preferred = usable.filter(
+    (t) =>
+      !isSoftAvoided(t.title, filters) &&
+      !t.keywords.some((k) => isSoftAvoided(k, filters))
+  );
+  const pool = preferred.length > 0 ? preferred : usable;
   if (pool.length === 0) return null;
 
   const picked = pool[Math.floor(Math.random() * pool.length)];
@@ -1217,71 +1352,72 @@ export async function getCategoryRecommendations(
   preferredSubId?: string | null
 ): Promise<Recommendation[]> {
   const cards: Recommendation[] = [];
-  const { rejectedKeywords, blacklist } = await getRejectedKeywordStats();
-  const excludeSet = new Set(excludeRecIds);
+  const filters = await loadRecoFilters(excludeRecIds);
   const maxCards = CARDS_PER_CATEGORY[categoryId];
 
-  /** 중복 제목/id/키워드 방지 */
+  // 이전에 노출 중이던 2차 분류는 우선 회피해 로테이션 유도
+  if (preferredSubId) filters.avoid.add(preferredSubId.toLowerCase());
+
+  /** 중복 제목/키워드/서브 방지 */
   const usedTitles = new Set<string>();
   const usedKeywords = new Set<string>();
   const usedSubIds = new Set<string>(preferredSubId ? [preferredSubId] : []);
 
   const addIfNew = (rec: Recommendation | null): boolean => {
     if (!rec) return false;
-    if (rec.recId && excludeSet.has(rec.recId)) return false;
     if (usedTitles.has(rec.title)) return false;
     cards.push(rec);
     usedTitles.add(rec.title);
     for (const k of rec.keywords ?? []) usedKeywords.add(k.toLowerCase());
     if (rec.subCategoryId) usedSubIds.add(rec.subCategoryId);
+    // 방금 추가한 카드를 avoid 에 반영 → 같은 호출 내 다음 카드와 중복 방지
+    filters.avoid.add(rec.title.toLowerCase());
+    for (const k of rec.keywords ?? []) filters.avoid.add(k.toLowerCase());
     return true;
   };
 
   if (categoryId === "CAT-A") {
-    // 현장 수첩: 2차 분류 로테이션 (4개 서브카테고리 순환)
+    // 현장 수첩: 2차 분류 로테이션 (이미 쓴 서브는 회피)
     while (cards.length < maxCards) {
-      // 이미 사용된 서브와 preferred 제외하고 다음 서브 시도
-      const firstExcluded = Array.from(usedSubIds)[0];
       const kw = await buildSubCategoryKeywordCard(
         "CAT-A",
-        blacklist,
+        filters,
         usedKeywords,
-        firstExcluded
+        usedSubIds
       );
       if (!addIfNew(kw)) break;
     }
     if (cards.length < maxCards) {
-      const sched = await buildScheduleCard(blacklist, "CAT-A", usedTitles);
+      const sched = await buildScheduleCard(filters, "CAT-A", usedTitles);
       addIfNew(sched);
     }
   } else if (categoryId === "CAT-B") {
     // IP 라운지: 뉴스 → 2차 분류 키워드 풀 → 스케줄
     if (cards.length < maxCards) {
-      const news = await buildNewsCard(blacklist, rejectedKeywords);
+      const news = await buildNewsCard(filters);
       if (news && news.categoryId === "CAT-B") addIfNew(news);
     }
     if (cards.length < maxCards) {
-      const firstExcluded = Array.from(usedSubIds)[0];
       const kw = await buildSubCategoryKeywordCard(
         "CAT-B",
-        blacklist,
+        filters,
         usedKeywords,
-        firstExcluded
+        usedSubIds
       );
       addIfNew(kw);
     }
     if (cards.length < maxCards) {
-      const sched = await buildScheduleCard(blacklist, "CAT-B", usedTitles);
+      const sched = await buildScheduleCard(filters, "CAT-B", usedTitles);
       addIfNew(sched);
     }
   } else if (categoryId === "CAT-C") {
     // 디딤 다이어리: 주제 풀 → 스케줄 폴백
     if (cards.length < maxCards) {
-      const diary = await buildDiaryTopicCard(blacklist, usedTitles);
+      const diary = await buildDiaryTopicCard(filters, usedTitles);
       addIfNew(diary);
     }
     if (cards.length < maxCards) {
-      const sched = await buildScheduleCard(blacklist, "CAT-C", usedTitles);
+      const sched = await buildScheduleCard(filters, "CAT-C", usedTitles);
       addIfNew(sched);
     }
   }
@@ -1321,14 +1457,22 @@ export async function rejectRecommendation(
 
     let rejectionKeywords: string[] = [];
     if (original) {
-      // 구조상 Recommendation 이 아니라 DB row → 간이 추출
+      // 구조상 Recommendation 이 아니라 DB row → 간이 추출.
+      // recommended_keywords 를 우선 신뢰하고, 제목에선 의미 토큰만 보조 추출.
       const kws = new Set<string>();
       for (const k of (original.recommended_keywords as string[] | null) ?? []) {
         if (k?.trim()) kws.add(k.trim());
       }
       for (const chunk of ((original.recommended_topic as string) ?? "").split(/\s+/)) {
         const cleaned = chunk.replace(/[^\w가-힣]/g, "");
-        if (cleaned.length >= 3 && !/^[0-9]+$/.test(cleaned)) kws.add(cleaned);
+        // 제목 생성 템플릿/조사성 토큰은 과도 필터링을 유발하므로 제외
+        if (
+          cleaned.length >= 4 &&
+          !/^[0-9]+$/.test(cleaned) &&
+          !TITLE_STOPWORDS.has(cleaned)
+        ) {
+          kws.add(cleaned);
+        }
       }
       rejectionKeywords = Array.from(kws).slice(0, 8);
     }
