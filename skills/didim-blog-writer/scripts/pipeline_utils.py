@@ -351,16 +351,16 @@ def render(a) -> dict:
     ctx = ctx_raw.strip()
     ctx_block = f"\n\n{CONTEXT_BLOCK_HEADER}\n{ctx}" if ctx else ""
     briefing_phase = a.phase in ("briefing", "briefing-file", "briefing-vision")
-    if briefing_phase and not cid:
-        cat = None
+    if not cid:
+        cat = None  # 카테고리 없음 — 원본 getPromptKey("") 동작(폴백)
     else:
         cat = resolve(cid, getattr(a, "news_kind", None) or "ip")
-    if cat and cat["structure"] == "code":
+    if cat is None or cat["structure"] == "code":
         key = get_prompt_key(cid)  # 원본 코드 동작 그대로
         default_name = CATEGORY_NAMES.get(cid, "")
     else:
-        key = cat["prompt_key"] if cat else None
-        default_name = cat["name"] if cat else ""
+        key = cat["prompt_key"]
+        default_name = cat["name"]
     cname = a.category_name if a.category_name is not None else default_name
     subs = name_substitutions(cat) if cat else []
     if cat and cat["requires_case_memo"] and not ctx and not briefing_phase:

@@ -1,20 +1,78 @@
-# 카테고리 정본 (1차/2차 · ID · 역할 · 퍼널 · CTA 유형)
+# 카테고리 정본 — 네이버 categoryNo 기준 (+ 레거시 CAT-* 별칭)
+
+> 결정 근거: skills/_DECISIONS.md 1·2절(2026-10-01 확정, blog.naver.com/didimip 카테고리 위젯의 categoryNo 링크 기준).
+> 코드의 CAT-* ID 는 서로 모순(CAT-B-01/02 뒤바뀜, CAT-A-04 누락)이 있어 **내부 ID 로 쓰지 않는다.** 정본 ID 는 네이버 categoryNo, CAT-* 는 별칭(레거시 코드 규칙을 계산할 때만)이다.
+> 이름은 네이버 표기와 100% 일치해야 한다(UPGRADE_SPEC §0-3).
+
+## 목차
+- A-1. 네이버 실제 카테고리 (정본)
+- A-2. 신규 구조 운영 규칙 (새 글 기본)
+- A-3. 레거시 → 신규 매핑 + CAT-* 별칭 표
+- A-4. 어떤 카테고리를 쓰나 (판단 순서)
+- B-1~B-8. 백오피스 코드의 CAT-* 정의와 원문 (레거시 참고)
+
+## A-1. 네이버 실제 카테고리 (정본)
+| categoryNo | 이름 (네이버 문자열 그대로) | 상위 | 구분 |
+|---|---|---|---|
+| 25 | 지원사업·인증과 특허 | 최상위 | 신규 구조 (우선) |
+| 27 | 출원·심판 실무 | 최상위 | 신규 구조 (우선) |
+| 26 | 사례 | 최상위 | 신규 구조 (우선) |
+| 24 | 지식재산 경영 | 최상위 | 신규 구조 (우선) |
+| 28 | 디딤 소식 | 최상위 | 신규 구조 (우선) |
+| 17 | 디딤 다이어리 (하위 18 컨설팅 후기, 19 디딤 일상, 20 대표의 생각) | 최상위 | 유지 |
+| 7 | 디딤 소개 | 최상위 | 고정 페이지(자동 생성 대상 아님) |
+| 22 | 상담 안내 | 최상위 | 고정 페이지(자동 생성 대상 아님) |
+| 9 | 변리사의 현장 수첩 (하위 10 절세 시뮬레이션, 11 인증 가이드, 12 연구소 운영 실무, 23 특허·상표 출원 실무) | 최상위 | 레거시(기존 글 호환) |
+| 13 | IP 라운지 (하위 14 특허 전략 노트, 15 AI와 IP, 16 IP 뉴스 한 입) | 최상위 | 레거시(기존 글 호환) |
+
+## A-2. 신규 구조 운영 규칙 (_DECISIONS.md 2절 원문 표 + 스킬 계산 규칙)
+| 신규 카테고리 (categoryNo) | 목적 | 역할/퍼널 | 프롬프트 키 | CTA | 레거시에서 흡수 |
+|---|---|---|---|---|---|
+| 지원사업·인증과 특허 (25) | 지원매치×디딤 허브: 지원사업 가점·요건으로서의 특허·인증, 벤처·이노비즈·연구소·직무발명 절세 | 전환형 / 유입+전환 | PROMPT_FIELD | 인증 진단·연구소 진단·절세 시뮬레이션 중 키워드 매칭 (+향후 특허인증센터 링크 슬롯) | 절세 시뮬레이션, 인증 가이드, 연구소 운영 실무 |
+| 출원·심판 실무 (27) | 디딤 본업 수임: 특허·상표·디자인 출원, 우선심사, 거절 대응, 심판·분쟁 | 전환형 / 전환 | PROMPT_FIELD | 출원 CTA(코드의 출원 CTA) | 특허·상표 출원 실무 |
+| 사례 (26) | 경험 기반 신뢰: 익명화한 실제 사건·컨설팅 사례. **사용자가 준 사건 메모 없이는 쓰지 않는다** | 신뢰+전환 | PROMPT_FIELD (사례 서술) | 주제 키워드로 매칭 | 컨설팅 후기 |
+| 지식재산 경영 (24) | 개인 브랜드: 노재일 변리사의 IP 경영 관점 연재(링크드인 연재 재활용), 특허 전략, AI와 IP | 트래픽/브랜딩 | PROMPT_LOUNGE_GENERAL | 이웃 추가 CTA | 특허 전략 노트, AI와 IP |
+| 디딤 소식 (28) | 시의성: IP 뉴스 한 입 + 사무소 소식 | 트래픽 | PROMPT_LOUNGE_BITE | 가벼운 이웃 추가 CTA (사무소 소식은 CTA 없음) | IP 뉴스 한 입 |
+| 디딤 다이어리 (17) | 인간적 신뢰 | 신뢰 | PROMPT_DIARY | **CTA 금지(절대원칙)** | — |
+
+스킬 계산 규칙(코드에 없는 부분은 스킬이 정한 것 — CTA 세부는 cta-templates.md 0절):
+- 레거시 코드 함수(면책 레벨·포맷 가이드·태그 접미사)에 넘길 **CAT 별칭**: 25 → CAT-A(CTA 가 절세/인증/연구소로 매칭되면 CAT-A-01/02/03), 27 → CAT-A-04, 26 → CAT-A, 24 → CAT-B, 28 → CAT-B-03, 17 → CAT-C(18/19/20 → CAT-C-01/02/03), 7 → CAT-INTRO, 22 → CAT-CONSULT.
+- 계산: `python3 scripts/core_rules.py category` / `cta` / `disclaimer`(category 에 이름 또는 categoryNo).
+
+## A-3. 레거시 → 신규 매핑 + CAT-* 별칭
+| 레거시 categoryNo | 레거시 이름 | 코드 CAT 별칭 | 신규 대응 (통계·추천 합산 대상) |
+|---|---|---|---|
+| 9 | 변리사의 현장 수첩 | CAT-A | 지원사업·인증과 특허 (25) — 하위에 따라 25/27 |
+| 10 | 절세 시뮬레이션 | CAT-A-01 | 지원사업·인증과 특허 (25) |
+| 11 | 인증 가이드 | CAT-A-02 | 지원사업·인증과 특허 (25) |
+| 12 | 연구소 운영 실무 | CAT-A-03 | 지원사업·인증과 특허 (25) |
+| 23 | 특허·상표 출원 실무 | CAT-A-04 | 출원·심판 실무 (27) |
+| 13 | IP 라운지 | CAT-B | 지식재산 경영 (24) — 하위에 따라 24/28 |
+| 14 | 특허 전략 노트 | CAT-B-01 ※ | 지식재산 경영 (24) |
+| 15 | AI와 IP | CAT-B-02 ※ | 지식재산 경영 (24) |
+| 16 | IP 뉴스 한 입 | CAT-B-03 | 디딤 소식 (28) |
+| 18 | 컨설팅 후기 | CAT-C-01 | 디딤 다이어리 (17) 유지 ※사례(26)는 '컨설팅 후기'를 흡수하지만, 기존 글 통계는 다이어리로 둔다(확인 필요) |
+| 19 | 디딤 일상 | CAT-C-02 | 디딤 다이어리 (17) |
+| 20 | 대표의 생각 | CAT-C-03 | 디딤 다이어리 (17) |
+| 7 / 22 | 디딤 소개 / 상담 안내 | CAT-INTRO / CAT-CONSULT | 고정 |
+
+※ CAT-B-01/02 별칭은 코드 런타임(FIELD_CTA·sub-category-pool) 기준이다. DB 시드(seed.sql)는 반대(B-01=AI와 IP)이므로, 백오피스 데이터에서 온 CAT-B-01/02 는 이름으로 다시 확인한다.
+- Notion "디딤 블로그 콘텐츠" 에서는 레거시 글을 `카테고리 = 레거시`, `레거시 2차 분류 = 원래 이름`, `categoryNo = 레거시 번호`로 적는다(notion-storage.md).
+
+## A-4. 어떤 카테고리를 쓰나
+1. 사용자가 카테고리(레거시 포함)를 지정하면 그대로 따른다(예: 2026-10-01 '특허 전략 노트'에 연재 3편 발행).
+2. 지정이 없으면 신규 구조(25/27/26/24/28, 17) 중에서 고른다.
+3. 사례(26)는 사용자가 준 사건 메모가 있을 때만. 없으면 출원·심판 실무(27)로 대체.
+4. 디딤 소식(28)은 "IP 뉴스 한 입"형 뉴스인지 "사무소 소식"인지 구분한다(사무소 소식은 CTA 없음).
+5. 디딤 소개(7)·상담 안내(22)는 고정 페이지라 글을 자동 생성하지 않는다.
+
+---
+# B. 백오피스 코드의 CAT-* 정의 (레거시 참고, 원문)
 
 > 출처: supabase/seed.sql:1-16, src/lib/constants/categories.ts, src/lib/constants/sub-category-pool.ts,
 > src/lib/constants/prompts.ts(FIELD_CTA·getPromptKey·브리핑 프롬프트), docs/UPGRADE_SPEC.md §5.1.
-> 네이버 블로그 실제 카테고리 문자열과 100% 일치해야 한다(UPGRADE_SPEC §0-3).
 
-## 목차
-1. 정본 표 (스킬에서 쓰는 기준)
-2. 라벨 사전 (role_type / funnel_stage / cta_type / status / 색상)
-3. 소스별 불일치 기록
-4. 원문: supabase/seed.sql 카테고리 시드
-5. 원문: categories.ts
-6. 원문: UPGRADE_SPEC §5.1 카테고리 구조
-7. 원문: 브리핑 프롬프트의 카테고리 판단 기준 (prompts.ts:1487-1499)
-8. 원문: sub-category-pool.ts 머리말 / schedule-data.ts 매핑
-
-## 1. 정본 표 (스킬 기준)
+## B-1. 레거시 코드 카테고리 표 (CAT-*, 백오피스 코드 기준)
 
 | ID | 네이버 카테고리 이름 | 단계 | 상위 | 역할(role_type) | 퍼널(funnel_stage) | CTA 유형 | 프롬프트 키 | 월 목표 |
 |---|---|---|---|---|---|---|---|---|
@@ -34,6 +92,7 @@
 | CAT-C-03 | 대표의 생각 | 2차 | CAT-C | 신뢰형 | 신뢰 | 없음 | PROMPT_DIARY | 0 |
 | CAT-CONSULT | 상담 안내 | 1차 | - | 고정 | 전환 | 직접 CTA | (해당 없음) | 0 |
 
+※ 이 표는 백오피스 코드의 CAT-* 체계다. 스킬의 정본은 A절(네이버 categoryNo)이며 CAT-* 는 별칭으로만 쓴다.
 ※ CAT-B-01/CAT-B-02 는 소스마다 이름이 뒤바뀌어 있다(3절). **ID 대신 이름(네이버 문자열)으로 판단**하고, ID가 필요하면 위 표(코드 런타임 기준: FIELD_CTA·sub-category-pool·getFieldCta)를 쓴다. 역할·퍼널은 이름 기준(seed.sql 의 같은 이름 행)으로 적었다.
 
 - 프롤로그 영역(prologue_position): CAT-A=area1(영역 1), CAT-B=area2(영역 2), CAT-C=area3(영역 3), 나머지 null.
@@ -41,7 +100,7 @@
 - 프롬프트 키 결정(prompts.ts:57-80 getPromptKey): `CAT-A`/`CAT-A-*` → PROMPT_FIELD, `CAT-B-03` → PROMPT_LOUNGE_BITE, `CAT-B`/`CAT-B-*` → PROMPT_LOUNGE_GENERAL, `CAT-C`/`CAT-C-*` → PROMPT_DIARY, 그 외 → PROMPT_LOUNGE_GENERAL.
 - 카테고리 판정 입력값은 보통 `secondary_category || category_id` (발행 준비·면책·포맷 가이드), 단 다이어리 CTA 제외 판정은 `category_id`(1차)로 한다(publish-prep-client.tsx:146-151).
 
-## 2. 라벨 사전
+## B-2. 라벨 사전
 
 | 키 | 값 → 한국어 라벨 | 근거 |
 |---|---|---|
@@ -51,7 +110,7 @@
 | status | NEW=신규, GROW=성장, MATURE=안정, ADJUST=조정 | categories.ts:27-32 |
 | 색상 | CAT-A #D4740A(오렌지), CAT-B #1B3A5C(네이비), CAT-C #6B7280(그레이), CAT-INTRO #94A3B8, CAT-CONSULT #2E75B6 | categories.ts:2-8 |
 
-## 3. 소스별 불일치 기록 (코드에서 확인한 사실)
+## B-3. 코드 소스별 불일치 기록 (코드에서 확인한 사실)
 
 ### 3-1. CAT-A-04 "특허·상표 출원 실무"
 실제 네이버 블로그에는 '특허·상표 출원 실무' 2차 카테고리가 존재한다(사용자 확인). 코드 상태:
@@ -91,7 +150,7 @@
 ### 3-4. 1차 카테고리 ID에 CAT-B-03 혼입
 브리핑 프롬프트와 briefing.ts/file-upload.ts 의 VALID_PRIMARY_CATEGORIES 는 `["CAT-A", "CAT-B", "CAT-B-03", "CAT-C"]` 로 2차인 CAT-B-03 을 1차 후보에 포함한다(경량 포맷 분기용). seo-rubrics.ts 도 CAT-A/CAT-B/CAT-B-03/CAT-C 4개 키를 쓴다.
 
-## 4. 원문: supabase/seed.sql:1-16
+## B-4. 원문: supabase/seed.sql:1-16
 ````sql
 -- 카테고리 시드 데이터
 insert into public.categories (id, name, tier, parent_id, role_type, funnel_stage, prologue_position, monthly_target, cta_type, status, connected_services, sort_order) values
@@ -111,7 +170,7 @@ insert into public.categories (id, name, tier, parent_id, role_type, funnel_stag
 ('CAT-CONSULT', '상담 안내', 'primary', null, 'fixed', 'CONVERT', null, 0, 'direct', 'MATURE', '{}', 5);
 ````
 
-## 5. 원문: src/lib/constants/categories.ts
+## B-5. 원문: src/lib/constants/categories.ts
 ````ts
 // 카테고리 색상 코드
 export const CATEGORY_COLORS = {
@@ -162,7 +221,7 @@ export const CATEGORY_HIERARCHY: Record<string, string[]> = {
 } as const;
 ````
 
-## 6. 원문: docs/UPGRADE_SPEC.md §5.1 (310-335행)
+## B-6. 원문: docs/UPGRADE_SPEC.md §5.1 (310-335행)
 ````md
 ### 5.1 카테고리 구조 (네이버와 100% 일치)
 
@@ -192,7 +251,7 @@ export const CATEGORIES = {
 ```
 ````
 
-## 7. 원문: prompts.ts:1487-1499 (PROMPT_BRIEFING_GENERATE 의 카테고리 판단 기준)
+## B-7. 원문: prompts.ts:1487-1499 (PROMPT_BRIEFING_GENERATE 의 카테고리 판단 기준)
 ````text
 카테고리 판단 기준 (categoryId는 상위, secondaryCategoryId는 세부):
 - 절세/보상금/법인세 관련 고객 사례 → CAT-A / CAT-A-01 (절세 시뮬레이션)
@@ -209,7 +268,7 @@ export const CATEGORIES = {
 디딤의 핵심 서비스: 직무발명보상 절세 컨설팅, 기업부설연구소 설립, 벤처기업인증, 특허출원`;
 ````
 
-## 8. 원문: sub-category-pool.ts:1-10 / schedule-data.ts:55-83
+## B-8. 원문: sub-category-pool.ts:1-10 / schedule-data.ts:55-83
 ````ts
 /**
  * 2차 카테고리별 추천 키워드 풀 + 다이어리 주제 풀.

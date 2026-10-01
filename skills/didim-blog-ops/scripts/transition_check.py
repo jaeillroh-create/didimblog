@@ -88,6 +88,11 @@ def resolve_category(value):
 
 
 def content_category(c):
+    # Notion: 카테고리="레거시" 이면 "레거시 2차 분류" 값(원래 이름)으로 판정
+    if c.get("category_name") == "레거시" or c.get("카테고리") == "레거시":
+        r = resolve_category(c.get("legacy_sub") or c.get("레거시 2차 분류"))
+        if r:
+            return r
     for key in ("category_no", "categoryNo", "category_id", "category_name", "category", "카테고리"):
         r = resolve_category(c.get(key))
         if r:
@@ -95,9 +100,10 @@ def content_category(c):
     return None
 
 
-# ── Notion "디딤 블로그 콘텐츠" 속성(DECISIONS §4) → 내부 키 ──
+# ── Notion "디딤 블로그 콘텐츠" (data source collection://463bc815-11ab-4290-9d86-22bd1aa9cfed) 속성 → 내부 키 ──
+# 본문·태그·콘텐츠 ID 는 DB 속성이 아니다(본문=페이지 내용). 대화에서 받은 값을 같은 키로 넣으면 된다.
 NOTION_KEYS = {
-    "콘텐츠 ID": "id", "제목": "title", "상태": "status", "카테고리": "category_name",
+    "콘텐츠 ID": "id", "제목": "title", "레거시 2차 분류": "legacy_sub", "상담": "consultations", "상태": "status", "카테고리": "category_name",
     "categoryNo": "category_no", "타깃 키워드": "target_keyword", "발행일": "publish_date",
     "발행 URL": "naver_url", "추천 소스": "rec_source", "추천 피드백": "rec_feedback",
     "부적합 사유": "rec_reject_reason", "조회수(최근)": "views_recent", "유입 키워드 TOP3": "top_keywords",
@@ -105,6 +111,8 @@ NOTION_KEYS = {
     "시리즈 회차": "series_order", "마지막 업데이트일": "last_updated_at", "메모": "notes",
     "본문": "body", "태그": "tags", "삭제됨": "is_deleted",
 }
+STATUS_FULL = {"S0": "S0 기획중", "S1": "S1 초안완료", "S2": "S2 검토완료", "S3": "S3 발행예정",
+               "S4": "S4 발행완료", "S5": "S5 성과측정"}  # Notion "상태" 선택지 값 그대로
 STATUS_NAMES = {"기획중": "S0", "초안완료": "S1", "검토완료": "S2", "발행예정": "S3", "발행완료": "S4", "성과측정": "S5"}
 
 
