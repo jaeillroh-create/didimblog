@@ -46,12 +46,12 @@
 4. 프롬프트 키(prompts.ts:57-80): CAT-A/CAT-A-* → PROMPT_FIELD, CAT-B-03 → PROMPT_LOUNGE_BITE, CAT-B/CAT-B-* → PROMPT_LOUNGE_GENERAL, CAT-C/CAT-C-* → PROMPT_DIARY, 그 외 → PROMPT_LOUNGE_GENERAL.
 5. 톤 규칙: PHASE2 의 `{{category_tone_rules}}` = CATEGORY_TONE_RULES[promptKey](prompts.ts:871-929, ai-editor-client.tsx:779), `{{common_writing_rules}}` = COMMON_WRITING_RULES(prompts.ts:299-312, ai-editor-client.tsx:780).
 6. 생성용 CTA(getFieldCta, prompts.ts:88-119): FIELD_CTA[categoryId] 정확 일치 → 키워드 소문자 포함 검사(절세·세액공제·법인세·보상금→A-01 / 인증·벤처·이노비즈→A-02 / 연구소·연구활동·사후관리→A-03 / 출원·상표·특허출원·pct→A-04 / ai·인공지능·생성형→B-02) → CAT-A*→A-04, CAT-B*→B-01 → DEFAULT_CTA.
-7. CTA 블록 조립(client-generate.ts:1563-1580): cta 없으면 "관련해서 궁금하신 점이 있다면 admin@didimip.com 으로 편하게 연락주세요.", 메일 제목 없으면 "상담 문의". 순서: (면책) → ━×18 → cta → 빈 줄 → 서명 → 📞 → 📧(메일 제목) → 빈 줄 → 태그 줄. PROMPT_DIARY 는 블록 전체 생략(1504-1507).
+7. CTA 블록 조립(client-generate.ts:1563-1580): cta 없으면 "관련해서 궁금하신 점이 있다면 roh@didimip.com 으로 편하게 연락주세요.", 메일 제목 없으면 "상담 문의". 순서: (면책) → ━×18 → cta → 빈 줄 → 서명 → 📞 → 📧(메일 제목) → 빈 줄 → 태그 줄. PROMPT_DIARY 는 블록 전체 생략(1504-1507).
 8. 런타임 CTA 소스: 초안 생성은 FIELD_CTA(ai-editor-client.tsx:977-986, actions/ai.ts:434-446, generation-runner.ts:183-195), 발행 화면은 DB cta_templates(011) + FALLBACK_CTA(publish-prep-client.tsx:53-126, 153-157). seed_data/cta_templates.json 과 UPGRADE_SPEC §5.2 는 코드에서 읽지 않는다(grep 결과 schedule-data.ts:72 주석뿐).
 9. 면책 레벨(client-generate.ts:1631-1678): CAT-C* → none; CAT-A-01 또는 (LEVEL_A_KEYWORDS 포함 ∧ `/\d+[만백천]?\s*[억만원]/`) → A; CAT-B-03 → C; CAT-A*/CAT-B* → B; 그 외 → B. isAiGenerated=false 면 AI_NOTICE 줄과 뒤 빈 줄 제거(1653 등, 1695).
 10. 명칭 치환(name-mappings.ts:37-62): 보호 패턴 5개를 순서대로 `__PROTECTED_NAME_i__` 토큰으로 바꾼 뒤 '특허청'→'지식재산처' 전역 치환, 토큰 복원(각 1회). cleanFinalText 첫 단계로 실행(client-generate.ts:1368).
-11. 이메일 강제(publish-helpers.ts:273-277): `/[\w.-]+@[\w.-]+\.\w+/g` → admin@didimip.com.
-12. 초안 검증(prompts.ts:1769-1807): LOUNGE_BITE 공백 제외 1,200자 초과 경고, DIARY 에 DIARY_CTA_KEYWORDS 포함 경고, admin@didimip.com 외 이메일 경고.
+11. 이메일 강제(publish-helpers.ts:273-277): `/[\w.-]+@[\w.-]+\.\w+/g` → roh@didimip.com.
+12. 초안 검증(prompts.ts:1769-1807): LOUNGE_BITE 공백 제외 1,200자 초과 경고, DIARY 에 DIARY_CTA_KEYWORDS 포함 경고, roh@didimip.com 외 이메일 경고.
 13. 광고 규정 표현: 결과 단정·절대적 약속·전제 없는 수치·"업계 최고/세계 1위" 금지, 허용 표현 4종(prompts.ts:993-1006, 1145-1150, 1693-1698). 썸네일에 결과 확정 표현 금지(prompts.ts:440).
 
 ## 5. 출력

@@ -134,12 +134,12 @@ def validate_draft(title: str, body: str, category_id: str):
     if not category_id.startswith("CAT-C"):
         checks.append({
             "id": "cta-present", "category": "CTA", "rule": "CTA 영역 포함",
-            "passed": ("admin@didimip.com" in body) or ("02-571-6613" in body),
-            "detail": "이메일 포함됨" if "admin@didimip.com" in body else "CTA 없음",
+            "passed": ("roh@didimip.com" in body) or ("02-571-6613" in body),
+            "detail": "이메일 포함됨" if "roh@didimip.com" in body else "CTA 없음",
         })
         checks.append({
             "id": "signature-block", "category": "서명", "rule": "디딤 서명 블록 포함",
-            "passed": ("특허그룹 디딤" in body) and ("기업을 아는 변리사" in body),
+            "passed": ("노재일 변리사" in body) and ("특허그룹 디딤" in body),
             "detail": "포함됨" if "특허그룹 디딤" in body else "서명 블록 없음",
         })
 
@@ -154,7 +154,7 @@ def calc_draft_score(checks):
     return {"score": score, "total": total, "passedCount": passed_count, "failedItems": failed}
 
 
-DIARY_CTA_KEYWORDS = ["상담", "문의", "연락", "무료", "진단", "시뮬레이션", "admin@"]
+DIARY_CTA_KEYWORDS = ["상담", "문의", "연락", "무료", "진단", "시뮬레이션", "@didimip"]
 EMAIL_RE = re.compile(r"[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+\.[A-Za-z0-9_]+")
 
 
@@ -177,11 +177,11 @@ def validate_generated_draft(text: str, prompt_key: str):
             })
 
     emails = EMAIL_RE.findall(text)
-    invalid = [e for e in emails if e != "admin@didimip.com"]
+    invalid = [e for e in emails if e != "roh@didimip.com"]
     if invalid:
         warnings.append({
             "type": "email_mismatch",
-            "message": f"허용되지 않은 이메일 주소가 감지되었습니다: {', '.join(invalid)} (admin@didimip.com만 사용 가능)",
+            "message": f"허용되지 않은 이메일 주소가 감지되었습니다: {', '.join(invalid)} (roh@didimip.com만 사용 가능)",
         })
     return warnings
 

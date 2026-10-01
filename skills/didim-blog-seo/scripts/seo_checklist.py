@@ -172,7 +172,7 @@ def auto_judge(d):
     put(15, None, "", "human", "핵심3+연관3+브랜드2+롱테일2 분류는 의미 판단")
     c = has_cta(body)
     if rb["ctaRequired"]:
-        put(16, c, "있음" if c else "없음", "seo-calculator", "구분선(━━━)·admin@didimip.com·이웃 추가 등 패턴")
+        put(16, c, "있음" if c else "없음", "seo-calculator", "구분선(━━━)·roh@didimip.com·이웃 추가 등 패턴")
     else:
         put(16, not c, "있음 (부적절)" if c else "없음 (적절)", "seo-calculator", "디딤 다이어리·사무소 소식: CTA 없어야 통과")
     put(17, None, "", "human", "네이버 맞춤법 검사기 통과 여부")

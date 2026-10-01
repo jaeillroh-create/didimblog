@@ -35,9 +35,9 @@
 이런 IP 이야기가 도움이 되셨다면 디딤 블로그를 이웃 추가해주세요.
 매주 화요일, 중소기업 대표님께 실질적인 IP 정보를 전해드립니다.
 
-IP 관련 상담이 필요하시면: admin@didimip.com
+IP 관련 상담이 필요하시면: roh@didimip.com
 
-특허그룹 디딤 | 기업을 아는 변리사
+노재일 변리사 | 특허그룹 디딤
 ````
 ※ "매주 화요일"은 원문 그대로다. 현재 주 1편 운영(_DECISIONS.md 3절)과 발행 요일이 맞는지 **확인 필요** — 다르면 사용자 확인 후 그 줄만 고친다.
 
@@ -46,7 +46,7 @@ IP 관련 상담이 필요하시면: admin@didimip.com
 ━━━━━━━━━━━━━━━━━━
 IP 이슈에 대해 더 알고 싶으시면 이웃 추가 해주세요.
 
-특허그룹 디딤 | 기업을 아는 변리사
+노재일 변리사 | 특허그룹 디딤
 ````
 
 ## 1. 결론: 백오피스 런타임에서 쓰이는 CTA (레거시 코드 동작)
@@ -201,7 +201,7 @@ export function getFieldCta(
   const disclaimerText = params.disclaimerText?.trim() || "";
 
   const cta = params.ctaText?.trim() ||
-    "관련해서 궁금하신 점이 있다면 admin@didimip.com 으로 편하게 연락주세요.";
+    "관련해서 궁금하신 점이 있다면 roh@didimip.com 으로 편하게 연락주세요.";
   const subject = params.emailSubject?.trim() || "상담 문의";
 
   const disclaimerBlock = disclaimerText
@@ -213,9 +213,9 @@ ${disclaimerBlock}
 ━━━━━━━━━━━━━━━━━━
 ${cta}
 
-특허그룹 디딤 | 기업을 아는 변리사
+노재일 변리사 | 특허그룹 디딤
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목: '${subject}')
+📧 roh@didimip.com (메일 제목: '${subject}')
 
 ${tagLine}`;
 
@@ -238,9 +238,9 @@ VALUES
 48시간 안에 절세 시뮬레이션을 만들어 드립니다. (무료)
 
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목에 ''절세 시뮬레이션''이라고 적어주세요)
+📧 roh@didimip.com (메일 제목에 ''절세 시뮬레이션''이라고 적어주세요)
 
-특허그룹 디딤 | 기업을 아는 변리사',
+노재일 변리사 | 특허그룹 디딤',
     NULL,
     '이메일',
     '절세 시뮬레이션'
@@ -252,9 +252,9 @@ VALUES
 우리 회사가 인증 요건에 해당하는지 5분이면 확인할 수 있습니다.
 
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목에 ''인증 진단''이라고 적어주세요)
+📧 roh@didimip.com (메일 제목에 ''인증 진단''이라고 적어주세요)
 
-특허그룹 디딤 | 기업을 아는 변리사',
+노재일 변리사 | 특허그룹 디딤',
     NULL,
     '이메일',
     '인증 진단'
@@ -266,9 +266,9 @@ VALUES
 연구소 운영 상태 점검, 무료 진단 가능합니다.
 
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목에 ''연구소 진단''이라고 적어주세요)
+📧 roh@didimip.com (메일 제목에 ''연구소 진단''이라고 적어주세요)
 
-특허그룹 디딤 | 기업을 아는 변리사',
+노재일 변리사 | 특허그룹 디딤',
     NULL,
     '이메일',
     '연구소 진단'
@@ -280,9 +280,9 @@ VALUES
 AI·IP 전략이 궁금하신 대표님, 편하게 연락 주세요.
 
 📞 02-571-6613
-📧 admin@didimip.com
+📧 roh@didimip.com
 
-특허그룹 디딤 | 기업을 아는 변리사',
+노재일 변리사 | 특허그룹 디딤',
     NULL,
     '이메일',
     '상담 문의'
@@ -310,9 +310,9 @@ const FALLBACK_CTA: Record<string, CtaTemplate> = {
 48시간 안에 절세 시뮬레이션을 만들어 드립니다. (무료)
 
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목에 '절세 시뮬레이션'이라고 적어주세요)
+📧 roh@didimip.com (메일 제목에 '절세 시뮬레이션'이라고 적어주세요)
 
-특허그룹 디딤 | 기업을 아는 변리사`,
+노재일 변리사 | 특허그룹 디딤`,
     note: null,
     conversionMethod: "이메일",
     emailSubjectTag: "절세 시뮬레이션",
@@ -324,9 +324,9 @@ const FALLBACK_CTA: Record<string, CtaTemplate> = {
 우리 회사가 인증 요건에 해당하는지 5분이면 확인할 수 있습니다.
 
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목에 '인증 진단'이라고 적어주세요)
+📧 roh@didimip.com (메일 제목에 '인증 진단'이라고 적어주세요)
 
-특허그룹 디딤 | 기업을 아는 변리사`,
+노재일 변리사 | 특허그룹 디딤`,
     note: null,
     conversionMethod: "이메일",
     emailSubjectTag: "인증 진단",
@@ -339,9 +339,9 @@ const FALLBACK_CTA: Record<string, CtaTemplate> = {
 기술 내용을 보내주시면 출원 가능성과 전략을 검토해 드립니다.
 
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목에 '출원 상담'이라고 적어주세요)
+📧 roh@didimip.com (메일 제목에 '출원 상담'이라고 적어주세요)
 
-특허그룹 디딤 | 기업을 아는 변리사`,
+노재일 변리사 | 특허그룹 디딤`,
     note: null,
     conversionMethod: "이메일",
     emailSubjectTag: "출원 상담",
@@ -353,9 +353,9 @@ const FALLBACK_CTA: Record<string, CtaTemplate> = {
 연구소 운영 상태 점검, 무료 진단 가능합니다.
 
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목에 '연구소 진단'이라고 적어주세요)
+📧 roh@didimip.com (메일 제목에 '연구소 진단'이라고 적어주세요)
 
-특허그룹 디딤 | 기업을 아는 변리사`,
+노재일 변리사 | 특허그룹 디딤`,
     note: null,
     conversionMethod: "이메일",
     emailSubjectTag: "연구소 진단",
@@ -367,9 +367,9 @@ const FALLBACK_CTA: Record<string, CtaTemplate> = {
 AI·IP 전략이 궁금하신 대표님, 편하게 연락 주세요.
 
 📞 02-571-6613
-📧 admin@didimip.com
+📧 roh@didimip.com
 
-특허그룹 디딤 | 기업을 아는 변리사`,
+노재일 변리사 | 특허그룹 디딤`,
     note: null,
     conversionMethod: "이메일",
     emailSubjectTag: "상담 문의",
@@ -465,22 +465,22 @@ function matchCtaForContent(
 ````json
 {
   "현장수첩_절세": {
-    "text": "━━━━━━━━━━━━━━━━━━\n\"우리 회사도 가능할까?\" 궁금하시다면 재무제표를 보내주세요.\n48시간 안에 절세 시뮬레이션을 만들어 드립니다. (무료)\n\nTel: 02-571-6613\nMail: admin@didimip.com\n(메일 제목에 '절세 시뮬레이션'이라고 적어주세요)\n\n특허그룹 디딤 | 기업을 아는 변리사",
+    "text": "━━━━━━━━━━━━━━━━━━\n\"우리 회사도 가능할까?\" 궁금하시다면 재무제표를 보내주세요.\n48시간 안에 절세 시뮬레이션을 만들어 드립니다. (무료)\n\nTel: 02-571-6613\nMail: roh@didimip.com\n(메일 제목에 '절세 시뮬레이션'이라고 적어주세요)\n\n노재일 변리사 | 특허그룹 디딤",
     "conversion_method": "이메일로 재무제표 수신 → 48시간 내 시뮬레이션 회신 → 유선 상담 제안 → 계약",
     "email_subject_tag": "절세 시뮬레이션"
   },
   "현장수첩_인증": {
-    "text": "━━━━━━━━━━━━━━━━━━\n우리 회사가 인증 요건에 해당하는지 5분이면 확인할 수 있습니다.\n아래 연락처로 문의 주시면 무료 진단을 도와드리겠습니다.\n\nTel: 02-571-6613\nMail: admin@didimip.com\n(메일 제목에 '인증 진단'이라고 적어주세요)\n\n특허그룹 디딤 | 기업을 아는 변리사",
+    "text": "━━━━━━━━━━━━━━━━━━\n우리 회사가 인증 요건에 해당하는지 5분이면 확인할 수 있습니다.\n아래 연락처로 문의 주시면 무료 진단을 도와드리겠습니다.\n\nTel: 02-571-6613\nMail: roh@didimip.com\n(메일 제목에 '인증 진단'이라고 적어주세요)\n\n노재일 변리사 | 특허그룹 디딤",
     "conversion_method": "이메일/전화 문의 → 3일 내 팔로업 → 무료 진단 → 계약",
     "email_subject_tag": "인증 진단"
   },
   "현장수첩_연구소": {
-    "text": "━━━━━━━━━━━━━━━━━━\n연구소 운영 상태가 괜찮은지 궁금하시다면, 무료 진단을 도와드리겠습니다.\n아래 연락처로 문의해주세요.\n\nTel: 02-571-6613\nMail: admin@didimip.com\n(메일 제목에 '연구소 진단'이라고 적어주세요)\n\n특허그룹 디딤 | 기업을 아는 변리사",
+    "text": "━━━━━━━━━━━━━━━━━━\n연구소 운영 상태가 괜찮은지 궁금하시다면, 무료 진단을 도와드리겠습니다.\n아래 연락처로 문의해주세요.\n\nTel: 02-571-6613\nMail: roh@didimip.com\n(메일 제목에 '연구소 진단'이라고 적어주세요)\n\n노재일 변리사 | 특허그룹 디딤",
     "conversion_method": "이메일/전화 문의 → 3일 내 팔로업 → 무료 진단 → 계약",
     "email_subject_tag": "연구소 진단"
   },
   "IP라운지": {
-    "text": "━━━━━━━━━━━━━━━━━━\n이런 IP 이야기가 도움이 되셨다면 디딤 블로그를 이웃 추가해주세요.\n매주 화요일, 중소기업 대표님께 실질적인 IP 정보를 전해드립니다.\n\nIP 관련 상담이 필요하시면: admin@didimip.com\n\n특허그룹 디딤 | 기업을 아는 변리사",
+    "text": "━━━━━━━━━━━━━━━━━━\n이런 IP 이야기가 도움이 되셨다면 디딤 블로그를 이웃 추가해주세요.\n매주 화요일, 중소기업 대표님께 실질적인 IP 정보를 전해드립니다.\n\nIP 관련 상담이 필요하시면: roh@didimip.com\n\n노재일 변리사 | 특허그룹 디딤",
     "conversion_method": "이웃 추가 유도 + 이메일 안내 → 장기 관계 유지",
     "email_subject_tag": null
   },
@@ -504,38 +504,38 @@ export const CTA_TEMPLATES = {
 48시간 안에 절세 시뮬레이션을 만들어 드립니다. (무료)
 
 Tel: 000-0000-0000
-Mail: admin@didimip.com
+Mail: roh@didimip.com
 (메일 제목에 '절세 시뮬레이션'이라고 적어주세요)
 
-특허그룹 디딤 | 기업을 아는 변리사`,
+노재일 변리사 | 특허그룹 디딤`,
 
   CERT_DIAG: `━━━━━━━━━━━━━━━━━━
 우리 회사가 인증 요건에 해당하는지 5분이면 확인할 수 있습니다.
 아래 연락처로 문의 주시면 무료 진단을 도와드리겠습니다.
 
 Tel: 000-0000-0000
-Mail: admin@didimip.com
+Mail: roh@didimip.com
 (메일 제목에 '인증 진단'이라고 적어주세요)
 
-특허그룹 디딤 | 기업을 아는 변리사`,
+노재일 변리사 | 특허그룹 디딤`,
 
   LAB_MGMT: `━━━━━━━━━━━━━━━━━━
 연구소 운영 상태가 걱정되시나요?
 사후관리 점검을 무료로 도와드립니다.
 
 Tel: 000-0000-0000
-Mail: admin@didimip.com
+Mail: roh@didimip.com
 (메일 제목에 '연구소 점검'이라고 적어주세요)
 
-특허그룹 디딤 | 기업을 아는 변리사`,
+노재일 변리사 | 특허그룹 디딤`,
 
   NEIGHBOR: `━━━━━━━━━━━━━━━━━━
 이런 IP 이야기가 도움이 되셨다면 디딤 블로그를 이웃 추가해주세요.
 매주 화요일, 중소기업 대표님께 실질적인 IP 정보를 전해드립니다.
 
-IP 관련 상담이 필요하시면: admin@didimip.com
+IP 관련 상담이 필요하시면: roh@didimip.com
 
-특허그룹 디딤 | 기업을 아는 변리사`,
+노재일 변리사 | 특허그룹 디딤`,
 
   NONE: '',  // 디딤 다이어리용
 } as const;

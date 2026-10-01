@@ -314,7 +314,7 @@ def build_checks(content, seo_score, cv_run, cv_critical, image_markers, now):
             {"id": "tags-10", "label": "태그 10개", "passed": tag_count >= 10,
              "detail": f"현재 {tag_count}개", "required": True},
             {"id": "cta-exists", "label": "CTA 불필요 (다이어리)" if is_diary else "CTA 블록 존재",
-             "passed": is_diary or ("━━" in body) or ("admin@didimip" in body),
+             "passed": is_diary or ("━━" in body) or ("roh@didimip" in body),
              "detail": "면제" if is_diary else ("있음" if "━━" in body else "없음"),
              "required": not is_diary},
             {"id": "review-approved", "label": "대표 검수 승인", "passed": review_status == "approved",
@@ -509,7 +509,7 @@ def chain_after_approve(content, now):
         body = latest.get("body") or ""
         body_len = js_len(re.sub(r"\s", "", body))
         tag_count = len(latest.get("tags") or [])
-        has_cta = ("━━" in body) or ("admin@didimip" in body)
+        has_cta = ("━━" in body) or ("roh@didimip" in body)
         is_diary = cta_exempt(latest)
         if body_len >= 500 and tag_count >= 10 and (is_diary or has_cta):
             latest.update(status_timestamps("S2", now))

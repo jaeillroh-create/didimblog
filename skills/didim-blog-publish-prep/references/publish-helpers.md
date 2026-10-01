@@ -39,7 +39,7 @@
 판정 순서: CAT-A/CAT-A-* → 현장 수첩, CAT-B-03 → IP 뉴스 한 입, CAT-B/CAT-B-* → IP 라운지, CAT-C/CAT-C-* → 디딤 다이어리, 그 외 → 기본. 입력은 `secondary_category || category_id`.
 
 ### enforceEmail(text) (273-277행)
-`/[\w.-]+@[\w.-]+\.\w+/g` 에 맞는 모든 이메일을 `admin@didimip.com` 으로 바꾼다. 빈 값이면 null.
+`/[\w.-]+@[\w.-]+\.\w+/g` 에 맞는 모든 이메일을 `roh@didimip.com` 으로 바꾼다. 빈 값이면 null.
 
 ### generateImageGuide(body) (282-297행)
 `/\[IMAGE:\s*(.+?)\]/g` — **한 줄 안에서** 닫는 `]`까지. 순번 1부터, 설명은 trim. 화면의 ALT 텍스트 = 이 설명 그대로.
@@ -330,7 +330,7 @@ export function generateFormatGuide(categoryId: string): string {
  */
 export function enforceEmail(text: string | null): string | null {
   if (!text) return null;
-  // 이메일 패턴을 찾아서 admin@didimip.com으로 치환
+  // 이메일 패턴을 찾아서 roh@didimip.com으로 치환
   return text.replace(/[\w.-]+@[\w.-]+\.\w+/g, DIDIM_EMAIL);
 }
 

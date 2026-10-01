@@ -29,9 +29,9 @@ S = "[\t\n\x0b\x0c\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufe
 D = "[0-9]"
 
 # ── categories.ts:36-40 ──
-DIDIM_EMAIL = "admin@didimip.com"
+DIDIM_EMAIL = "roh@didimip.com"
 DIDIM_PHONE = "02-571-6613"
-DIDIM_SIGNATURE = "특허그룹 디딤 | 기업을 아는 변리사"
+DIDIM_SIGNATURE = "노재일 변리사 | 특허그룹 디딤"
 DIDIM_PROFILE_NOH = "KAIST 출신 | 前 NHN에듀 최고지식재산책임자(CIPO) | 기업기술가치평가사"
 DIDIM_PROFILE_LEE = "경희대 겸임교수 | 서울대 AI 최고위과정 | 반도체·디스플레이 IP 전문"
 
@@ -171,7 +171,7 @@ def determine_disclaimer_level(category_id: str, body: str, is_ai_generated: boo
 
 # ── publish-helpers.ts:273-277 / prompts.ts:1760-1807 ──
 EMAIL_RE = re.compile("[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+\\.[A-Za-z0-9_]+")
-DIARY_CTA_KEYWORDS = ["상담", "문의", "연락", "무료", "진단", "시뮬레이션", "admin@"]
+DIARY_CTA_KEYWORDS = ["상담", "문의", "연락", "무료", "진단", "시뮬레이션", "@didimip"]
 
 
 def enforce_email(text: str | None) -> str | None:
@@ -195,13 +195,13 @@ def validate_generated_draft(text: str, prompt_key: str) -> list[dict]:
     invalid = [e for e in emails if e != DIDIM_EMAIL]
     if invalid:
         warnings.append({"type": "email_mismatch",
-                         "message": f"허용되지 않은 이메일 주소가 감지되었습니다: {', '.join(invalid)} (admin@didimip.com만 사용 가능)"})
+                         "message": f"허용되지 않은 이메일 주소가 감지되었습니다: {', '.join(invalid)} (roh@didimip.com만 사용 가능)"})
     return warnings
 
 
 
 # ── 발행 단계 CTA 템플릿 (publish-prep-client.tsx FALLBACK_CTA = migration 011) ──
-_SIG = "특허그룹 디딤 | 기업을 아는 변리사"
+_SIG = "노재일 변리사 | 특허그룹 디딤"
 _BAR = "━" * 18
 
 
@@ -221,24 +221,24 @@ FALLBACK_CTA = [
     _cta("현장수첩_절세", "현장 수첩 · 절세 시뮬레이션",
          "\"우리 회사도 가능할까?\" 궁금하시다면 재무제표를 보내주세요.\n"
          "48시간 안에 절세 시뮬레이션을 만들어 드립니다. (무료)\n\n"
-         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '절세 시뮬레이션'이라고 적어주세요)",
+         "📞 02-571-6613\n📧 roh@didimip.com (메일 제목에 '절세 시뮬레이션'이라고 적어주세요)",
          "절세 시뮬레이션"),
     _cta("현장수첩_인증", "현장 수첩 · 인증 가이드",
          "우리 회사가 인증 요건에 해당하는지 5분이면 확인할 수 있습니다.\n\n"
-         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '인증 진단'이라고 적어주세요)",
+         "📞 02-571-6613\n📧 roh@didimip.com (메일 제목에 '인증 진단'이라고 적어주세요)",
          "인증 진단"),
     _cta("현장수첩_출원", "현장 수첩 · 특허·상표 출원 실무",
          "출원 전략이 궁금하시면 편하게 연락 주세요.\n"
          "기술 내용을 보내주시면 출원 가능성과 전략을 검토해 드립니다.\n\n"
-         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '출원 상담'이라고 적어주세요)",
+         "📞 02-571-6613\n📧 roh@didimip.com (메일 제목에 '출원 상담'이라고 적어주세요)",
          "출원 상담"),
     _cta("현장수첩_연구소", "현장 수첩 · 연구소 운영",
          "연구소 운영 상태 점검, 무료 진단 가능합니다.\n\n"
-         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '연구소 진단'이라고 적어주세요)",
+         "📞 02-571-6613\n📧 roh@didimip.com (메일 제목에 '연구소 진단'이라고 적어주세요)",
          "연구소 진단"),
     _cta("IP라운지", "IP 라운지",
          "AI·IP 전략이 궁금하신 대표님, 편하게 연락 주세요.\n\n"
-         "📞 02-571-6613\n📧 admin@didimip.com",
+         "📞 02-571-6613\n📧 roh@didimip.com",
          "상담 문의"),
 ]
 
@@ -358,7 +358,7 @@ NEIGHBOR_CTA = {
     "categoryName": "지식재산 경영 · 이웃 추가",
     "text": "━━━━━━━━━━━━━━━━━━\n이런 IP 이야기가 도움이 되셨다면 디딤 블로그를 이웃 추가해주세요.\n"
             "매주 화요일, 중소기업 대표님께 실질적인 IP 정보를 전해드립니다.\n\n"
-            "IP 관련 상담이 필요하시면: admin@didimip.com\n\n특허그룹 디딤 | 기업을 아는 변리사",
+            "IP 관련 상담이 필요하시면: roh@didimip.com\n\n노재일 변리사 | 특허그룹 디딤",
     "note": "원문: seed_data/cta_templates.json 'IP라운지' (= UPGRADE_SPEC §5.2 NEIGHBOR). '매주 화요일'은 현재 발행 요일과 맞는지 확인",
     "conversionMethod": "이웃 추가 유도 + 이메일 안내 → 장기 관계 유지",
     "emailSubjectTag": None,
@@ -366,7 +366,7 @@ NEIGHBOR_CTA = {
 BITE_CTA = {
     "key": "디딤소식_이웃추가",
     "categoryName": "디딤 소식 · 가벼운 이웃 추가",
-    "text": "━━━━━━━━━━━━━━━━━━\nIP 이슈에 대해 더 알고 싶으시면 이웃 추가 해주세요.\n\n특허그룹 디딤 | 기업을 아는 변리사",
+    "text": "━━━━━━━━━━━━━━━━━━\nIP 이슈에 대해 더 알고 싶으시면 이웃 추가 해주세요.\n\n노재일 변리사 | 특허그룹 디딤",
     "note": "문장 원문: prompts.ts FIELD_CTA['CAT-B-03'] + 구분선·서명(appendCtaAndSignature 모양). 포맷 가이드 '이웃 추가 유도 (2줄 이내)'",
     "conversionMethod": "이웃 추가",
     "emailSubjectTag": None,
@@ -469,7 +469,7 @@ def main(argv=None):
   prompt-key     {category_id}                  PROMPT_FIELD / LOUNGE_GENERAL / LOUNGE_BITE / DIARY
   field-cta      {category_id, target_keyword}  getFieldCta (초안 생성 시 CTA 문구)
   disclaimer     {category_id, body, is_ai_generated}  면책 레벨 A/B/C/none + 문구
-  enforce-email  {text}                         이메일을 admin@didimip.com 으로 강제 치환
+  enforce-email  {text}                         이메일을 roh@didimip.com 으로 강제 치환
   check          {text, category_id}            validateGeneratedDraft (분량·다이어리 CTA·이메일)
   category       {key}                          categoryNo/네이버 이름/CAT-* → 정본 행(구분·레거시 별칭·신규 대응·프롬프트 키·CTA 정책)
   cta            {category, target_keyword, title, office_news}  카테고리별 발행본 CTA(신규 구조 _DECISIONS 2절, 레거시는 FIELD_CTA)

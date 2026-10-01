@@ -228,7 +228,7 @@ function buildChecks(
       {
         id: "cta-exists",
         label: isDiary ? "CTA 불필요 (다이어리)" : "CTA 블록 존재",
-        passed: isDiary || body.includes("━━") || body.includes("admin@didimip"),
+        passed: isDiary || body.includes("━━") || body.includes("roh@didimip"),
         detail: isDiary ? "면제" : (body.includes("━━") ? "있음" : "없음"),
         scrollTarget: "body-editor",
         required: !isDiary,

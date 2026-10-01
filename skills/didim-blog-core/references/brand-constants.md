@@ -4,9 +4,9 @@
 
 | 상수 | 값 (원문) | 근거 |
 |---|---|---|
-| DIDIM_EMAIL | `admin@didimip.com` | categories.ts:36 |
+| DIDIM_EMAIL | `roh@didimip.com` | categories.ts:36 |
 | DIDIM_PHONE | `02-571-6613` | categories.ts:37 |
-| DIDIM_SIGNATURE | `특허그룹 디딤 | 기업을 아는 변리사` | categories.ts:38 |
+| DIDIM_SIGNATURE | `노재일 변리사 | 특허그룹 디딤` | categories.ts:38 |
 | DIDIM_PROFILE_NOH (노재일 변리사) | `KAIST 출신 | 前 NHN에듀 최고지식재산책임자(CIPO) | 기업기술가치평가사` | categories.ts:39 |
 | DIDIM_PROFILE_LEE (이용환 변리사) | `경희대 겸임교수 | 서울대 AI 최고위과정 | 반도체·디스플레이 IP 전문` | categories.ts:40 |
 | 브랜드 태그(항상 포함) | `특허그룹디딤`, `디딤변리사` | client-generate.ts:1534, 1720 |
@@ -24,10 +24,10 @@ ${disclaimerBlock}
 ━━━━━━━━━━━━━━━━━━
 ${cta}
 
-특허그룹 디딤 | 기업을 아는 변리사
+노재일 변리사 | 특허그룹 디딤
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목: '${subject}')
+📧 roh@didimip.com (메일 제목: '${subject}')
 
 ${tagLine}`;
 ````
-- `${cta}` = getFieldCta 1문장(없으면 "관련해서 궁금하신 점이 있다면 admin@didimip.com 으로 편하게 연락주세요."), `${subject}` = 메일 제목(없으면 "상담 문의"), `${tagLine}` = `#태그 #태그 …` 10개.
+- `${cta}` = getFieldCta 1문장(없으면 "관련해서 궁금하신 점이 있다면 roh@didimip.com 으로 편하게 연락주세요."), `${subject}` = 메일 제목(없으면 "상담 문의"), `${tagLine}` = `#태그 #태그 …` 10개.

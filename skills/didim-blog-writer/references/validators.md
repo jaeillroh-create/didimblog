@@ -173,15 +173,15 @@ export function validateDraft(
       id: "cta-present",
       category: "CTA",
       rule: "CTA 영역 포함",
-      passed: body.includes("admin@didimip.com") || body.includes("02-571-6613"),
-      detail: body.includes("admin@didimip.com") ? "이메일 포함됨" : "CTA 없음",
+      passed: body.includes("roh@didimip.com") || body.includes("02-571-6613"),
+      detail: body.includes("roh@didimip.com") ? "이메일 포함됨" : "CTA 없음",
     });
 
     checks.push({
       id: "signature-block",
       category: "서명",
       rule: "디딤 서명 블록 포함",
-      passed: body.includes("특허그룹 디딤") && body.includes("기업을 아는 변리사"),
+      passed: body.includes("노재일 변리사") && body.includes("특허그룹 디딤"),
       detail: body.includes("특허그룹 디딤") ? "포함됨" : "서명 블록 없음",
     });
   }
@@ -216,7 +216,7 @@ export interface DraftValidationWarning {
   message: string;
 }
 
-const DIARY_CTA_KEYWORDS = ["상담", "문의", "연락", "무료", "진단", "시뮬레이션", "admin@"];
+const DIARY_CTA_KEYWORDS = ["상담", "문의", "연락", "무료", "진단", "시뮬레이션", "@didimip"];
 
 export function validateGeneratedDraft(
   text: string,
@@ -244,14 +244,14 @@ export function validateGeneratedDraft(
     }
   }
 
-  // 공통: 이메일 주소가 admin@didimip.com인지 확인
+  // 공통: 이메일 주소가 roh@didimip.com인지 확인
   const emailRegex = /[\w.-]+@[\w.-]+\.\w+/g;
   const emails = text.match(emailRegex) || [];
-  const invalidEmails = emails.filter((e) => e !== "admin@didimip.com");
+  const invalidEmails = emails.filter((e) => e !== "roh@didimip.com");
   if (invalidEmails.length > 0) {
     warnings.push({
       type: "email_mismatch",
-      message: `허용되지 않은 이메일 주소가 감지되었습니다: ${invalidEmails.join(", ")} (admin@didimip.com만 사용 가능)`,
+      message: `허용되지 않은 이메일 주소가 감지되었습니다: ${invalidEmails.join(", ")} (roh@didimip.com만 사용 가능)`,
     });
   }
 

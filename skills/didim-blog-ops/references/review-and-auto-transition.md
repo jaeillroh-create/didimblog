@@ -78,7 +78,7 @@ export function ReviewPanel({
         const body = latest.body ?? "";
         const bodyLen = body.replace(/\s/g, "").length;
         const tagCount = latest.tags?.length ?? 0;
-        const hasCta = body.includes("━━") || body.includes("admin@didimip");
+        const hasCta = body.includes("━━") || body.includes("roh@didimip");
         const isDiary = latest.category_id?.startsWith("CAT-C") ?? false;
 
         if (bodyLen >= 500 && tagCount >= 10 && (isDiary || hasCta)) {

@@ -51,7 +51,7 @@
 3. DB conditions 중 코드가 평가하는 키는 ai_generation_done·review_done·image_done·revision_count_lt_3·quality_measured 5개다 (contents.ts:274-288). briefing_done·seo_required_pass·final_edit_done·scheduled_time_reached·major_revision·minor_revision 은 평가하지 않는다.
 4. 칸반 드래그는 validateTransition 실패 조건을 모두 '권장 항목 미완료' 경고로 보여주고 "그대로 진행"을 허용한다 (kanban-board.tsx:198-212, 232-254). 커밋 abe96ec 에서 차단 → 경고로 완화되었다.
 5. 상세 패널의 정방향 전이는 buildChecks 의 필수(required)·권장 조건으로 판정한다 (status-transition-panel.tsx:65-204):
-   - S1→S2 필수: 공백 제외 본문 ≥ 500자, 태그 ≥ 10, CTA(`━━` 또는 `admin@didimip` 포함, CAT-C 면제), review_status='approved' / 권장: SEO ≥ 70, 교차검증 수행 && 심각 0건, 이미지 마커 ≥ 3 (78-145).
+   - S1→S2 필수: 공백 제외 본문 ≥ 500자, 태그 ≥ 10, CTA(`━━` 또는 `roh@didimip` 포함, CAT-C 면제), review_status='approved' / 권장: SEO ≥ 70, 교차검증 수행 && 심각 0건, 이미지 마커 ≥ 3 (78-145).
    - S2→S3 필수: publish_date 또는 publish_due 존재 / 권장: 이미지 마커 ≥ 1 (147-170).
    - S3→S4: 조건 없음, 네이버 URL(선택)·발행일시(기본 현재) 입력 (172-175, 372-384).
    - S4→S5 필수: published_at 존재 및 발행 후 floor(경과일) ≥ 7 (177-201).

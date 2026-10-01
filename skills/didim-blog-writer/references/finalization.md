@@ -277,7 +277,7 @@ export function appendCtaAndSignature(params: {
   const disclaimerText = params.disclaimerText?.trim() || "";
 
   const cta = params.ctaText?.trim() ||
-    "관련해서 궁금하신 점이 있다면 admin@didimip.com 으로 편하게 연락주세요.";
+    "관련해서 궁금하신 점이 있다면 roh@didimip.com 으로 편하게 연락주세요.";
   const subject = params.emailSubject?.trim() || "상담 문의";
 
   const disclaimerBlock = disclaimerText
@@ -289,9 +289,9 @@ ${disclaimerBlock}
 ━━━━━━━━━━━━━━━━━━
 ${cta}
 
-특허그룹 디딤 | 기업을 아는 변리사
+노재일 변리사 | 특허그룹 디딤
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목: '${subject}')
+📧 roh@didimip.com (메일 제목: '${subject}')
 
 ${tagLine}`;
 
@@ -309,9 +309,9 @@ ${tagLine}`;
 ━━━━━━━━━━━━━━━━━━
 {CTA 문구}
 
-특허그룹 디딤 | 기업을 아는 변리사
+노재일 변리사 | 특허그룹 디딤
 📞 02-571-6613
-📧 admin@didimip.com (메일 제목: '{emailSubject}')
+📧 roh@didimip.com (메일 제목: '{emailSubject}')
 
 #태그1 #태그2 … (최대 10개, 브랜드 2개 보장)
 ````

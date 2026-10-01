@@ -146,13 +146,13 @@ def append_cta_and_signature(body, prompt_key, cta_text=None, email_subject=None
 
     disclaimer = js_trim(disclaimer_text or "") if disclaimer_text else ""
     cta = js_trim(cta_text) if cta_text and js_trim(cta_text) else \
-        "관련해서 궁금하신 점이 있다면 admin@didimip.com 으로 편하게 연락주세요."
+        "관련해서 궁금하신 점이 있다면 roh@didimip.com 으로 편하게 연락주세요."
     subject = js_trim(email_subject) if email_subject and js_trim(email_subject) else "상담 문의"
     disclaimer_block = f"\n\n{disclaimer}\n" if disclaimer else ""
     block = (
         f"\n{disclaimer_block}\n━━━━━━━━━━━━━━━━━━\n{cta}\n\n"
-        "특허그룹 디딤 | 기업을 아는 변리사\n📞 02-571-6613\n"
-        f"📧 admin@didimip.com (메일 제목: '{subject}')\n\n{tag_line}"
+        "노재일 변리사 | 특허그룹 디딤\n📞 02-571-6613\n"
+        f"📧 roh@didimip.com (메일 제목: '{subject}')\n\n{tag_line}"
     )
     return js_trim_end(body_wo) + block
 

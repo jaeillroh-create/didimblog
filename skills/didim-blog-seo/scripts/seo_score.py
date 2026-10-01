@@ -251,7 +251,7 @@ _SUBHEAD_RE = re.compile(r"(?:^|(?<=[\n\r  ]))#{2,3}" + JS_WS + "+" + JS_DOT
 _IMAGE_RE = re.compile(r"\[IMAGE:" + JS_WS + "*" + JS_DOT + r"+?\]")  # /\[IMAGE:\s*.+?\]/g
 _CTA_PATTERNS = [
     re.compile(r"━{3,}"),
-    re.compile(r"admin@didimip\.com"),
+    re.compile(r"roh@didimip\.com"),
     re.compile(r"이웃" + JS_WS + r"*추가"),
     re.compile(r"02-571-6613"),
     re.compile(r"Tel:" + JS_WS + r"*[0-9-]+"),

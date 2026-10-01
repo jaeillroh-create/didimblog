@@ -95,7 +95,7 @@ def js_replace_first(s: str, pattern: str, replacement: str) -> str:
 # ─────────────────────────────────────────────────────────────
 # 상수 (원문 그대로)
 # ─────────────────────────────────────────────────────────────
-DIDIM_EMAIL = "admin@didimip.com"  # categories.ts:36
+DIDIM_EMAIL = "roh@didimip.com"  # categories.ts:36
 
 H2_OPEN = '<h2 style="font-size:20px;font-weight:bold;color:#1B3A5C;margin:24px 0 12px;">'
 H1_OPEN = '<h1 style="font-size:24px;font-weight:bold;color:#1B3A5C;margin:24px 0 12px;">'
@@ -425,7 +425,7 @@ def determine_disclaimer_level(category_id: str, body: str, is_ai_generated: boo
 # ─────────────────────────────────────────────────────────────
 # publish-prep-client.tsx — CTA 매칭
 # ─────────────────────────────────────────────────────────────
-_SIG = "특허그룹 디딤 | 기업을 아는 변리사"
+_SIG = "노재일 변리사 | 특허그룹 디딤"
 _BAR = "━" * 18
 
 
@@ -445,24 +445,24 @@ FALLBACK_CTA = [
     _cta("현장수첩_절세", "현장 수첩 · 절세 시뮬레이션",
          "\"우리 회사도 가능할까?\" 궁금하시다면 재무제표를 보내주세요.\n"
          "48시간 안에 절세 시뮬레이션을 만들어 드립니다. (무료)\n\n"
-         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '절세 시뮬레이션'이라고 적어주세요)",
+         "📞 02-571-6613\n📧 roh@didimip.com (메일 제목에 '절세 시뮬레이션'이라고 적어주세요)",
          "절세 시뮬레이션"),
     _cta("현장수첩_인증", "현장 수첩 · 인증 가이드",
          "우리 회사가 인증 요건에 해당하는지 5분이면 확인할 수 있습니다.\n\n"
-         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '인증 진단'이라고 적어주세요)",
+         "📞 02-571-6613\n📧 roh@didimip.com (메일 제목에 '인증 진단'이라고 적어주세요)",
          "인증 진단"),
     _cta("현장수첩_출원", "현장 수첩 · 특허·상표 출원 실무",
          "출원 전략이 궁금하시면 편하게 연락 주세요.\n"
          "기술 내용을 보내주시면 출원 가능성과 전략을 검토해 드립니다.\n\n"
-         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '출원 상담'이라고 적어주세요)",
+         "📞 02-571-6613\n📧 roh@didimip.com (메일 제목에 '출원 상담'이라고 적어주세요)",
          "출원 상담"),
     _cta("현장수첩_연구소", "현장 수첩 · 연구소 운영",
          "연구소 운영 상태 점검, 무료 진단 가능합니다.\n\n"
-         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '연구소 진단'이라고 적어주세요)",
+         "📞 02-571-6613\n📧 roh@didimip.com (메일 제목에 '연구소 진단'이라고 적어주세요)",
          "연구소 진단"),
     _cta("IP라운지", "IP 라운지",
          "AI·IP 전략이 궁금하신 대표님, 편하게 연락 주세요.\n\n"
-         "📞 02-571-6613\n📧 admin@didimip.com",
+         "📞 02-571-6613\n📧 roh@didimip.com",
          "상담 문의"),
 ]
 
@@ -737,7 +737,7 @@ def generate_auto_tags(prompt_key: str, target_keyword: str | None = None,
     return tags[:10]
 
 
-DIARY_CTA_KEYWORDS = ["상담", "문의", "연락", "무료", "진단", "시뮬레이션", "admin@"]  # prompts.ts:1767
+DIARY_CTA_KEYWORDS = ["상담", "문의", "연락", "무료", "진단", "시뮬레이션", "@didimip"]  # prompts.ts:1767
 
 
 def publish_warnings(body: str, stripped: str, is_diary: bool, has_cta_block: bool,
@@ -746,8 +746,8 @@ def publish_warnings(body: str, stripped: str, is_diary: bool, has_cta_block: bo
     w = []
     no_img = re.sub("━━ 📷 이미지 " + D + "+ ━━[\\s\\S]*?" + IMG_BLOCK_END_14, "", body)
     if has_cta_block and (re.search(MS + "━{3,}" + S + "*" + ME, no_img)
-                          or "admin@didimip" in no_img or "02-571-6613" in no_img):
-        w.append("본문에 이미 구분선(━━) 또는 admin@didimip 가 있습니다. CTA 블록과 중복되지 않게 하나만 쓰세요.")
+                          or "roh@didimip" in no_img or "02-571-6613" in no_img):
+        w.append("본문에 이미 구분선(━━) 또는 roh@didimip 가 있습니다. CTA 블록과 중복되지 않게 하나만 쓰세요.")
     if re.search(MS + r"\|" + DOT + r"+\|" + ME, stripped):
         w.append("복사용 본문에 마크다운 표 줄(| … |)이 남아 있습니다. 표 데이터 블록을 에디터 표에 붙여넣고 본문의 표 줄은 지우세요.")
     if re.search(MS + "`", stripped):
@@ -761,7 +761,7 @@ def publish_warnings(body: str, stripped: str, is_diary: bool, has_cta_block: bo
         w.append("본문에 '특허청'이 있습니다. 현재 시점이면 '지식재산처'로 고치세요(과거 맥락·법령명 제외).")
     bad_emails = [e for e in EMAIL_RE.findall(body) if e != DIDIM_EMAIL]
     if bad_emails:
-        w.append("admin@didimip.com 이 아닌 이메일: " + ", ".join(bad_emails))
+        w.append("roh@didimip.com 이 아닌 이메일: " + ", ".join(bad_emails))
     if is_diary:
         found = [k for k in DIARY_CTA_KEYWORDS if k in body]
         if found:
@@ -866,7 +866,7 @@ NEIGHBOR_CTA = {
     "categoryName": "지식재산 경영 · 이웃 추가",
     "text": "━━━━━━━━━━━━━━━━━━\n이런 IP 이야기가 도움이 되셨다면 디딤 블로그를 이웃 추가해주세요.\n"
             "매주 화요일, 중소기업 대표님께 실질적인 IP 정보를 전해드립니다.\n\n"
-            "IP 관련 상담이 필요하시면: admin@didimip.com\n\n특허그룹 디딤 | 기업을 아는 변리사",
+            "IP 관련 상담이 필요하시면: roh@didimip.com\n\n노재일 변리사 | 특허그룹 디딤",
     "note": "원문: seed_data/cta_templates.json 'IP라운지' (= UPGRADE_SPEC §5.2 NEIGHBOR). '매주 화요일'은 현재 발행 요일과 맞는지 확인",
     "conversionMethod": "이웃 추가 유도 + 이메일 안내 → 장기 관계 유지",
     "emailSubjectTag": None,
@@ -874,7 +874,7 @@ NEIGHBOR_CTA = {
 BITE_CTA = {
     "key": "디딤소식_이웃추가",
     "categoryName": "디딤 소식 · 가벼운 이웃 추가",
-    "text": "━━━━━━━━━━━━━━━━━━\nIP 이슈에 대해 더 알고 싶으시면 이웃 추가 해주세요.\n\n특허그룹 디딤 | 기업을 아는 변리사",
+    "text": "━━━━━━━━━━━━━━━━━━\nIP 이슈에 대해 더 알고 싶으시면 이웃 추가 해주세요.\n\n노재일 변리사 | 특허그룹 디딤",
     "note": "문장 원문: prompts.ts FIELD_CTA['CAT-B-03'] + 구분선·서명(appendCtaAndSignature 모양). 포맷 가이드 '이웃 추가 유도 (2줄 이내)'",
     "conversionMethod": "이웃 추가",
     "emailSubjectTag": None,
@@ -1068,7 +1068,7 @@ def build(content: dict) -> dict:
         },
         # ── 스킬 추가 정보 (원본 화면에 없음) ──
         "extra": {
-            "body_has_cta": ("━━" in body) or ("admin@didimip" in body),  # review-panel.tsx:104 식
+            "body_has_cta": ("━━" in body) or ("roh@didimip" in body),  # review-panel.tsx:104 식
             "image_blocks": [{k: v for k, v in b.items() if k != "block"} for b in blocks],
             "warnings": ([f"레거시 카테고리 '{row['name']}' — 사용자가 지정한 경우에만 사용. 신규 구조 대응: {row['maps_to_name']}"]
                          if row and row["kind"] == "legacy" else [])
