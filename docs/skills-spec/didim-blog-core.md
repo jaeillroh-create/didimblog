@@ -1,7 +1,7 @@
 # didim-blog-core — 브랜드·카테고리·CTA·면책·명칭·광고 규정 공통 기반
 
 ## 1. 기능 개요
-특허그룹 디딤 네이버 블로그 운영에 공통으로 쓰이는 상수와 규칙(네이버 실제 카테고리와 categoryNo 정본 및 레거시 CAT-* 별칭 매핑, 카테고리별 역할·퍼널·CTA 유형·프롬프트 키, 글쓰기·톤 규칙, CTA 문구와 선택 로직, 면책조항 레벨과 문구, 폐지 기관명 치환, 디딤 연락처·서명·변리사 프로필, 절대원칙, 변리사 광고 규정 표현 규칙)을 코드에서 원문 그대로 옮겨 제공한다. skills/_DECISIONS.md(2026-10-01 확정: 네이버 categoryNo 정본, 신규 카테고리 구조 25/27/26/24/28, Notion DB 2개)를 반영하며, 다른 didim-blog-* 스킬이 이 규칙과 Notion 저장소 안내를 근거로 기획·작성·검수·발행 준비·기록을 한다. 결정적 로직(명칭 치환, 프롬프트 키, 생성용 CTA 선택, 면책 레벨, 이메일 강제, 초안 검증)은 Python 으로 포팅했다.
+특허그룹 디딤 네이버 블로그 운영에 공통으로 쓰이는 상수와 규칙(네이버 실제 카테고리와 categoryNo 정본 및 레거시 CAT-* 별칭 매핑, 카테고리별 역할·퍼널·CTA 유형·프롬프트 키, 글쓰기·톤 규칙, CTA 문구와 선택 로직, 면책조항 레벨과 문구, 폐지 기관명 치환, 디딤 연락처·서명·변리사 프로필, 절대원칙, 변리사 광고 규정 표현 규칙)을 코드에서 원문 그대로 옮겨 제공한다. skills/_DECISIONS.md(2026-10-01 확정: 네이버 categoryNo 정본, 신규 카테고리 구조 25/27/26/24/28, Notion DB 5개·전용 열·글 페이지 5개 섹션 — 6·7절)를 반영하며, 다른 didim-blog-* 스킬이 이 규칙과 Notion 저장소 안내를 근거로 기획·작성·검수·발행 준비·기록을 한다. 결정적 로직(명칭 치환, 프롬프트 키, 생성용 CTA 선택, 면책 레벨, 이메일 강제, 초안 검증)은 Python 으로 포팅했다.
 
 ## 2. 원본 코드 위치
 | 파일 | 함수/상수 |
@@ -69,20 +69,33 @@
 - 스크립트 실행 불가 환경: references 규칙을 같은 순서로 수동 적용.
 
 ## 7. 데이터 저장
-저장소 = Notion(_DECISIONS.md 4·6절, 2026-10-01 생성). 상세 속성·선택지는 skills/didim-blog-core/references/notion-storage.md (Notion 스키마 직접 조회 결과).
+저장소 = Notion DB 5개(_DECISIONS.md 4·6·7절, 2026-10-01 생성·확장). 열·선택지·data source ID 전체는 skills/didim-blog-core/references/notion-storage.md (5개 data source 를 notion-fetch 로 직접 조회해 옮김, 콘텐츠 DB "레거시 2차 분류" → "2차 분류" 이름 변경 반영). 값 변환·페이지 섹션 처리는 scripts/notion_page.py(정본; writer·publish-prep·infographic 에 사본).
 | 백오피스 테이블.컬럼 | 스킬에서의 대체 |
 |---|---|
 | categories.* | references/categories.md 정적 표(네이버 categoryNo 정본 + CAT 별칭) |
 | cta_templates.* | references/cta-templates.md 원문. 설정 화면에서 바꾼 최신 문구는 사용자 입력으로 덮어씀 |
 | disclaimer_templates.* | references/disclaimers.md (코드 하드코딩 문구 기준) |
-| contents.title | "디딤 블로그 콘텐츠".제목 (title) |
-| contents.status | 〃.상태 (select: S0 기획중 / S1 초안완료 / S2 검토완료 / S3 발행예정 / S4 발행완료 / S5 성과측정) |
-| contents.category_id | 〃.카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시) + categoryNo (number) |
-| contents.secondary_category | 〃.2차 분류 (select: 레거시·다이어리 2차 이름 10개) |
-| contents.target_keyword | 〃.타깃 키워드 (text) |
-| contents.body, tags, is_ai_generated | DB 속성 없음 → 페이지 본문(초안, 태그 줄, "AI 도움" 한 줄) 또는 사용자 입력 |
-| consultations(리드) | "디딤 블로그 상담" (회사명, 상담일, 유입 경로, 경유 글, 관심 서비스, 상태, 계약 여부, 계약 금액, 메모) |
-위치: 상위 페이지 "DIDIM 블로그 운영", 콘텐츠 DB data source collection://463bc815-11ab-4290-9d86-22bd1aa9cfed, 상담 DB collection://e1272822-7efd-4850-b8c8-cfce02db7d00. 커넥터가 없으면 표로 출력해 붙여넣기 요청. 이 스킬은 쓰기를 직접 하지 않고 기록 규칙만 제공한다.
+| contents.title / status | "디딤 블로그 콘텐츠".제목 (title) / 상태 (select: S0 기획중 / S1 초안완료 / S2 검토완료 / S3 발행예정 / S4 발행완료 / S5 성과측정) |
+| contents.category_id | 〃.카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시) + categoryNo (number) + 디딤 소식 종류 (select: IP 뉴스 / 사무소 소식) |
+| contents.secondary_category | 〃.2차 분류 (select: 레거시 2차 + 다이어리 하위 10개; 옛 이름 "레거시 2차 분류") |
+| contents.target_keyword | 〃.타깃 키워드 (text) + 키워드 (relation ↔ 키워드 DB "발행 글") |
+| contents.tags | 〃.태그 (text, `#` 없이 쉼표 구분 10개) |
+| (생성·발행 CTA) | 〃.CTA (select: 절세 시뮬레이션 / 인증 진단 / 연구소 진단 / 출원 상담 / 이웃 추가 / 없음) |
+| (determineDisclaimerLevel 결과) | 〃.면책 레벨 (select: A / B / C / 없음 — 코드 none → 없음) |
+| contents.publish_date / published_at | 〃.발행예정일 / 발행일 (date) + 발행 URL (url) |
+| contents.review_status / revision_count / review_memo | 〃.검수 상태 / 수정 횟수 / 검수 메모 (ops) |
+| contents.seo_score / seo_checks.verdict | 〃.SEO 점수 / SEO 판정 (seo) |
+| (교차검증) | 〃.교차검증 / 교차검증일 (factcheck) |
+| contents.health_status / updated_at | 〃.건강 상태 / 마지막 업데이트일 (health) |
+| content_recommendations.* | 〃.추천 소스 / 추천 피드백 / 부적합 사유 / 부적합 키워드 / 근거 URL (planner) |
+| contents.notes | 〃.메모 — **사람 자유 기록 전용, 스킬은 쓰지 않음** |
+| contents.body | 글 페이지 `## 본문` (```markdown 코드 블록, 원문 그대로) |
+| (브리핑·이미지 설계·발행 화면·전이 로그) | 글 페이지 `## 브리핑` / `## 인포그래픽` / `## 발행 블록` / `## 검수 기록` |
+| consultations(리드) | "디딤 블로그 상담" (회사명, 상담일, 유입 경로, 경유 글 ↔ 콘텐츠 "상담", 관심 서비스, 상태, 계약 여부, 계약 금액, 메모) |
+| (없음 — 신규) | "디딤 블로그 사례 메모" (사례 26 재료, 익명화 확인·고객 공개 동의 조건, 출처 사건번호 노출 금지, 사용 글 ↔ 콘텐츠 "사례 메모") |
+| (지원매치 리포트) | "디딤 블로그 공고 후보" (planner, 사용 글 ↔ 콘텐츠 "공고") |
+| keyword_pool / keyword_rankings | "디딤 블로그 키워드" (planner 키워드 풀 정본·health 커버리지·performance 순위, 발행 글 ↔ 콘텐츠 "키워드") |
+위치: 상위 페이지 "DIDIM 블로그 운영". data source — 콘텐츠 collection://463bc815-11ab-4290-9d86-22bd1aa9cfed, 상담 collection://e1272822-7efd-4850-b8c8-cfce02db7d00, 사례 메모 collection://d0dc583f-9a93-482c-af24-fede97f446a0, 공고 후보 collection://22228030-8382-4930-926e-fd46dc2f0bac, 키워드 collection://4e0fae54-aeb3-48dd-b948-b78886a8e859. 커넥터가 없으면 표로 출력해 붙여넣기 요청. 이 스킬은 쓰기를 직접 하지 않고 기록 규칙·변환 도구만 제공한다.
 
 ## 8. 원본 코드와 달라진 점
 1. **카테고리 ID 체계 교체**: 코드의 CAT-* 대신 네이버 categoryNo 를 정본 ID 로 쓴다(_DECISIONS.md 1절, 코드 내부 모순 — CAT-A-04 누락, CAT-B-01/02 뒤바뀜 — 때문). CAT-* 는 레거시 코드 규칙(면책·포맷 가이드·태그 접미사·FIELD_CTA)을 계산할 때만 별칭으로 쓴다. CAT-A-04 '특허·상표 출원 실무'는 categoryNo 23(레거시)으로 실재하며 신규 '출원·심판 실무'(27)가 흡수.
@@ -92,7 +105,8 @@
 5. 검수 절차에 광고 규정 체크리스트를 Claude 가 직접 적용하도록 했다(원본은 LLM 교차검증 프롬프트 항목). 다른 LLM 교차검증은 "가능하면 서브에이전트/별도 패스로 독립 검토"로 대체(didim-blog-factcheck 소관).
 6. UPGRADE_SPEC §0-5(Vercel 프리셋), §0-6(LLM 기본값 claude-sonnet-4-6)은 스킬 환경과 무관하여 적용 대상에서 제외했다.
 7. core_rules.py 의 category·cta 명령·append_cta_block 은 스킬 추가 기능이며 원본 단일 함수와 1:1 대응하지 않는다(cta 는 FALLBACK_CTA·CTA_KEYWORD_MAP 원문을 재사용).
-8. 저장소: 백오피스 Supabase 대신 Notion DB 2개(콘텐츠·상담). 별도 성과 DB 없음(_DECISIONS.md 4절). 콘텐츠 DB 에는 본문·태그·AI 생성 여부 속성이 없어 페이지 본문으로 대체.
+8. 저장소: 백오피스 Supabase 대신 Notion DB(_DECISIONS.md 4·6절). 별도 성과 DB 없음. 본문은 DB 열이 아니라 글 페이지 본문.
+9. **[결정 사항 7절 반영] Notion 저장소 확장**(2026-10-01): DB 를 5개(콘텐츠·상담·사례 메모·공고 후보·키워드)로 늘리고, 콘텐츠 DB 의 '메모' 한 칸에 몰던 기록을 전용 열(태그·CTA·면책 레벨·디딤 소식 종류·검수 상태·수정 횟수·검수 메모·SEO 점수/판정·교차검증/일·건강 상태·근거 URL·부적합 키워드·사례 메모/공고/키워드 관계)로 나눴다. '메모'는 사람 전용. "레거시 2차 분류" 열은 "2차 분류"로 이름이 바뀌었다(레거시 2차 + 다이어리 하위). 글 페이지 본문은 `## 브리핑` / `## 본문` / `## 인포그래픽` / `## 발행 블록` / `## 검수 기록` 5개 섹션으로 쓰고 읽는다 — `## 본문` 은 Notion 마크다운 변환(빈 줄 삭제·특수문자 이스케이프)으로 글자수·이미지 마커가 바뀌지 않도록 ```markdown 코드 블록에 원문 그대로 둔다(스킬 결정). notion-storage.md 를 실제 스키마로 다시 썼고, 값 변환(CTA key→선택지, none→없음, 태그 쉼표 구분)과 섹션 읽기·쓰기는 scripts/notion_page.py 로 통일했다(core_rules.py 계산 로직은 바꾸지 않음 — 11케이스 66항목 재검증 일치).
 
 ## 9. 다른 스킬과의 연결
 | 스킬 | 관계 |
@@ -104,3 +118,4 @@
 | didim-blog-seo | 다이어리 CTA 부재 보너스, 카테고리별 루브릭 키 |
 | didim-blog-publish-prep | 발행 화면 CTA 매칭·면책·이메일 강제 문구 원문 |
 | didim-blog-ops / health / performance | 카테고리 매핑(레거시→신규 합산), Notion DB 속성·선택지(notion-storage.md) |
+| 모든 didim-blog-* (Notion 기록) | notion-storage.md(DB 5개 열·선택지·값 변환표·글 페이지 5개 섹션 담당표)와 scripts/notion_page.py(정본 — writer·publish-prep·infographic 사본과 동일 유지) |

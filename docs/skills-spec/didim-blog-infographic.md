@@ -95,7 +95,7 @@
 | generated_images.alt_text | 설계 JSON `alt` (원본은 이 컬럼을 읽기만 하고 쓰는 코드가 없음 — 확인 필요) |
 | generated_images.status / error_message / generation_time_ms | 렌더 결과 `warnings`, 검사 결과 `errors` |
 | contents.image_alt_texts (007_contents_columns.sql:11) | 설계 JSON `alt` 목록 |
-| Notion "디딤 블로그 콘텐츠" | 저장하지 않음. 필요 시 '메모'에 이미지 설계 요약(유형·위치·ALT)을 적을 수 있음 |
+| Notion "디딤 블로그 콘텐츠" 글 페이지 `## 인포그래픽` 섹션 | 설계 요약 표(Notion `<table>`: 번호·유형·위치·헤드라인·ALT; 다이어리는 사진 장면·위치·ALT) — `scripts/notion_page.py infographic-section` 으로 만들고 `section --name 인포그래픽` 으로 그 섹션만 교체(사용자 확인 후). 페이지가 아직 없으면 writer 가 페이지를 만들 때 넣는다. '메모' 열은 쓰지 않음(사람 전용). 이미지 파일은 Notion 에 올리지 않음 |
 
 ## 8. 원본 코드와 달라진 점
 
@@ -134,7 +134,13 @@
 | Phase 2 시각 규칙 | 3단계 파이프라인의 Phase 2는 `visualRules: ""`로 호출 (ai-editor-client.tsx:781) — 마커는 Phase 2.5만 만듦. 반면 시스템 프롬프트(PROMPT_FIELD 등, prompts.ts:552·645·739·821)에는 VISUAL_RULES가 들어 있어 단일 생성 경로에서는 본문 작성 중 마커를 만든다. 어느 경로가 운영 중인지는 확인 필요 | 스킬은 본문 완성 후 별도 설계 1가지 경로만 |
 | `buildImagePrompt` | `String.replace`라 같은 placeholder가 두 번 있으면 첫 번째만 치환 (image-gen.ts:72-76). 현재 템플릿은 각 1회라 영향 없음 | 해당 없음 |
 
-### 8.4 스킬 환경 때문에 바꾼 것
+### 8.4 [결정 사항 7절 반영] Notion 기록 (skills/_DECISIONS.md 7절, 2026-10-01)
+
+- 원본은 설계 결과를 generated_images·ai_generations 에 저장한다. 스킬은 Notion "디딤 블로그 콘텐츠" 글 페이지의 `## 인포그래픽` 섹션에 설계 요약 표(유형·위치·헤드라인·ALT)를 둔다. 이전 안내('메모' 열에 요약)는 폐기 — '메모'는 사람 전용.
+- 표는 Notion 표 블록(`<table header-row="true">`)으로, 셀 텍스트는 Notion 마크다운 이스케이프. 섹션 하나만 바꾸고 `## 본문`·`## 발행 블록` 등 다른 섹션은 건드리지 않는다. 형식·담당 규칙은 didim-blog-core references/notion-storage.md 3절, 도구는 scripts/notion_page.py(코어 정본 사본).
+- 렌더링·검사·마커 삽입 로직은 바꾸지 않았다(insert_markers 문단 ID·legacy 마커 출력과 parsePhase25Json 1·2단계 결과가 원본 TS 실행과 계속 일치, 3단계 복구는 8.3의 의도된 차이 그대로).
+
+### 8.5 스킬 환경 때문에 바꾼 것
 
 - LLM 호출(clientRunPhase25, streamLLM)은 Claude가 `references/design-prompt.md`를 직접 따르는 절차로 대체. 다른 LLM 사용 없음.
 - DALL·E·Supabase Storage·generated_images 대신 로컬 SVG/PNG 파일. 업로드는 사용자가 네이버에 수동으로.
@@ -149,4 +155,6 @@
 | 받음 | didim-blog-core | 브랜드 표기, 카테고리 정본, 광고 규정, '지식재산처' 명칭, 다이어리 CTA 금지 |
 | 받음 | didim-blog-factcheck | 검증된 수치 — 팩트체크로 본문 숫자가 바뀌면 설계·이미지를 다시 검사·렌더링 |
 | 넘김 | didim-blog-publish-prep | 마커 삽입 본문, 이미지 파일, ALT 목록(네이버 ALT 입력·이미지 배치 가이드에 사용) |
+| 넘김 | didim-blog-writer | 설계 요약 표(`infographic.md`) — 페이지가 아직 없을 때 writer 가 `## 인포그래픽` 섹션에 넣음 |
+| 기록 | Notion 글 페이지 (core notion-storage.md 3절) | `## 인포그래픽` 섹션(설계 요약 표). '메모' 열은 쓰지 않음 |
 | 넘김 | didim-blog-seo | 이미지 개수·ALT(SEO 항목의 이미지·ALT 점검 입력) — 확인 필요: SEO 항목 정의는 seo 스킬 기준 |

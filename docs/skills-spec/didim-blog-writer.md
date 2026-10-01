@@ -28,7 +28,8 @@
 |---|---|---|---|
 | topic | ✓ | `ai_generations.topic` | 사용자 입력 또는 브리핑 |
 | category_id | ✓ | `ai_generations.category_id` (다이얼로그: 2차 우선 / 콘텐츠 폼: 1차만) | 발행 카테고리 — 네이버 categoryNo 또는 이름(_DECISIONS.md 1절). 지정 없으면 신규 구조, 레거시 지정 시 그대로. CAT-*도 받음 |
-| 사건 메모 | 사례(26)만 필수 | (원본에 없음) | 사용자가 직접 준 익명화 사건 기록 |
+| 사건 메모 | 사례(26)만 필수 | (원본에 없음) | 사용자가 직접 준 익명화 사건 기록, 또는 Notion "디딤 블로그 사례 메모"(collection://d0dc583f-9a93-482c-af24-fede97f446a0)에서 고른 메모(익명화 확인=체크, 고객 공개 동의≠미확인). 출처 사건번호는 입력에 넣지 않음 |
+| Notion 행·브리핑 | 선택 | (원본: contents 행) | planner 가 만든 S0 행의 열과 페이지 `## 브리핑` 섹션(`notion_page.py split`) |
 | news_kind | 디딤 소식(28)만 | (원본에 없음) | ip(IP 뉴스 한 입) / office(사무소 소식, CTA 없음) |
 | target_keyword | ✓(다이어리 선택) | `ai_generations.target_keyword` | 사용자 입력 |
 | additional_context | 선택 | `ai_generations.additional_context` (3-Phase에서는 미사용) | Phase 1·2에 덧붙임(8절) |
@@ -64,7 +65,7 @@
 24. **[결정 반영] 카테고리 해석**(skills/_DECISIONS.md 1·2절, `scripts/categories.py`): 정본 ID = 네이버 categoryNo. 25 지원사업·인증과 특허·27 출원·심판 실무·26 사례 → PROMPT_FIELD, 24 지식재산 경영 → PROMPT_LOUNGE_GENERAL, 28 디딤 소식 → PROMPT_LOUNGE_BITE, 17(18·19·20) 디딤 다이어리 → PROMPT_DIARY, 레거시 9~16·23 → 원래 매핑, 7·22 고정 페이지는 생성 거부. 원본 함수(면책·태그 접미사·validateDraft)에는 별칭 CAT-*를 넘긴다(25·27·26 → CAT-A, 24 → CAT-B, 28 → CAT-B-03, 17 → CAT-C). CAT-* 직접 입력은 원본 코드 동작 그대로.
 25. **[결정 반영] CTA**: 25 = 키워드 매칭(절세·세액공제·법인세·보상금 → 절세 시뮬레이션, 연구소·연구활동·사후관리 → 연구소 관리, 그 외 인증 진단), 27 = 출원 CTA(FIELD_CTA CAT-A-04), 26 = getFieldCta("CAT-A", 키워드), 24 = 이웃 추가 문구(USER_PROMPTS.PROMPT_LOUNGE_GENERAL 원문), 28 = FIELD_CTA CAT-B-03(사무소 소식은 없음), 다이어리 없음. 레거시 14 특허 전략 노트·15 AI와 IP는 이름 의미대로 각각 포트폴리오·AI CTA.
 26. **[결정 반영] 카테고리명 치환**: 프롬프트 원문은 보존하고, 신규 구조 발행 시 렌더링 결과에서 자기 카테고리 정체성 문구만 치환 — FIELD: `"변리사의 현장 수첩" 카테고리`, `변리사의 현장 수첩 — `; LOUNGE_GENERAL: `"IP 라운지" 카테고리`, `IP 라운지 — `; BITE: `"IP 라운지" 카테고리`, `IP 뉴스 한 입 — `(→ `디딤 소식(IP 뉴스 한 입) — `). `{{category_name}}`은 발행 이름. 레거시 지정 시 치환 없음.
-27. **[결정 반영] 사례(26)**: 사건 메모(`--context-file`) 없으면 `render`가 거부하고 메모를 요청한다.
+27. **[결정 반영] 사례(26)**: 사건 메모(`--context-file`) 없으면 `render`가 거부하고 메모를 요청한다. 메모는 사용자 제공 또는 Notion "디딤 블로그 사례 메모" 중 `익명화 확인`=체크·`고객 공개 동의`≠미확인(·`사용 상태`≠사용 불가)인 것만 — `notion_page.py case-memo`가 조건을 검사하고 출처 사건번호·메모 일자를 뺀 참고 사항을 만든다. 최종 본문은 `leak-check`로 사건번호 노출을 검사한다.
 28. **[결정 반영] 다이어리 Phase 2.5 생략**: prompt_key가 PROMPT_DIARY(17·18·19·20)면 인포그래픽 단계를 건너뛴다(인포그래픽 v2 규칙과 일치, 카테고리 정본 기준 판정).
 29. **[결정 반영] 브리핑 매핑**: 브리핑 프롬프트 원문은 유지, 2차 유효 목록은 file-upload.ts 목록(CAT-A-04 포함)으로 통일, 결과 CAT-*를 신규 categoryNo로 매핑(A·A-01~03 → 25, A-04 → 27, B·B-01·B-02 → 24, B-03 → 28, C-01 → 26, C-02 → 19, C-03 → 20, C → 17). 사용자 지정 카테고리가 우선.
 30. **[결정 반영] 사무소 소식·다이어리 마무리**: CTA·서명·태그 줄·면책 없이 `cleanFinalText`만 적용, 검증 시 CTA·서명 검사 제외 + 다이어리 CTA 키워드 검사. 신규 구조에서는 기본 태그 "IP라운지"를 발행 카테고리명(공백 제거)으로 교체.
@@ -91,24 +92,33 @@
 | LLM 설정·API 키 없음, 토큰 한도 | 설정 안내 | 해당 없음(Claude 직접 수행) |
 
 ## 7. 데이터 저장
-저장 위치: Notion 비공개 페이지 "DIDIM 블로그 운영" 아래 **"디딤 블로그 콘텐츠"** DB — data source `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed` (2026-10-01 fetch로 스키마 확인). 다른 워크스페이스면 이름으로 찾고, 없으면 DB를 만들지 않고 표로 출력해 붙여넣기를 요청한다.
+저장 위치: Notion 비공개 페이지 "DIDIM 블로그 운영" 아래 **"디딤 블로그 콘텐츠"** DB — data source `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed` (2026-10-01 fetch로 스키마 확인, _DECISIONS.md 7절 확장 반영). 다른 워크스페이스면 이름으로 찾고, 없으면 DB를 만들지 않고 표로 출력해 붙여넣기를 요청한다. 값 변환·섹션 처리는 `scripts/notion_page.py`(didim-blog-core 정본 사본) `writer-props`·`page`·`section`. 모든 쓰기는 값을 보여 주고 사용자 확인 후. **'메모' 열은 사람 전용이라 쓰지 않는다.**
 
 | 백오피스 테이블.컬럼 | Notion 열 (타입) | 스킬이 쓰는 값 |
 |---|---|---|
 | contents.title | 제목 (title) | Phase 1 제목 |
 | contents.status | 상태 (select: S0 기획중 / S1 초안완료 / S2 검토완료 / S3 발행예정 / S4 발행완료 / S5 성과측정) | "S1 초안완료" (정확한 값 우선, 없으면 'S1' 접두사 선택지로 폴백, 새 선택지 생성 금지) |
-| contents.category_id | 카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시) | 신규 이름, 레거시면 "레거시" |
-| (2차 분류) | 2차 분류 (select: 절세 시뮬레이션 … 대표의 생각) | 레거시 2차·다이어리 하위(18~20) 이름 |
+| contents.category_id | 카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시) | 신규 이름, 레거시면 "레거시", 다이어리 하위면 "디딤 다이어리" |
+| contents.secondary_category | 2차 분류 (select: 절세 시뮬레이션 … 대표의 생각; 옛 이름 "레거시 2차 분류") | 레거시 2차·다이어리 하위(18~20) 이름 |
 | (신규) | categoryNo (number) | 네이버 categoryNo |
+| (신규) | 디딤 소식 종류 (select: IP 뉴스 / 사무소 소식) | 디딤 소식(28)일 때 `--news-kind` (ip → IP 뉴스, office → 사무소 소식) |
 | contents.target_keyword | 타깃 키워드 (text) | 핵심 키워드 |
+| contents.tags | 태그 (text) | 에디터 태그 10개, `#` 없이 쉼표 구분 |
+| (FIELD_CTA 선택 결과) | CTA (select: 절세 시뮬레이션 / 인증 진단 / 연구소 진단 / 출원 상담 / 이웃 추가 / 없음) | emailSubject·문구로 변환(연구소 관리 → 연구소 진단, 이웃 추가 문구 → 이웃 추가, 다이어리·사무소 소식 → 없음). "상담 문의" 계열(레거시 14·15, 26의 AI 키워드)은 맞는 선택지가 없어 비우고 알림 |
+| (determineDisclaimerLevel 결과) | 면책 레벨 (select: A / B / C / 없음) | finalize `disclaimer_level` (none → 없음) |
 | contents.publish_date | 발행예정일 (date) | 다음 화요일(`publish_date`) |
-| (실제 발행) | 발행일 (date) | 비워 둠 — 실제 발행 후에만 기록 |
-| (신규) | 발행 URL (url) | 비워 둠 |
-| (추천 출처) | 추천 소스 (select: 키워드 풀 / 뉴스 / 지원매치 리포트 / 로테이션 / 직접 입력) | planner가 준 값, 없으면 직접 입력 |
-| (신규) | 시리즈 (text) / 시리즈 회차 (number) | 연재일 때 |
+| (실제 발행) | 발행일 (date) / 발행 URL (url) | 비워 둠 — 발행 후 publish-prep·ops |
+| (추천 출처) | 추천 소스 (select) | 새 행을 만들 때만: planner 값, 없으면 직접 입력 |
+| contents.series_id / series_order | 시리즈 (text) / 시리즈 회차 (number) | 연재일 때 |
 | contents.updated_at | 마지막 업데이트일 (date) | 오늘 |
-| contents.tags, seo/면책/검증 | 메모 (text) | `면책 레벨 · 품질 점수 · 태그 · 수정 내역 요약` |
-| contents.body | 페이지 본문 | 최종 본문 마크다운 |
+| (신규) | 사례 메모 (relation ↔ 사례 메모 DB "사용 글") | 사례(26)에 쓴 메모 페이지. 메모 쪽 `사용 상태` = 사용함 |
+| (신규) | 공고 (relation ↔ 공고 후보 DB "사용 글") | 공고 기반 글이면 그 공고 페이지 (공고 `상태`는 planner 몫) |
+| keyword_pool 연결 | 키워드 (relation ↔ 키워드 DB "발행 글") | 타깃 키워드와 같은 키워드 행이 있으면 연결(없으면 planner 에 추가 제안) |
+| contents.notes | 메모 (text) | **쓰지 않음**(사람 전용). 이전의 `면책·품질·태그·수정 내역` 요약은 전용 열과 `## 검수 기록`으로 옮김 |
+| (브리핑) | 페이지 `## 브리핑` | 비어 있을 때만 writer 브리핑(주제·카테고리·키워드·타깃·에피소드·참고 사항·근거, 사건번호 제외). planner 브리핑은 덮어쓰지 않음 |
+| contents.body | 페이지 `## 본문` | `body_for_save` 원문을 ```markdown 코드 블록 하나에 |
+| (인포그래픽 설계) | 페이지 `## 인포그래픽` | 페이지를 새로 만들 때만 infographic 스킬의 설계 요약 표를 넣음(이후는 infographic 스킬이 직접) |
+| (품질 체크·경고·Phase 3 수정) | 페이지 `## 검수 기록` | `- YYYY-MM-DD HH:MM 초안 작성 → S1 · 품질 체크 n/m(점) · 미통과 … · 생성 경고 … · 마무리 경고 … · Phase 3 수정 n건` 한 줄 덧붙임 |
 | contents.draft_done_at, is_ai_generated, ai_generations.* | 없음 | 저장하지 않음 (Phase 1 아웃라인 등 중간 산출물은 작업 폴더) |
 
 ## 8. 원본 코드와 달라진 점
@@ -133,6 +143,7 @@
 18. **[결정 사항 반영] 저장소**: contents 테이블 → Notion "디딤 블로그 콘텐츠"(7절). AI 생성 여부·초안 완료일 등은 저장하지 않음.
 19. **레거시 14·15의 CTA**: 코드 CAT-B-01/02 뒤바뀜 대신 이름 의미대로 고정(특허 전략 노트 = 포트폴리오 CTA, AI와 IP = AI CTA).
 20. **25 지원사업·인증과 특허 CTA 기본값 = 인증 진단**: 키워드 미매칭 시 인증 진단 CTA (코디네이터 확정, 2026-10-01).
+21. **[결정 사항 7절 반영] Notion 전용 열·페이지 섹션·사례 메모 DB** (skills/_DECISIONS.md 7절, 2026-10-01): 기록을 '메모' 열에서 전용 열로 옮겼다 — 태그 → "태그", CTA 종류 → "CTA", 면책 레벨 → "면책 레벨"(none → 없음), 사무소 소식 → "디딤 소식 종류", 발행예정일 → "발행예정일". '메모'는 사람 전용이라 쓰지 않는다. 글 페이지는 `## 브리핑`(비어 있을 때만)·`## 본문`(```markdown 코드 블록 원문)·`## 검수 기록`(줄 덧붙임)을 쓰고, 다른 섹션은 건드리지 않는다. 사례(26)는 사례 메모 DB의 익명화 확인·공개 동의 조건을 통과한 메모만 쓰고, 콘텐츠 "사례 메모" 관계 연결 + 메모 "사용 상태" = 사용함, 출처 사건번호는 참고 사항에서 빼고 최종 본문을 `leak-check`로 검사한다. 공고 기반 글은 "공고", 타깃 키워드가 키워드 DB에 있으면 "키워드" 관계를 연결한다. 계산 로직은 바꾸지 않았다 — finalize 출력에 `keyword`·`news_kind` 키만 추가했고 Notion 변환은 별도 `notion_page.py`가 한다(재검증 43/43, LEGACY 3/3 일치).
 
 원본에 그대로 둔 코드 내부 모순(스킬도 원문 유지, 확인 필요)
 - `PHASE2_PROMPT`에 `{{visual_rules}}` 자리가 없음(주석·호출부는 전달).
@@ -154,5 +165,9 @@
 | 넘김 → 받음 | didim-blog-factcheck | Phase 2(+2.5) 직후: 문단 ID 본문 → 사용자가 고른 수정 반영 본문 |
 | 넘김 | didim-blog-seo | 최종 제목·본문·키워드·카테고리 → SEO 점수 |
 | 넘김 | didim-blog-publish-prep | 최종 본문·태그 → 네이버 붙여넣기용 텍스트·태그·ALT·체크리스트 |
-| 넘김 | didim-blog-ops | Notion 상태 "S1 초안완료"·발행예정일 열 → 검수·상태 전이·캘린더 |
+| 넘김 | didim-blog-ops | Notion 상태 "S1 초안완료"·발행예정일·태그·CTA 열, 페이지 `## 본문`·`## 검수 기록` → 검수·상태 전이·캘린더 |
+| 기반 | didim-blog-core | Notion DB 5개 열·선택지·값 변환표·글 페이지 5개 섹션 규칙(references/notion-storage.md), `notion_page.py` 정본 |
+| 받음 | Notion 사례 메모 DB | 사례(26) 재료(익명화 확인·공개 동의 통과분만, 출처 사건번호 제외) → 사용 후 "사용 상태" = 사용함·"사례 메모" 관계 |
+| 연결 | Notion 공고 후보·키워드 DB | 공고 기반 글 → "공고" 관계, 타깃 키워드 일치 행 → "키워드" 관계 |
+| 넘김 | didim-blog-publish-prep | Notion 제목·태그·CTA·면책 레벨·카테고리 열 + 페이지 `## 본문` → 발행 블록 |
 | 참고 | didim-blog-health | 기존 글과 중복 회피·내부 링크([내부링크] 마커) 후보 |
