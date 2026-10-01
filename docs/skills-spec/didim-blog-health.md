@@ -34,7 +34,7 @@
 - 법률 변경: 뉴스 제목/요약 텍스트 또는 [{title, description}] 배열.
 - 내부 링크: 기준 글(ID/제목 또는 JSON), 최대 개수(기본 5).
 - 시리즈: [{name 또는 id, total_planned, created_at}].
-- 키워드 풀: [{id, keyword, category_id, sub_category_id, priority, covered_content_id}] (없으면 UPGRADE_SPEC §4.4 시드 19개).
+- 키워드 풀: Notion 키워드 DB 행(키워드·카테고리·주제 축·매출 가중치·우선순위·커버리지·발행 글) 또는 [{id, keyword, category_id, sub_category_id, priority, covered_content_id}] (없으면 UPGRADE_SPEC §4.4 시드 19개).
 
 ## 4. 처리 규칙
 1. 건강 점검 대상은 status='S4'·is_deleted=false·published_at 있음 (manage.ts:17-22, 85-91).
@@ -67,33 +67,33 @@
 - 계획 편수 미입력 시리즈는 planned_missing=true, 진행률 0 → 사용자에게 계획 편수를 묻는다.
 
 ## 7. 데이터 저장 (백오피스 테이블 → 스킬에서의 대체)
-Notion "디딤 블로그 콘텐츠" (data source `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed`). 별도 DB 는 만들지 않는다(_DECISIONS.md §4).
+Notion "디딤 블로그 콘텐츠" (`collection://463bc815-11ab-4290-9d86-22bd1aa9cfed`)와 "디딤 블로그 키워드" (`collection://4e0fae54-aeb3-48dd-b948-b78886a8e859`, 키워드 풀 정본). 실제 스키마·선택지는 _DECISIONS.md §6·§7. 메모 열은 사람 전용이라 스킬은 쓰지 않는다.
 
 | 백오피스 | Notion 속성 / 대체 | 비고 |
 |---|---|---|
-| contents.health_status | (저장 안 함) | 매번 계산 |
-| contents.health_checked_at, health_status=UPDATED | 마지막 업데이트일 (date) | 글을 고친 날. 경과일 기준이 된다 |
-| contents.published_at | 발행일 (date) | 없으면 발행예정일 |
-| contents.category_id / secondary_category | 카테고리 (select) + categoryNo + 2차 분류 | 레거시는 신규 카테고리로 합산 |
-| contents.target_keyword | 타깃 키워드 (text) | 커버리지·링크 매칭 |
+| contents.health_status | 콘텐츠 DB 건강 상태 (select: 정상 / 업데이트 필요 / 법률 변경 확인) | UPDATE_NEEDED·경과일 CHECK_NEEDED→업데이트 필요, 법률 키워드만의 CHECK_NEEDED·뉴스 영향→법률 변경 확인, HEALTHY·UPDATED→정상 |
+| contents.health_checked_at, health_status=UPDATED | 마지막 업데이트일 (date) | 글을 고친 날. 경과일 기준 |
+| contents.published_at / publish_date | 발행일 / 발행예정일 (date) | |
+| contents.category_id / secondary_category | 카테고리 + categoryNo / 2차 분류 (select) | 레거시는 신규 카테고리로 합산 |
+| contents.target_keyword, tags | 타깃 키워드, 태그 (text) | |
 | contents.views_1m | 조회수(최근) (number) | 인기글 가점 |
-| contents.notes 의 [네이버 URL] | 발행 URL (url) | 링크 주소 |
-| contents.series_id → series.name | 시리즈 (text) | |
-| contents.series_order | 시리즈 회차 (number) | |
-| series.total_planned | (열 없음) 사용자 입력, 필요 시 메모 | |
-| series.created_at | (없음) | |
-| keyword_pool | (Notion 없음) 사용자 목록 또는 스크립트 내장 시드 | covered_content_id 는 자동 매칭 결과 |
-| keyword_rankings | (Notion 없음) → didim-blog-performance 에서 사용자 입력 | |
-| contents.body | 페이지 본문 | 법률 키워드 검사 |
-| contents.notes | 메모 (text) | `[업데이트] …`, `[점검] …` 기록 |
+| contents.notes 의 [네이버 URL] | 발행 URL (url) | |
+| contents.series_id → series.name / series_order | 시리즈 (text) / 시리즈 회차 (number) | |
+| series.total_planned, created_at | (열 없음) 사용자 입력 | |
+| keyword_pool.keyword | 키워드 DB 키워드 (title) | |
+| keyword_pool.category_id / sub_category_id | 키워드 DB 카테고리 (신규 5개) / 주제 축 (text) | |
+| keyword_pool.priority | 키워드 DB 우선순위 (높음/보통/낮음) + 매출 가중치 (1~5) | |
+| keyword_pool.covered_content_id | 키워드 DB 커버리지 (미작성/작성됨/재작성 필요) + 발행 글 (relation ↔ 콘텐츠 DB 키워드) | |
+| keyword_rankings | 키워드 DB 현재 순위·순위 확인일 | didim-blog-performance |
+| contents.body | 페이지 `## 본문` | 법률 키워드 검사 |
 
 ## 8. 원본 코드와 달라진 점
 1. **카테고리·기준일 매핑 (결정 사항)**: 원본 임계값은 CAT-A/B/C 키. _DECISIONS.md 에 따라 네이버 categoryNo 로 판정하고 레거시는 합산 카테고리로 바꾼 뒤, 전환형 3개(25·27·26)=CAT-A 값(60/90), 지식재산 경영(24)·디딤 소식(28)=CAT-B 값(90/120), 디딤 다이어리(17)=CAT-C 값(120/180)을 쓴다. 대시보드 단일 기준도 '현장수첩 60·그 외 90' → '전환형 3개 60·그 외 90'. 24·28 을 CAT-B 값에 매핑한 것은 원본 카테고리(IP 라운지)의 흡수 관계에 따른 스킬의 판단이다(확인 필요). 컨설팅 후기(18)는 결정표에 따라 사례(26)로 합산되어 60일 기준을 받는다.
-2. **경과일 기준일**: 원본은 항상 published_at 기준이라, '업데이트 완료'(UPDATED)를 눌러도 다음 전체 헬스체크에서 HEALTHY 로 바뀐 뒤 또다시 같은 경과일로 플래그가 서는 순환이 생긴다 (manage.ts:32-42 + content-health.ts:95-99). 스킬은 Notion `마지막 업데이트일`이 발행일보다 늦으면 그 날부터 센다. 건강 상태는 저장하지 않고 매번 계산한다(측정 최소화).
+2. **경과일 기준일·상태 값**: 원본은 항상 published_at 기준이라, '업데이트 완료'(UPDATED)를 눌러도 다음 전체 헬스체크에서 HEALTHY 로 바뀐 뒤 또다시 같은 경과일로 플래그가 서는 순환이 생긴다 (manage.ts:32-42 + content-health.ts:95-99). 스킬은 Notion `마지막 업데이트일`이 발행일보다 늦으면 그 날부터 센다. 원본 4단계(HEALTHY/CHECK_NEEDED/UPDATE_NEEDED/UPDATED)는 Notion `건강 상태` 3개 값(정상/업데이트 필요/법률 변경 확인)으로 위 7절 표처럼 매핑해 기록한다(UPDATED 는 마지막 업데이트일로 대체). 점검일(health_checked_at)은 저장하지 않는다.
 3. **점검 대상 상태**: 원본은 S4 만 점검한다. Notion 에서 성과 입력 후 S5 로 넘어간 글도 발행 글이므로 스킬 기본은 S4·S5 (`--s4-only` 로 원본 동작). 시리즈 발행 수도 같은 이유로 S4·S5 (`--s4-only`).
 4. **법률 변경 감지 추가**: UPGRADE_SPEC §1.3·Sprint 6 의 '법률 변경 뉴스 감지 → 관련 글 CHECK_NEEDED'는 코드에 구현이 없다(content-health.ts 는 본문 키워드+30일만 봄). 스킬은 같은 LEGAL_KEYWORDS 사전으로 뉴스와 글을 매칭하는 `legal-news` 를 추가했고, 영향 확정은 Claude 가 글을 읽고 판단한다.
-5. **키워드 커버리지 자동 매칭 추가**: 원본에는 keyword_pool.covered_content_id 를 채우는 코드가 없어 커버리지가 갱신되지 않는다. 스킬은 `--auto-match`(타깃 키워드 일치 → 제목 포함 → 태그 일치)를 추가했다. 우선순위별 집계(by_priority)도 표시용으로 추가. 카테고리 그룹은 신규 카테고리로 합산한다. 키워드 풀 기본값은 UPGRADE_SPEC §4.4 시드이며 실DB 내용은 확인 필요.
-6. **시리즈 보완**: 원본 assignContentToSeries 는 UI 에서 호출되지 않아(미구현) 글을 시리즈에 넣는 화면이 없다. 스킬은 Notion `시리즈`·`시리즈 회차`로 소속을 읽고, UPGRADE_SPEC Sprint 6 '다음 편 발행 상태'를 위해 회차 목록·미발행 회차·다음 회차 번호를 추가 출력한다. 계획 편수는 Notion 열이 없어 사용자 입력.
+5. **키워드 커버리지 정본·자동 매칭**: 원본에는 keyword_pool.covered_content_id 를 채우는 코드가 없어 커버리지가 갱신되지 않는다. 스킬은 Notion 키워드 DB(커버리지 열·발행 글 관계)를 정본으로 읽고, `--auto-match`(타깃 키워드 일치 → 제목 포함 → 태그 일치)로 '커버리지=작성됨 + 발행 글 관계' 갱신을 제안하며, 연결 글이 '업데이트 필요'면 '재작성 필요'를 제안한다(원본에 없음). '재작성 필요'도 커버로 센다. 다음 작성 순서는 매출 가중치(1~5, 원본에 없는 열) 내림차순 → 우선순위. 우선순위별 집계도 추가. 키워드 DB 가 없을 때의 기본값은 UPGRADE_SPEC §4.4 시드 19개.
+6. **시리즈 보완**: 원본 assignContentToSeries 는 UI 에서 호출되지 않아(미구현) 글을 시리즈에 넣는 화면이 없다. 스킬은 Notion 콘텐츠 DB `시리즈`·`시리즈 회차`로 소속을 읽고(키워드 DB 에는 시리즈 열이 없다), UPGRADE_SPEC Sprint 6 '다음 편 발행 상태'를 위해 회차 목록·미발행 회차·다음 회차 번호를 추가 출력한다. 계획 편수는 Notion 열이 없어 사용자 입력.
 7. **내부 링크 비교 키**: '같은 카테고리'는 합산 categoryNo, '같은 2차 분류'는 secondary_category 또는 2차 분류/다이어리 하위 카테고리 이름으로 비교한다. Notion 행에는 ID 가 없어 제목으로 자기 자신을 제외한다. 결과에 발행 URL 을 함께 준다(원본 패널은 제목 복사만).
 8. **Notion 키 정규화**: 스크립트가 한글 속성명·'S4 발행완료' 형식 상태를 내부 키로 바꿔 읽는다. 날짜만 있는 값은 UTC 자정으로 해석(JS new Date 와 동일).
 

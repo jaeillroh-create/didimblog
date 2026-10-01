@@ -1,5 +1,7 @@
 # 키워드 풀·다이어리 주제 풀·keyword_pool 스키마 (verbatim)
 
+> **정본 안내(_DECISIONS.md §7, 2026-10-01):** planner 키워드 풀의 정본은 Notion "디딤 블로그 키워드" DB(`collection://4e0fae54-aeb3-48dd-b948-b78886a8e859`)다. 아래 1절 상수(sub-category-pool.ts)는 **초기값이자 폴백**이다 — 실행 때 키워드 DB 행을 `keyword_rows` 로 넣으면 그것을 쓰고, DB 가 비었거나 커넥터가 없으면 이 상수를 쓴다. 상수 → DB 초기 행 변환은 `recommend.py export-keyword-seed`(결과 `assets/keyword-seed.json`)이며, 대응은 6절.
+
 ## 목차
 1. 2차 분류별 키워드 풀 + 다이어리 주제 풀 (sub-category-pool.ts 전체)
 2. keyword_pool 테이블 (실제 마이그레이션)
@@ -337,3 +339,14 @@ const FIXED_KEYWORDS = [
   "조세특례제한법 연구개발",
 ];
 ```
+
+## 6. 키워드 DB 대응 (스킬 추가 — 원본에 없음)
+
+| keyword_pool (원본) | 키워드 DB (Notion) | 변환 규칙 |
+|---|---|---|
+| keyword | 키워드(제목) | 그대로 |
+| category_id / sub_category_id (CAT-A-01 등) | 카테고리 / 주제 축 | 카테고리 = 2차 분류를 흡수한 신규 카테고리(CAT-A-01·02·03 → 지원사업·인증과 특허, CAT-A-04 → 출원·심판 실무, CAT-B-01·02 → 지식재산 경영, CAT-B-03 → 디딤 소식), 주제 축 = 원래 2차 분류 이름 |
+| priority (HIGH/MEDIUM/LOW, '매출 가중치') | 우선순위(높음/보통/낮음) + 매출 가중치(1~5) | 초기값: 원본 시드(3절)에 같은 키워드가 있으면 HIGH 5·높음 / MEDIUM 3·보통 / LOW 1·낮음, 없으면 3·보통(마이그레이션 기본값 MEDIUM). 내장 풀 48개 중 시드와 같은 키워드는 '대표이사 직무발명보상금'(HIGH) 1개 |
+| covered_content_id | 커버리지(미작성/작성됨/재작성 필요) + 발행 글(관계) | 작성됨 = 커버됨 → 추천 제외. 재작성 필요는 추천 대상 |
+
+선택 규칙(키워드 DB 모드): 원본 `pickSubCategoryKeyword` 처럼 주제 축 묶음을 셔플(이미 쓴 축·직전 글 축 회피)하고 hard/soft 필터를 적용한 뒤, 원본 `pickWeightedKeyword` 의 우선순위 순서(roll<0.5 높음→보통→낮음, <0.8 보통→높음→낮음, 그 외 낮음→보통→높음)로 첫 비지 않은 등급을 고르고, 그 안에서 매출 가중치 비례로 1개를 뽑는다. 내장 상수 모드(폴백)는 기존 동작 그대로다.

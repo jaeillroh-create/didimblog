@@ -330,6 +330,8 @@ def finalize(phase2_body, phase3_body, category_id, keyword, title, outline=None
         "prompt_key": prompt_key,
         "category": {k: cat.get(k) for k in ("category_no", "name", "structure", "alias", "no_cta")},
         "title": title,
+        "keyword": keyword,  # Notion '타깃 키워드' 기록용 (notion_page.py writer-props)
+        "news_kind": news_kind,
         "final_body": final_body,
         "body_for_save": body_for_save,
         "tags": tags,
@@ -339,6 +341,7 @@ def finalize(phase2_body, phase3_body, category_id, keyword, title, outline=None
         "markers_restored": restored,
         "publish_date": next_tuesday(today or dt.date.today()).isoformat(),
         "status_after_save": "S1 초안완료",  # Notion 상태 선택지 정확한 값 (없으면 'S1' 접두사 선택지로 폴백)
+        # Notion 열 값은 notion_page.py writer-props 로 만든다(CTA·면책 레벨·태그 전용 열, 메모 열은 쓰지 않음)
         "warnings": warnings,
     }
 

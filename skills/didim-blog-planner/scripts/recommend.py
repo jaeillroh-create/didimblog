@@ -12,10 +12,14 @@
 하위 명령:
   plan             발행 이력 등 JSON → 이번 주 추천 표 (기본: 결정 사항 반영 — 네이버 categoryNo·신규 구조·
                    주 1편 4주 로테이션 / --legacy·--verify: 원본 대시보드 경로 그대로)
-  grant-check      [결정 사항] 지원매치 공고 중 특허·인증이 요건/가점인 것만 추리기
+  grant-check      [결정 사항] 지원매치 공고 중 특허·인증이 요건/가점인 것만 추리기 (+공고 후보 DB 새 행 속성)
+  export-keyword-seed [결정 §7] 내장 키워드 풀 → Notion 키워드 DB 초기 행 JSON (assets/keyword-seed.json)
   reject-keywords  부적합 처리한 추천(제목·키워드) → rejection_keywords 추출
   news-check       웹 검색으로 모은 기사 목록 → 규칙 기반 1차 필터(비뉴스 제외·관련성 점수)
   week             ISO 주차(KST)·4주 로테이션 위치 (+ 폐기된 12주 스케줄 주차 참고값)
+
+Notion(_DECISIONS.md §7): 키워드 풀 정본 = 키워드 DB(keyword_rows, 없으면 내장 상수 폴백),
+공고 = 공고 후보 DB(grant_rows: 상태=후보·마감 미경과), 사례 = 사례 메모 DB(case_memo_rows: 사용 가능한 것만).
 
 난수: 원본은 Math.random 을 쓴다. 재현성을 위해 mulberry32 PRNG 를 쓰며 --seed 로 고정 가능.
 (검증 시 JS 쪽 Math.random 도 같은 mulberry32 로 바꿔 같은 결과가 나오는지 확인했다.)
@@ -1236,9 +1240,11 @@ def filter_grants(items, now):
     for g in items or []:
         elig = g.get("eligibility") or ""
         bonus = g.get("bonus") or ""
+        pref = g.get("preference") or ""  # 우대 조건(선택). 자격·가점에 없고 우대에만 있으면 '우대'
         hit_e = [t for t in GRANT_IP_TERMS if t in elig] + (["IP"] if _GRANT_IP_RE.search(elig) else [])
         hit_b = [t for t in GRANT_IP_TERMS if t in bonus] + (["IP"] if _GRANT_IP_RE.search(bonus) else [])
-        if not hit_e and not hit_b:
+        hit_p = [t for t in GRANT_IP_TERMS if t in pref] + (["IP"] if _GRANT_IP_RE.search(pref) else [])
+        if not hit_e and not hit_b and not hit_p:
             excluded.append({"title": g.get("title"), "why": "자격·가점에 특허·인증 요건 없음"})
             continue
         dl = parse_dt(g.get("deadline"))
@@ -1246,8 +1252,8 @@ def filter_grants(items, now):
         if days_left is not None and days_left < 0:
             excluded.append({"title": g.get("title"), "why": "마감 지남"})
             continue
-        role = "요건" if hit_e else "가점"
-        terms = hit_e or hit_b
+        role = "요건" if hit_e else ("가점" if hit_b else "우대")
+        terms = hit_e or hit_b or hit_p
         picked.append({**g, "role": role, "matched_terms": terms, "days_left": days_left,
                        "priority": "URGENT" if days_left is not None and days_left <= 7 else "PRIMARY"})
     picked.sort(key=lambda x: (x["days_left"] if x["days_left"] is not None else 9999))
@@ -1263,7 +1269,10 @@ def _new_card(cat_no, title, keywords, source, reason, topic_axis=None, **extra)
     return c
 
 
-def build_new_keyword_card(cat_no, filters, used_keywords, used_subs, rng):
+def build_new_keyword_card(cat_no, filters, used_keywords, used_subs, rng, db_pool=None):
+    """주제 축 키워드 카드. db_pool(키워드 DB 변환 결과)에 이 카테고리 묶음이 있으면 그것을, 없으면 내장 상수를 쓴다."""
+    if db_pool and cat_no in db_pool:
+        return build_db_keyword_card(cat_no, db_pool[cat_no], filters, used_keywords, used_subs, rng)
     subs = [get_sub_category_meta(i) for i in NEW_TOPIC_SUBS.get(cat_no, [])]
     picked = pick_from_subs(subs, filters, used_keywords, used_subs, rng)
     if not picked:
@@ -1272,6 +1281,110 @@ def build_new_keyword_card(cat_no, filters, used_keywords, used_subs, rng):
     return _new_card(cat_no, generate_title_suggestion(kw, rng), [kw], "keyword_pool",
                      f"{cat_name(cat_no)} — 주제 축 '{sub['name']}' · '{kw}' 키워드", topic_axis=sub["name"],
                      legacySubId=sub["id"], titleIsTemplate=True)
+
+
+# ─────────────────────────────────────────────────────────────
+# [결정 사항 §7] Notion 키워드 DB = 키워드 풀 정본 (스킬 상수는 초기값·폴백)
+# ─────────────────────────────────────────────────────────────
+
+# 키워드 DB '우선순위' 3단계 샘플링 — 원본 pickWeightedKeyword 의 HIGH 50 / MEDIUM 30 / LOW 20 순서 규칙을 그대로 씀
+DB_PRIORITY_ORDERS = [(0.5, ["높음", "보통", "낮음"]), (0.8, ["보통", "높음", "낮음"]), (1.01, ["낮음", "보통", "높음"])]
+DB_USABLE_COVERAGE = {"미작성", "재작성 필요", "", None}
+
+
+def _db_sub_id(axis):
+    """주제 축 이름 → 회피용 ID. 레거시 2차 분류 이름이면 CAT-* ID(기존 avoid_topic_axes·직전 글 회피와 호환)."""
+    if axis in SUB_NAME_TO_IDS:
+        return SUB_NAME_TO_IDS[axis][1]
+    return f"AXIS:{axis}"
+
+
+def keyword_rows_to_pool(rows):
+    """키워드 DB 행 → {categoryNo: [주제 축 묶음]}, 경고.
+
+    행 속성: 키워드(제목)·카테고리(신규 5개)·주제 축·매출 가중치(1~5)·우선순위(높음/보통/낮음)·커버리지·url.
+    커버리지=작성됨 은 풀에서 뺀다(원본 keyword_pool 의 covered_content_id IS NULL 조건과 같은 뜻).
+    """
+    pool, warnings, all_covered = {}, [], {}
+    for r in rows or []:
+        kw = str(_nget(r, "키워드") or "").strip()
+        cat = _nget(r, "카테고리")
+        no = NAME_TO_NO.get(cat)
+        if not kw or no not in NEW_TOPIC_SUBS:
+            if kw:
+                warnings.append(f"키워드 DB '{kw}': 카테고리 '{cat}' 는 키워드 추천 대상(25·27·24·28)이 아니어서 제외")
+            continue
+        cov = _nget(r, "커버리지")
+        if cov not in DB_USABLE_COVERAGE:
+            all_covered.setdefault(no, 0)
+            all_covered[no] += 1
+            continue
+        axis = str(_nget(r, "주제 축") or "").strip() or "기타"
+        try:
+            weight = float(_nget(r, "매출 가중치") or DEFAULT_REVENUE_WEIGHT)
+        except (TypeError, ValueError):
+            weight = DEFAULT_REVENUE_WEIGHT
+        weight = min(max(weight, 1), 5)
+        subs = pool.setdefault(no, [])
+        sub = next((s for s in subs if s["name"] == axis), None)
+        if sub is None:
+            sub = {"id": _db_sub_id(axis), "name": axis, "entries": []}
+            subs.append(sub)
+        sub["entries"].append({"keyword": kw, "weight": weight, "priority": _nget(r, "우선순위") or "보통",
+                               "coverage": cov or "미작성", "url": r.get("url")})
+    for no, n in all_covered.items():
+        if no not in pool:
+            warnings.append(f"키워드 DB의 {cat_name(no)} 키워드 {n}개가 모두 '작성됨' — 이 카테고리는 키워드 카드를 만들지 않음"
+                            "(새 키워드를 DB에 추가하거나 '재작성 필요'로 바꾸면 다시 추천)")
+            pool[no] = []
+    return pool, warnings
+
+
+def pick_from_db_subs(subs, filters, exclude_keywords, exclude_sub_ids, rng):
+    """pick_from_subs 와 같은 축 셔플·hard/soft 필터 + 우선순위 3단계(50/30/20) + 매출 가중치 비례 추첨."""
+    all_subs = [s for s in subs if s["entries"]]
+    if not all_subs:
+        return None
+    fresh = [s for s in all_subs if s["id"] not in exclude_sub_ids]
+    order = shuffle(fresh if fresh else all_subs, rng)
+    for sub in order:
+        hard = [e for e in sub["entries"]
+                if e["keyword"].lower() not in exclude_keywords and not is_hard_blocked(e["keyword"], filters)]
+        soft = [e for e in hard if not is_soft_avoided(e["keyword"], filters)]
+        pool = soft if soft else hard
+        if not pool:
+            continue
+        roll = rng.random()
+        tiers = next(t for lim, t in DB_PRIORITY_ORDERS if roll < lim)
+        tier_pool = []
+        for t in tiers:
+            tier_pool = [e for e in pool if (e["priority"] if e["priority"] in ("높음", "보통", "낮음") else "보통") == t]
+            if tier_pool:
+                break
+        total = sum(e["weight"] for e in tier_pool)
+        x = rng.random() * total
+        picked = tier_pool[-1]
+        for e in tier_pool:
+            x -= e["weight"]
+            if x < 0:
+                picked = e
+                break
+        return {"sub": sub, "entry": picked}
+    return None
+
+
+def build_db_keyword_card(cat_no, subs, filters, used_keywords, used_subs, rng):
+    picked = pick_from_db_subs(subs, filters, used_keywords, used_subs, rng)
+    if not picked:
+        return None
+    sub, e = picked["sub"], picked["entry"]
+    kw = e["keyword"]
+    extra = " · 재작성 필요" if e["coverage"] == "재작성 필요" else ""
+    return _new_card(cat_no, generate_title_suggestion(kw, rng), [kw], "keyword_pool",
+                     f"{cat_name(cat_no)} — 주제 축 '{sub['name']}' · '{kw}' 키워드 "
+                     f"(키워드 DB: 우선순위 {e['priority']} · 매출 가중치 {e['weight']:g}{extra})",
+                     topic_axis=sub["name"], legacySubId=sub["id"], titleIsTemplate=True,
+                     keywordPageUrl=e.get("url"))
 
 
 def run_plan(data, seed=None, verify_mode=False):
@@ -1284,6 +1397,20 @@ def run_plan(data, seed=None, verify_mode=False):
         for k in ("history", "rejected", "recently_shown"):
             data[k] = list(data.get(k) or []) + conv[k]
     now = parse_dt(data.get("now")) or datetime.now(KST)
+    source_warnings = []
+    # [결정 §7] 키워드 풀 정본 = Notion 키워드 DB. 행이 없으면(빈 DB·커넥터 없음) 스킬 내장 상수로 폴백.
+    db_pool = None
+    if data.get("keyword_rows"):
+        db_pool, kw_warn = keyword_rows_to_pool(data["keyword_rows"])
+        source_warnings += kw_warn
+        missing = [n for n in (25, 27, 24, 28) if n not in db_pool]
+        if missing:
+            source_warnings.append("키워드 DB에 행이 없는 카테고리는 내장 키워드 풀로 폴백: "
+                                   + ", ".join(cat_name(n) for n in missing))
+    # [결정 §7] 사례 카드는 사용 가능한 사례 메모(익명화 확인=체크, 공개 동의≠미확인, 사용 상태=미사용)만
+    case_memos, case_excluded = usable_case_memos(data.get("case_memo_rows"), data.get("case_memos"))
+    for t, why in case_excluded:
+        source_warnings.append(f"사례 메모 '{t}' 제외 — {why}")
     if seed is None:
         seed = data.get("seed")
     if seed is None:
@@ -1328,10 +1455,9 @@ def run_plan(data, seed=None, verify_mode=False):
               for k, v in counts.items()}
 
     # 3) 이번 주 메인 (로테이션)
-    case_memos = data.get("case_memos") or []
     rot = resolve_rotation(now, last_new, bool(case_memos), int(data.get("rotation_offset", 0)))
     main_no = rot["categoryNo"]
-    warnings = list(rot["notes"])
+    warnings = list(rot["notes"]) + source_warnings
     if this_week_posts:
         warnings.append(f"이번 주(ISO {cur_iso[1]}주) 이미 {len(this_week_posts)}편 발행 — 주 1편 기본 충족. "
                         "추가 발행은 디딤 소식·디딤 다이어리 권장.")
@@ -1373,16 +1499,25 @@ def run_plan(data, seed=None, verify_mode=False):
         return True
 
     # 5-a) 지원매치 공고 (1주차=25 메인일 때 우선 소스, 그 외 주는 보조)
-    grants, grants_excluded = filter_grants(data.get("grant_items"), now)
+    # 새 리포트(grant_items)는 grant-check 필터, 공고 후보 DB(grant_rows)는 상태=후보·마감 미경과만. 같은 공고는 DB 행 우선.
+    fresh, grants_excluded = filter_grants(data.get("grant_items"), now)
+    db_grants, db_excluded = grant_rows_to_items(data.get("grant_rows"), now)
+    grants_excluded += db_excluded
+    seen = {(g.get("url") or g.get("title")) for g in db_grants}
+    grants = db_grants + [g for g in fresh if (g.get("url") or g.get("title")) not in seen]
+    grants.sort(key=lambda x: (x["days_left"] if x["days_left"] is not None else 9999))
     grant_cards = []
     for g in grants[:2]:
-        term = g["matched_terms"][0]
+        term = g["matched_terms"][0] if g.get("matched_terms") else "특허·인증"
         dl = f", 마감 D-{g['days_left']}" if g["days_left"] is not None else ""
+        src = "공고 후보 DB" if g.get("notion_url") else "지원매치 공고"
         grant_cards.append(_new_card(
-            25, f"(가제) 지원사업 {g['role']}이 되는 {term} — '{g.get('title', '')[:30]}' 대비 포인트",
-            [term, "지원사업 가점" if g["role"] == "가점" else "지원사업 신청 요건"], "grant",
-            f"지원매치 공고{dl} — 자격/가점에 '{', '.join(g['matched_terms'])}' 포함", topic_axis="지원사업 공고",
-            grantUrl=g.get("url"), grantPriority=g["priority"], titleIsTemplate=True))
+            25, f"(가제) 지원사업 {GRANT_ROLE_WORD.get(g['role'], g['role'] + '이')} 되는 {term} — "
+                f"'{g.get('title', '')[:30]}' 대비 포인트",
+            [term, GRANT_ROLE_KEYWORD.get(g["role"], "지원사업 신청 요건")], "grant",
+            f"{src}{dl} — {g['role']}에 '{', '.join(g.get('matched_terms') or [])}' 포함", topic_axis="지원사업 공고",
+            grantUrl=g.get("url"), grantPriority=g["priority"], grantPageUrl=g.get("notion_url"),
+            titleIsTemplate=True))
 
     # 5-b) 메인 카테고리 후보 2건
     if main_no == 25:
@@ -1391,9 +1526,7 @@ def run_plan(data, seed=None, verify_mode=False):
                 add(gc)
     if main_no == 26:
         for m in case_memos[:2]:
-            add(_new_card(26, m.get("title") or f"(가제) {str(m.get('summary', ''))[:30]}",
-                          _as_list(m.get("keywords")), "manual", "사용자 사건 메모 기반(익명화 확인 필요)",
-                          topic_axis="사건 메모", titleIsTemplate=not m.get("title")))
+            add(case_card(m))
     if main_no == 24:
         series = [h for _, h in dated if h.get("new_category_no") == 24 and h.get("series")]
         if series:
@@ -1404,7 +1537,7 @@ def run_plan(data, seed=None, verify_mode=False):
     tries = 0
     while len(cards) < 2 and main_no in NEW_TOPIC_SUBS and tries < 4:
         tries += 1
-        if not add(build_new_keyword_card(main_no, filters, used_keywords, used_subs, rng)):
+        if not add(build_new_keyword_card(main_no, filters, used_keywords, used_subs, rng, db_pool)):
             break
     for c in cards:
         c["role"] = "main"
@@ -1415,16 +1548,14 @@ def run_plan(data, seed=None, verify_mode=False):
             continue
         if alt == 26:
             if case_memos and main_no != 26:
-                m = case_memos[0]
-                add(_new_card(26, m.get("title") or f"(가제) {str(m.get('summary', ''))[:30]}",
-                              _as_list(m.get("keywords")), "manual", "사용자 사건 메모 기반", topic_axis="사건 메모"))
-                cards[-1]["role"] = "alt"
+                if add(case_card(case_memos[0])):
+                    cards[-1]["role"] = "alt"
             continue
         if alt == 25 and grant_cards and main_no != 25:
             if add(grant_cards[0]):
                 cards[-1]["role"] = "alt"
                 continue
-        if add(build_new_keyword_card(alt, filters, used_keywords, used_subs, rng)):
+        if add(build_new_keyword_card(alt, filters, used_keywords, used_subs, rng, db_pool)):
             cards[-1]["role"] = "alt"
 
     # 5-d) 로테이션 외: 디딤 소식(뉴스) · 디딤 다이어리
@@ -1475,9 +1606,16 @@ def run_plan(data, seed=None, verify_mode=False):
         "warnings": warnings,
         "filters": {"rejected": sorted(filters.rejected), "blacklist": sorted(filters.blacklist),
                     "covered_count": len(filters.covered_texts)},
+        "sources": {"keyword_pool": "notion" if db_pool is not None else "builtin",
+                    "keyword_pool_note": ("Notion 키워드 DB(" + NOTION_KEYWORD_DS + ")" if db_pool is not None
+                                          else "스킬 내장 상수(키워드 DB 행 없음 → 폴백)"),
+                    "grant_rows_used": len(db_grants), "case_memos_usable": len(case_memos)},
         "grants": {"picked": grants, "excluded": grants_excluded},
         "table": cards,
         "notion_rows_to_create": [card_to_notion_row(c) for c in cards],
+        # 새 리포트 공고 중 공고 후보 DB에 아직 없는 것 → 공고 후보 DB 새 행(상태=후보)
+        "notion_grant_rows_to_create": [grant_to_notion_row(dict(g, report_date=data.get("report_date")), now)
+                                        for g in fresh if (g.get("url") or g.get("title")) not in seen],
         "news_search_plan": {
             "urgent_keywords_pick3": shuffle(URGENT_NEWS_KEYWORDS, rng)[:3],
             "fixed_keywords": FIXED_KEYWORDS,
@@ -1553,10 +1691,10 @@ def notion_rows_to_input(rows):
             history.append({k: v for k, v in h.items() if v is not None})
         if fb == "부적합":
             rej = {"date": created, "title": title, "keywords": _as_list(kw), "reason": _nget(r, "부적합 사유")}
-            memo = _nget(r, "메모") or ""
-            m = re.search(r"부적합 키워드\s*:\s*(.+)", memo)
-            if m:
-                rej["rejection_keywords"] = [x.strip() for x in m.group(1).split(",") if x.strip()]
+            # [결정 §7] 원본 rejection_keywords = '부적합 키워드' 열(쉼표 구분). 비어 있으면 제목·키워드로 자동 추출.
+            rk = _nlist(_nget(r, "부적합 키워드"))
+            if rk:
+                rej["rejection_keywords"] = rk
             rejected.append(rej)
         elif fb in ("대기", "적합"):
             shown.append({"date": created, "title": title, "keywords": _as_list(kw)})
@@ -1575,8 +1713,188 @@ def card_to_notion_row(card):
         row["2차 분류"] = cat_name(no)
     url = card.get("newsUrl") or card.get("grantUrl")
     if url:
-        row["메모"] = f"근거: {url}"
+        row["근거 URL"] = url  # [결정 §7] 메모 대신 전용 열
+    # 관계 열(값 = 관련 페이지 URL 목록). 페이지 URL 을 아는 경우에만.
+    for key, col in (("keywordPageUrl", "키워드"), ("grantPageUrl", "공고"), ("casePageUrl", "사례 메모")):
+        if card.get(key):
+            row[col] = [card[key]]
     return row
+
+
+# ─────────────────────────────────────────────────────────────
+# [결정 사항 §7] 사례 메모 DB · 공고 후보 DB · 키워드 DB
+# ─────────────────────────────────────────────────────────────
+
+NOTION_KEYWORD_DS = "collection://4e0fae54-aeb3-48dd-b948-b78886a8e859"
+NOTION_GRANT_DS = "collection://22228030-8382-4930-926e-fd46dc2f0bac"
+NOTION_CASE_DS = "collection://d0dc583f-9a93-482c-af24-fede97f446a0"
+DEFAULT_REVENUE_WEIGHT = 3
+CASE_CONSENT_OK = {"불필요(완전 익명)", "받음"}
+GRANT_ROLE_WORD = {"요건": "요건이", "가점": "가점이", "우대": "우대 조건이"}
+GRANT_ROLE_KEYWORD = {"요건": "지원사업 신청 요건", "가점": "지원사업 가점", "우대": "지원사업 우대 조건"}
+# grant-check 용어 → 공고 후보 DB '관련 권리·인증' 선택지 (지식재산·IP 처럼 일반 표현은 '특허'로 — 원문 확인)
+GRANT_TERM_TO_RIGHT = {"특허": "특허", "실용신안": "특허", "우선심사": "특허", "직무발명": "특허", "지식재산": "특허",
+                       "IP": "특허", "상표": "상표", "디자인권": "디자인", "벤처기업": "벤처기업 인증",
+                       "벤처인증": "벤처기업 인증", "벤처확인": "벤처기업 인증", "이노비즈": "이노비즈",
+                       "기업부설연구소": "기업부설연구소", "연구전담부서": "기업부설연구소", "메인비즈": "기타 인증",
+                       "기술평가": "기타 인증"}
+# 원본 keyword_pool 초기 시드(docs/UPGRADE_SPEC.md §4.4)의 priority — '매출 가중치 HIGH' 문구의 출처
+KEYWORD_POOL_SEED_PRIORITY = {
+    "직무발명보상금 절세": "HIGH", "법인세 줄이는 방법": "HIGH", "대표이사 직무발명보상금": "HIGH",
+    "기업부설연구소 세액공제": "HIGH", "연구소 세무조사": "HIGH", "R&D 세액공제 환수": "HIGH",
+    "벤처기업인증 혜택": "MEDIUM", "벤처인증 방법": "MEDIUM", "기업부설연구소 설립 방법": "MEDIUM",
+    "미처분이익잉여금 정리": "MEDIUM", "직무발명보상금 vs 상여금": "MEDIUM", "AI 특허 출원": "MEDIUM",
+    "생성형 AI 저작권": "MEDIUM", "인공지능 기본법": "MEDIUM", "스타트업 특허 전략": "MEDIUM",
+    "기술유출 방지": "LOW", "특허 가치평가": "LOW", "직무발명 소송 사례": "MEDIUM", "중국 상표 선점": "LOW",
+}
+SEED_PRIORITY_TO_WEIGHT = {"HIGH": 5, "MEDIUM": 3, "LOW": 1}
+SEED_PRIORITY_TO_KO = {"HIGH": "높음", "MEDIUM": "보통", "LOW": "낮음"}
+
+
+def _nlist(v):
+    """Notion 값 → 문자열 목록. 리스트, JSON 배열 문자열(다중 선택·관계), 쉼표 구분 텍스트 모두 받는다."""
+    if v is None or v == "":
+        return []
+    if isinstance(v, list):
+        return [str(x).strip() for x in v if str(x).strip()]
+    t = str(v).strip()
+    if t.startswith("["):
+        try:
+            return [str(x).strip() for x in json.loads(t) if str(x).strip()]
+        except ValueError:
+            pass
+    return [x.strip() for x in t.split(",") if x.strip()]
+
+
+def _ncheck(v):
+    return v is True or str(v).strip().lower() in ("__yes__", "true", "yes", "1", "체크")
+
+
+def usable_case_memos(rows, direct=None):
+    """사례 메모 DB 행(+대화로 받은 case_memos) → 사례 카드에 쓸 수 있는 메모, 제외 목록.
+
+    사용 조건(_DECISIONS.md §7): 익명화 확인=체크, 고객 공개 동의 ∈ {불필요(완전 익명), 받음}, 사용 상태=미사용.
+    (추천이 '적합'이 되면 사용 상태=사용함으로 바꿔 다음 추천에서 빠지게 한다.) 출처 사건번호(내부용)는 결과에 넣지 않는다.
+    대화로 받은 case_memos 는 anonymized=true, consent(위 두 값 중 하나) 를 사용자에게 확인받아 넣어야 쓴다.
+    """
+    usable, excluded = [], []
+    for r in rows or []:
+        title = str(_nget(r, "사례명") or "").strip()
+        consent = _nget(r, "고객 공개 동의")
+        state = _nget(r, "사용 상태") or "미사용"
+        if not _ncheck(_nget(r, "익명화 확인")):
+            excluded.append((title, "익명화 확인 안 됨"))
+        elif consent not in CASE_CONSENT_OK:
+            excluded.append((title, f"고객 공개 동의 '{consent or '빈 값'}'"))
+        elif state != "미사용":
+            excluded.append((title, f"사용 상태 '{state}'"))
+        else:
+            usable.append({"title": title or None, "summary": _nget(r, "상황") or "",
+                           "keywords": _nlist(_nget(r, "유형")), "industry": _nget(r, "고객 업종·규모"),
+                           "response": _nget(r, "대응"), "result": _nget(r, "결과"),
+                           "figures": _nget(r, "핵심 수치"), "notion_url": r.get("url")})
+    for m in direct or []:
+        title = m.get("title") or str(m.get("summary", ""))[:30]
+        if not _ncheck(m.get("anonymized")):
+            excluded.append((title, "익명화 확인 안 됨(대화 입력 — anonymized 확인 필요)"))
+        elif (m.get("consent") or "") not in CASE_CONSENT_OK:
+            excluded.append((title, "고객 공개 동의 미확인(대화 입력 — consent 확인 필요)"))
+        else:
+            usable.append({k: v for k, v in m.items() if k not in ("case_no", "출처 사건번호")})
+    return usable, excluded
+
+
+def case_card(m):
+    title = m.get("title")
+    return _new_card(26, title or f"(가제) {str(m.get('summary', ''))[:30]}", _as_list(m.get("keywords")), "manual",
+                     "사례 메모 DB(익명화·공개 동의 확인됨)" if m.get("notion_url") else "사용자 사건 메모(익명화·공개 동의 확인됨)",
+                     topic_axis="사건 메모", titleIsTemplate=not title, casePageUrl=m.get("notion_url"))
+
+
+def grant_rows_to_items(rows, now):
+    """공고 후보 DB 행 → filter_grants 결과와 같은 모양. 상태=후보 이고 마감일이 지나지 않은 행만(마감일 없음은 포함)."""
+    picked, excluded = [], []
+    today = now.astimezone(KST).date()
+    for r in rows or []:
+        title = _nget(r, "공고명") or ""
+        state = _nget(r, "상태") or "후보"
+        if state != "후보":
+            continue
+        dl = parse_dt(_nget(r, "마감일"))
+        days_left = (dl.astimezone(KST).date() - today).days if dl else None
+        if days_left is not None and days_left < 0:
+            excluded.append({"title": title, "why": "마감 지남(공고 후보 DB — 상태를 '마감'으로 바꿀 것)",
+                             "notion_url": r.get("url")})
+            continue
+        prio = "URGENT" if days_left is not None and days_left <= 7 else (_nget(r, "우선순위") or "PRIMARY")
+        picked.append({"title": title, "agency": _nget(r, "기관"), "deadline": _nget(r, "마감일"),
+                       "url": _nget(r, "공고 URL"), "role": _nget(r, "특허·인증 역할") or "요건",
+                       "matched_terms": _nlist(_nget(r, "관련 권리·인증")), "evidence": _nget(r, "근거 원문"),
+                       "days_left": days_left, "priority": "URGENT" if prio == "URGENT" else "PRIMARY",
+                       "notion_url": r.get("url")})
+    return picked, excluded
+
+
+def _grant_evidence(g):
+    """자격·가점·우대 원문 중 매칭 용어가 든 문장만 '[자격] …' 형식으로 모은다(근거 원문 열)."""
+    out = []
+    for label, key in (("자격", "eligibility"), ("가점", "bonus"), ("우대", "preference")):
+        text = g.get(key) or ""
+        for sent in re.split(r"(?<=[.。!?])\s+|\n+", text):
+            sent = sent.strip()
+            if sent and (any(t in sent for t in GRANT_IP_TERMS) or _GRANT_IP_RE.search(sent)):
+                out.append(f"[{label}] {sent}")
+    return " / ".join(out)
+
+
+def grant_to_notion_row(g, now):
+    """grant-check 통과 공고 → 공고 후보 DB 새 행 속성(상태=후보)."""
+    rights = []
+    for t in g.get("matched_terms") or []:
+        r = GRANT_TERM_TO_RIGHT.get(t, "기타 인증")
+        if r not in rights:
+            rights.append(r)
+    row = {"공고명": g.get("title") or "", "특허·인증 역할": g["role"], "관련 권리·인증": rights,
+           "근거 원문": _grant_evidence(g), "우선순위": g["priority"], "상태": "후보",
+           "date:리포트 일자:start": str(g.get("report_date") or now.astimezone(KST).date().isoformat())}
+    if g.get("agency"):
+        row["기관"] = g["agency"]
+    if g.get("url"):
+        row["공고 URL"] = g["url"]
+    dl = parse_dt(g.get("deadline"))
+    if dl:
+        row["date:마감일:start"] = dl.astimezone(KST).date().isoformat()
+    return row
+
+
+def export_keyword_seed():
+    """내장 키워드 풀(sub-category-pool.ts) → 키워드 DB 초기 행.
+
+    카테고리 = 흡수한 신규 카테고리(NEW_TOPIC_SUBS), 주제 축 = 원래 2차 분류 이름,
+    매출 가중치·우선순위 = 원본 keyword_pool 시드(UPGRADE_SPEC §4.4)에 같은 키워드가 있으면 그 priority
+    (HIGH 5·높음 / MEDIUM 3·보통 / LOW 1·낮음), 없으면 3·보통(keyword_pool.priority 기본값 MEDIUM), 커버리지 = 미작성.
+    """
+    sub_to_new = {sid: no for no, sids in NEW_TOPIC_SUBS.items() for sid in sids}
+    seed_norm = {_norm_nospace(k): v for k, v in KEYWORD_POOL_SEED_PRIORITY.items()}
+    rows = []
+    for sub in SUB_CATEGORY_POOL:
+        no = sub_to_new.get(sub["id"])
+        if not no:
+            continue
+        for kw in sub["keywords"]:
+            pr = seed_norm.get(_norm_nospace(kw))
+            memo = f"초기값: 스킬 내장 풀 {sub['id']}({sub['name']})"
+            if pr:
+                memo += f" · 원본 keyword_pool 시드 priority {pr}"
+            rows.append({"키워드": kw, "카테고리": cat_name(no), "주제 축": sub["name"],
+                         "매출 가중치": SEED_PRIORITY_TO_WEIGHT.get(pr, DEFAULT_REVENUE_WEIGHT),
+                         "우선순위": SEED_PRIORITY_TO_KO.get(pr, "보통"), "커버리지": "미작성", "메모": memo})
+    return {"data_source": NOTION_KEYWORD_DS, "database": "디딤 블로그 키워드",
+            "note": "planner 키워드 풀의 정본은 키워드 DB(_DECISIONS.md §7). 이 파일은 DB가 비었을 때 넣을 초기 행이며, "
+                    "스킬 실행 시 DB 행이 없으면 같은 내장 상수로 폴백한다.",
+            "weight_rule": "원본 keyword_pool 시드(docs/UPGRADE_SPEC.md §4.4)와 키워드가 같으면 HIGH 5·높음 / MEDIUM 3·보통 / "
+                           "LOW 1·낮음, 없으면 3·보통",
+            "count": len(rows), "rows": rows}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1622,7 +1940,9 @@ def main(argv=None):
     sn = sub.add_parser("news-check", help="검색 기사 규칙 필터")
     sn.add_argument("input", help="{now, articles:[{title,description,link,pubDate,keyword}], existing_links?}")
     sg = sub.add_parser("grant-check", help="[결정 사항] 지원매치 공고 중 특허·인증 요건/가점 공고만 추리기")
-    sg.add_argument("input", help="{now, grant_items:[{title,deadline,url,eligibility,bonus}]}")
+    sg.add_argument("input", help="{now, report_date?, grant_items:[{title,agency,deadline,url,eligibility,bonus,preference}]}")
+    se = sub.add_parser("export-keyword-seed", help="[결정 §7] 내장 키워드 풀 → Notion 키워드 DB 초기 행 JSON")
+    se.add_argument("--out", default=None, help="저장 경로(없으면 stdout)")
     sw = sub.add_parser("week", help="주차 계산 (ISO 주차·4주 로테이션 + 레거시 12주 주차)")
     sw.add_argument("--now", default=None)
     sw.add_argument("--start", default=DEFAULT_BLOG_START_DATE)
@@ -1654,8 +1974,21 @@ def main(argv=None):
                                  "schedule_in_range": w <= 12, "note": "12주 스케줄은 폐기(결정 사항 §3) — 참고용"}})
     elif a.cmd == "grant-check":
         d = _load(a.input)
-        picked, excluded = filter_grants(d.get("grant_items"), parse_dt(d.get("now")) or datetime.now(KST))
-        _dump({"picked": picked, "excluded": excluded})
+        now = parse_dt(d.get("now")) or datetime.now(KST)
+        picked, excluded = filter_grants(d.get("grant_items"), now)
+        for g in picked:
+            g.setdefault("report_date", d.get("report_date"))
+        _dump({"picked": picked, "excluded": excluded, "notion_data_source": NOTION_GRANT_DS,
+               "notion_grant_rows_to_create": [grant_to_notion_row(g, now) for g in picked]})
+    elif a.cmd == "export-keyword-seed":
+        seed = export_keyword_seed()
+        if a.out:
+            with open(a.out, "w", encoding="utf-8") as fp:
+                json.dump(seed, fp, ensure_ascii=False, indent=2)
+                fp.write("\n")
+            print(f"{seed['count']}개 행 → {a.out}")
+        else:
+            _dump(seed)
 
 
 if __name__ == "__main__":

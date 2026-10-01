@@ -88,9 +88,11 @@ def resolve_category(value):
 
 
 def content_category(c):
-    # Notion: 카테고리="레거시" 이면 "2차 분류" 값(원래 이름)으로 판정
-    if c.get("category_name") == "레거시" or c.get("카테고리") == "레거시":
-        r = resolve_category(c.get("legacy_sub") or c.get("2차 분류"))
+    # Notion: 카테고리="레거시" 이면 "레거시 2차 분류" 값(원래 이름)으로 판정
+    # Notion: 카테고리="레거시"(또는 디딤 다이어리) 이면 "2차 분류" 값(원래 이름)으로 판정
+    sub = c.get("legacy_sub") or c.get("2차 분류") or c.get("레거시 2차 분류")
+    if sub and (c.get("category_name") in ("레거시", "디딤 다이어리") or c.get("카테고리") in ("레거시", "디딤 다이어리")):
+        r = resolve_category(sub)
         if r:
             return r
     for key in ("category_no", "categoryNo", "category_id", "category_name", "category", "카테고리"):
@@ -103,7 +105,11 @@ def content_category(c):
 # ── Notion "디딤 블로그 콘텐츠" (data source collection://463bc815-11ab-4290-9d86-22bd1aa9cfed) 속성 → 내부 키 ──
 # 본문·태그·콘텐츠 ID 는 DB 속성이 아니다(본문=페이지 내용). 대화에서 받은 값을 같은 키로 넣으면 된다.
 NOTION_KEYS = {
-    "콘텐츠 ID": "id", "제목": "title", "2차 분류": "legacy_sub", "상담": "consultations", "상태": "status", "카테고리": "category_name",
+    "콘텐츠 ID": "id", "제목": "title", "2차 분류": "legacy_sub", "레거시 2차 분류": "legacy_sub",
+    "상담": "consultations", "키워드": "keyword_pages", "디딤 소식 종류": "news_kind", "CTA": "cta_type",
+    "면책 레벨": "disclaimer_level", "검수 상태": "review_status_ko", "수정 횟수": "revision_count",
+    "검수 메모": "review_memo", "SEO 점수": "seo_score", "SEO 판정": "seo_verdict_ko",
+    "교차검증": "cross_validation_ko", "교차검증일": "cross_validated_at", "건강 상태": "health_status_ko", "상태": "status", "카테고리": "category_name",
     "categoryNo": "category_no", "타깃 키워드": "target_keyword",
     "발행예정일": "publish_date",  # SLA 역산·캘린더 기준 (초안 단계부터 기입)
     "발행일": "published_at",      # 실제 발행 후에만 기입
@@ -113,6 +119,10 @@ NOTION_KEYS = {
     "시리즈 회차": "series_order", "마지막 업데이트일": "last_updated_at", "메모": "notes",
     "본문": "body", "태그": "tags", "삭제됨": "is_deleted",
 }
+REVIEW_KO = {"미검수": "pending", "승인": "approved", "수정 요청": "revision_requested", "재검수 요청": "pending"}
+REVIEW_TO_KO = {"pending": "미검수", "approved": "승인", "revision_requested": "수정 요청"}
+SEO_VERDICT_KO = {"통과": "pass", "수정 필요": "fix_required", "발행 불가": "blocked"}
+HEALTH_KO = {"정상": "HEALTHY", "업데이트 필요": "UPDATE_NEEDED", "법률 변경 확인": "CHECK_NEEDED"}
 STATUS_FULL = {"S0": "S0 기획중", "S1": "S1 초안완료", "S2": "S2 검토완료", "S3": "S3 발행예정",
                "S4": "S4 발행완료", "S5": "S5 성과측정"}  # Notion "상태" 선택지 값 그대로
 STATUS_NAMES = {"기획중": "S0", "초안완료": "S1", "검토완료": "S2", "발행예정": "S3", "발행완료": "S4", "성과측정": "S5"}
@@ -131,6 +141,14 @@ def normalize_content(c):
             out["status"] = "S" + s[1]
         elif s in STATUS_NAMES:
             out["status"] = STATUS_NAMES[s]
+    if out.get("review_status") is None and out.get("review_status_ko") in REVIEW_KO:
+        out["review_status"] = REVIEW_KO[out["review_status_ko"]]
+    if out.get("seo_verdict") is None and out.get("seo_verdict_ko") in SEO_VERDICT_KO:
+        out["seo_verdict"] = SEO_VERDICT_KO[out["seo_verdict_ko"]]
+    if out.get("health_status") is None and out.get("health_status_ko") in HEALTH_KO:
+        out["health_status"] = HEALTH_KO[out["health_status_ko"]]
+    if out.get("news_kind") == "사무소 소식":
+        out["no_cta"] = True  # _DECISIONS.md §5: 사무소 소식은 CTA 없음
     if isinstance(out.get("tags"), str):
         out["tags"] = [t.strip() for t in out["tags"].replace("#", ",").split(",") if t.strip()]
     if out.get("status") in ("S4", "S5") and not out.get("published_at") and out.get("publish_date"):
@@ -220,6 +238,11 @@ def now_from_arg(value):
     return datetime.now(timezone.utc)
 
 
+def kst_stamp(dt):
+    """페이지 '## 검수 기록' 용 KST 'YYYY-MM-DD HH:MM'."""
+    return dt.astimezone(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M")
+
+
 def iso(dt):
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -260,7 +283,8 @@ def cta_exempt(content):
 
 
 def derive_review_fields(content):
-    """Notion 에는 검수 상태 속성이 없으므로 메모의 기록에서 복원한다(스킬 보완)."""
+    """검수 상태는 Notion '검수 상태' 열(미검수/승인/수정 요청/재검수 요청)이 정본.
+    열이 없는 옛 데이터만 메모의 [검수 승인]/[수정 요청]/[재검수 요청] 기록으로 복원한다."""
     c = dict(content)
     notes = c.get("notes") or ""
     if not c.get("review_status"):
@@ -304,7 +328,10 @@ def build_checks(content, seo_score, cv_run, cv_critical, image_markers, now):
              "detail": f"심각 {cv_critical}건" if cv_run else "미수행", "required": False},
             {"id": "images-3", "label": "이미지 마커 3개 이상 (권장)", "passed": image_markers >= 3,
              "detail": f"현재 {image_markers}개", "required": False},
-        ]
+        ] + ([{"id": "seo-verdict", "label": "SEO 판정 '발행 불가' 아님 (권장, 스킬 추가)",
+               "passed": content.get("seo_verdict") != "blocked",
+               "detail": content.get("seo_verdict_ko") or content.get("seo_verdict"), "required": False}]
+             if content.get("seo_verdict") else [])
 
     if status == "S2":
         pd = content.get("publish_date") or content.get("publish_due")
@@ -365,7 +392,8 @@ def status_timestamps(new_status, now, published_at_override=None):
 
 
 def notion_update(to_status, now, published_at=None):
-    """Notion "디딤 블로그 콘텐츠" 에 쓸 값 (상태 선택지는 'S4 발행완료' 형식)."""
+    """Notion "디딤 블로그 콘텐츠" 에 쓸 값 (상태 선택지는 'S4 발행완료' 형식).
+    전이 로그·사유는 메모가 아니라 페이지 본문 '## 검수 기록' 섹션에 쓴다(_DECISIONS.md §7)."""
     u = {"상태": STATUS_FULL[to_status]}
     if to_status == "S4":
         u["발행일"] = (published_at or iso(now))[:10]  # 실제 발행일 (발행예정일은 그대로 둔다)
@@ -377,6 +405,11 @@ def cmd_check(args):
     content = derive_review_fields(normalize_content(load_json(args.content)))
     if args.no_cta:
         content["no_cta"] = True
+    # 교차검증 열(미실시/통과/심각 이슈 남음)로 판정 — CLI 플래그가 없을 때
+    if not args.cross_validation_run and content.get("cross_validation_ko") in ("통과", "심각 이슈 남음"):
+        args.cross_validation_run = True
+        if content["cross_validation_ko"] == "심각 이슈 남음" and not args.cross_validation_critical:
+            args.cross_validation_critical = 1
     transitions = load_json(args.transitions) if args.transitions else SEED_TRANSITIONS
     transitions = [t for t in transitions if t.get("entity_type", "content") == "content"]
     now = now_from_arg(args.now)
@@ -430,7 +463,7 @@ def cmd_check(args):
     needs_input = []
     if direction == "reverse":
         kind = "needs_reason"
-        needs_input.append("되돌리기 사유(필수) — notes 에 '[역행 전이 사유] …' 로 기록")
+        needs_input.append("되돌리기 사유(필수) — 페이지 본문 '## 검수 기록'에 '[역행 전이 사유] …' 로 기록")
     elif req_failed:
         kind = "blocked_required"
     elif rec_failed:
@@ -438,9 +471,9 @@ def cmd_check(args):
     else:
         kind = "ok"
     if direction == "forward" and to_status == "S4":
-        needs_input.append("네이버 블로그 URL(선택), 발행일시(기본 현재 시각)")
+        needs_input.append("네이버 글 URL(발행 URL), 실제 발행일(발행일)")
     if direction == "forward" and to_status == "S5":
-        needs_input.append("1주차 성과: 조회수, 댓글 수, 이웃 추가 수, 상담 문의 여부 (didim-blog-performance)")
+        needs_input.append("성과: 조회수(최근)·댓글 수·유입 키워드 TOP3·성과 갱신일 (didim-blog-performance)")
 
     out.update({
         "allowed": kind in ("ok", "confirm_recommended", "needs_reason"),
@@ -456,6 +489,9 @@ def cmd_check(args):
         "needs_input": needs_input,
         "updates_on_transition": status_timestamps(to_status, now, args.published_at),
         "notion_update": notion_update(to_status, now, args.published_at),
+        "page_log_append": f"- {kst_stamp(now)} {from_status}→{to_status}"
+                           + (" (역행: 사유 입력)" if direction == "reverse" else "")
+                           + (" (강제 전환: 관리자 강제 전환 (조건 미충족))" if kind == "blocked_required" else ""),
         "image_marker_count": image_markers,
         "seo_score_used": seo_score,
         "warnings": warnings,
@@ -514,8 +550,10 @@ def cmd_review(args):
             latest, steps = chain_after_approve(updated, now)
             out.update({"ok": True, "toast": "검수 승인 완료", "unknown_check_ids": unknown,
                         "chain": steps, "content_after": latest,
-                        "notion_memo_append": f"[검수 승인] 체크: {', '.join(checked)} ({iso(now)[:10]})",
-                        "notion_status_after": STATUS_FULL.get(latest.get("status"))})
+                        "notion_update": {"검수 상태": "승인", "상태": STATUS_FULL.get(latest.get("status")),
+                                          "검수 메모(줄 추가)": f"[{(content.get('revision_count') or 0) + 1}회차] 승인 — 체크: {', '.join(checked)} ({kst_stamp(now)[:10]})"},
+                        "page_log_append": [f"- {kst_stamp(now)} 검수 승인"] +
+                                           [f"- {kst_stamp(now)} 자동 전이 → {st['to']}" for st in steps if st.get("to")]})
     elif args.action == "revision":
         memo = (args.memo or "").strip()
         if not memo:
@@ -530,13 +568,15 @@ def cmd_review(args):
                 "updated_at": iso(now),
             })
             out.update({"ok": True, "toast": "수정 요청이 등록되었습니다.", "content_after": updated,
-                        "notion_memo_append": f"[수정 요청] {memo} ({updated['revision_count']}회차, {iso(now)[:10]})"})
+                        "notion_update": {"검수 상태": "수정 요청", "수정 횟수": updated["revision_count"],
+                                          "검수 메모(줄 추가)": f"[{updated['revision_count']}회차] {memo} ({kst_stamp(now)[:10]})"}})
     elif args.action == "reset":
         updated = dict(content)
         updated.update({"review_status": "pending", "review_memo": None, "updated_at": iso(now)})
         out.update({"ok": True, "toast": "검수 상태가 초기화되었습니다. 다시 검수를 요청하세요.",
                     "content_after": updated,
-                    "notion_memo_append": f"[재검수 요청] ({iso(now)[:10]})"})
+                    "notion_update": {"검수 상태": "재검수 요청"},
+                    "note_original": "원본 resetReviewStatus 는 review_status=pending·review_memo=null. Notion 에서는 '재검수 요청'으로 두고 검수 메모 이력은 지우지 않는다."})
     if content.get("status") != "S1":
         out["note"] = "원본 UI 의 검수 패널은 status=S1 일 때만 표시됩니다."
     print(json.dumps(out, ensure_ascii=False, indent=2))

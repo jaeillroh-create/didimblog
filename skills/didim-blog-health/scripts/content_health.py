@@ -82,9 +82,11 @@ def resolve_category(value):
 
 
 def content_category(c):
-    # Notion: 카테고리="레거시" 이면 "2차 분류" 값(원래 이름)으로 판정
-    if c.get("category_name") == "레거시" or c.get("카테고리") == "레거시":
-        r = resolve_category(c.get("legacy_sub") or c.get("2차 분류"))
+    # Notion: 카테고리="레거시" 이면 "레거시 2차 분류" 값(원래 이름)으로 판정
+    # Notion: 카테고리="레거시"(또는 디딤 다이어리) 이면 "2차 분류" 값(원래 이름)으로 판정
+    sub = c.get("legacy_sub") or c.get("2차 분류") or c.get("레거시 2차 분류")
+    if sub and (c.get("category_name") in ("레거시", "디딤 다이어리") or c.get("카테고리") in ("레거시", "디딤 다이어리")):
+        r = resolve_category(sub)
         if r:
             return r
     for key in ("category_no", "categoryNo", "category_id", "category_name", "category", "카테고리"):
@@ -97,7 +99,11 @@ def content_category(c):
 # ── Notion "디딤 블로그 콘텐츠" (data source collection://463bc815-11ab-4290-9d86-22bd1aa9cfed) 속성 → 내부 키 ──
 # 본문·태그·콘텐츠 ID 는 DB 속성이 아니다(본문=페이지 내용). 대화에서 받은 값을 같은 키로 넣으면 된다.
 NOTION_KEYS = {
-    "콘텐츠 ID": "id", "제목": "title", "2차 분류": "legacy_sub", "상담": "consultations", "상태": "status", "카테고리": "category_name",
+    "콘텐츠 ID": "id", "제목": "title", "2차 분류": "legacy_sub", "레거시 2차 분류": "legacy_sub",
+    "상담": "consultations", "키워드": "keyword_pages", "디딤 소식 종류": "news_kind", "CTA": "cta_type",
+    "면책 레벨": "disclaimer_level", "검수 상태": "review_status_ko", "수정 횟수": "revision_count",
+    "검수 메모": "review_memo", "SEO 점수": "seo_score", "SEO 판정": "seo_verdict_ko",
+    "교차검증": "cross_validation_ko", "교차검증일": "cross_validated_at", "건강 상태": "health_status_ko", "상태": "status", "카테고리": "category_name",
     "categoryNo": "category_no", "타깃 키워드": "target_keyword",
     "발행예정일": "publish_date",  # SLA 역산·캘린더 기준 (초안 단계부터 기입)
     "발행일": "published_at",      # 실제 발행 후에만 기입
@@ -107,6 +113,10 @@ NOTION_KEYS = {
     "시리즈 회차": "series_order", "마지막 업데이트일": "last_updated_at", "메모": "notes",
     "본문": "body", "태그": "tags", "삭제됨": "is_deleted",
 }
+REVIEW_KO = {"미검수": "pending", "승인": "approved", "수정 요청": "revision_requested", "재검수 요청": "pending"}
+REVIEW_TO_KO = {"pending": "미검수", "approved": "승인", "revision_requested": "수정 요청"}
+SEO_VERDICT_KO = {"통과": "pass", "수정 필요": "fix_required", "발행 불가": "blocked"}
+HEALTH_KO = {"정상": "HEALTHY", "업데이트 필요": "UPDATE_NEEDED", "법률 변경 확인": "CHECK_NEEDED"}
 STATUS_FULL = {"S0": "S0 기획중", "S1": "S1 초안완료", "S2": "S2 검토완료", "S3": "S3 발행예정",
                "S4": "S4 발행완료", "S5": "S5 성과측정"}  # Notion "상태" 선택지 값 그대로
 STATUS_NAMES = {"기획중": "S0", "초안완료": "S1", "검토완료": "S2", "발행예정": "S3", "발행완료": "S4", "성과측정": "S5"}
@@ -125,6 +135,14 @@ def normalize_content(c):
             out["status"] = "S" + s[1]
         elif s in STATUS_NAMES:
             out["status"] = STATUS_NAMES[s]
+    if out.get("review_status") is None and out.get("review_status_ko") in REVIEW_KO:
+        out["review_status"] = REVIEW_KO[out["review_status_ko"]]
+    if out.get("seo_verdict") is None and out.get("seo_verdict_ko") in SEO_VERDICT_KO:
+        out["seo_verdict"] = SEO_VERDICT_KO[out["seo_verdict_ko"]]
+    if out.get("health_status") is None and out.get("health_status_ko") in HEALTH_KO:
+        out["health_status"] = HEALTH_KO[out["health_status_ko"]]
+    if out.get("news_kind") == "사무소 소식":
+        out["no_cta"] = True  # _DECISIONS.md §5: 사무소 소식은 CTA 없음
     if isinstance(out.get("tags"), str):
         out["tags"] = [t.strip() for t in out["tags"].replace("#", ",").split(",") if t.strip()]
     if out.get("status") in ("S4", "S5") and not out.get("published_at") and out.get("publish_date"):
@@ -208,6 +226,16 @@ def get_primary_category_id(category_id):
     return category_id
 
 
+def notion_health_value(recommended, days, threshold, has_legal):
+    """Notion '건강 상태'(정상 / 업데이트 필요 / 법률 변경 확인) 값.
+    UPDATE_NEEDED·경과일 기준 CHECK_NEEDED → 업데이트 필요, 법률 키워드만으로 CHECK_NEEDED → 법률 변경 확인."""
+    if recommended == "UPDATE_NEEDED":
+        return "업데이트 필요"
+    if recommended == "CHECK_NEEDED":
+        return "업데이트 필요" if days >= threshold["check"] else "법률 변경 확인"
+    return "정상"
+
+
 def check_content_health(content, now):
     """content-health.ts checkContentHealth()."""
     reasons = []
@@ -253,6 +281,7 @@ def check_content_health(content, now):
         "threshold": threshold,
         "elapsed_from": base_label,
         "category": (content_category(content) or {}).get("stat_name"),
+        "notion_health": notion_health_value(recommended, days_since_publish, threshold, has_legal),
     }
 
 
@@ -275,12 +304,19 @@ def cmd_check(args):
     updates = [{"id": r["contentId"], "health_status": r["recommendedStatus"], "health_checked_at": iso(now)}
                for r in results if r["recommendedStatus"] != r["currentStatus"]]
     problems = [r for r in results if r["recommendedStatus"] in ("CHECK_NEEDED", "UPDATE_NEEDED")]
+    by_title = {(c.get("id") or c.get("title")): c for c in targets}
+    notion_updates = []
+    for r in results:
+        cur = by_title.get(r["contentId"] or r["title"], {}).get("health_status_ko")
+        if r["notion_health"] != cur:
+            notion_updates.append({"제목": r["title"], "건강 상태": r["notion_health"], "이전": cur})
     print(json.dumps({
         "now": iso(now),
         "summary": f"발행 글 {len(results)}개 중 {len(problems)}개 점검 필요",
         "results": results,
         "auto_updates_runHealthCheck": updates,
-        "notion_note": "Notion 에는 건강 상태를 저장하지 않는다. 글을 고쳤으면 '마지막 업데이트일'을 오늘로 쓴다.",
+        "notion_updates": notion_updates,
+        "notion_note": "Notion '건강 상태' 열에 notion_updates 값을 쓴다. 글을 고쳤으면 '마지막 업데이트일'=오늘, '건강 상태'=정상.",
     }, ensure_ascii=False, indent=2))
 
 
@@ -325,7 +361,9 @@ def cmd_legal_news(args):
             hits.append({"id": c.get("id"), "title": c.get("title") or "제목 없음", "matched": matched,
                          "current_health_status": c.get("health_status") or "HEALTHY",
                          "recommended_health_status": "CHECK_NEEDED"
-                         if (c.get("health_status") or "HEALTHY") in ("HEALTHY", "UPDATED") else c.get("health_status")})
+                         if (c.get("health_status") or "HEALTHY") in ("HEALTHY", "UPDATED") else c.get("health_status"),
+                         "notion_health": "법률 변경 확인"
+                         if c.get("health_status_ko") != "업데이트 필요" else "업데이트 필요"})
     hits.sort(key=lambda h: -len(h["matched"]))
     print(json.dumps({"news_legal_keywords": news_kw, "affected_posts": hits},
                      ensure_ascii=False, indent=2))

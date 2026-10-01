@@ -23,7 +23,7 @@ description: 특허그룹 디딤 네이버 블로그의 주제 추천·주간 �
 | 25 | 지원사업·인증과 특허 | 1주차 | 절세 시뮬레이션·인증 가이드·연구소 운영 실무 + **지원매치 공고(우선)** | PROMPT_FIELD / 인증·연구소 진단·절세 시뮬레이션 중 매칭 |
 | 27 | 출원·심판 실무 | 2주차 | 특허·상표 출원 실무 | PROMPT_FIELD / 출원 CTA |
 | 24 | 지식재산 경영 | 3주차 | 특허 전략 노트·AI와 IP, 연재 다음 회차 | PROMPT_LOUNGE_GENERAL / 이웃 추가 |
-| 26 | 사례 | 4주차 | **사용자 사건 메모가 있을 때만**. 없으면 27 로 대체 | PROMPT_FIELD / 주제 키워드 매칭 |
+| 26 | 사례 | 4주차 | **사용 가능한 사례 메모가 있을 때만**(사례 메모 DB: 익명화 확인=체크·공개 동의≠미확인·사용 상태=미사용). 없으면 27 로 대체 | PROMPT_FIELD / 주제 키워드 매칭 |
 | 28 | 디딤 소식 | 로테이션 외 | 최근 뉴스(IP 뉴스 한 입) | PROMPT_LOUNGE_BITE / 가벼운 이웃 추가 |
 | 17 | 디딤 다이어리(19 디딤 일상, 20 대표의 생각) | 로테이션 외 | 다이어리 주제 풀 | PROMPT_DIARY / **CTA 금지** |
 
@@ -39,9 +39,10 @@ description: 특허그룹 디딤 네이버 블로그의 주제 추천·주간 �
 | 입력 | 필수 | 얻는 법 |
 |---|---|---|
 | 발행 이력(날짜, 카테고리/categoryNo, 키워드, 제목) | 필수 | ① Notion "디딤 블로그 콘텐츠" ② `scripts/fetch_rss_history.py` ③ 붙여넣기 |
-| 추천 피드백(부적합 30일, 대기·적합 48시간) | 선택 | 같은 Notion DB 의 `추천 피드백` 열 |
-| 지원매치 일일 리포트 공고 | 선택 | 사용자 붙여넣기 또는 지원사업 검색 커넥터 |
-| 사건 메모(사례용) | 선택 | 사용자 |
+| 추천 피드백(부적합 30일, 대기·적합 48시간) | 선택 | 같은 Notion DB 의 `추천 피드백`·`부적합 키워드` 열 |
+| 키워드 풀 | 권장 | **정본 = Notion "디딤 블로그 키워드"** `collection://4e0fae54-aeb3-48dd-b948-b78886a8e859` → `keyword_rows`. DB 가 비었거나 커넥터가 없으면 스킬 내장 상수로 폴백 |
+| 지원매치 공고 | 선택 | 새 리포트(사용자 붙여넣기·지원사업 검색 커넥터) → `grant_items` / 이미 저장한 후보 = Notion "디딤 블로그 공고 후보" `collection://22228030-8382-4930-926e-fd46dc2f0bac` → `grant_rows` |
+| 사례 메모(사례용) | 선택 | Notion "디딤 블로그 사례 메모" `collection://d0dc583f-9a93-482c-af24-fede97f446a0` → `case_memo_rows`. 커넥터가 없으면 사용자가 준 메모를 `case_memos` 로(익명화·공개 동의 확인 후) |
 | 뉴스 | 선택 | 웹 검색 도구(§4) |
 | 오늘 날짜 | 권장 | 대화 맥락 (주차 = ISO 주차, KST) |
 
@@ -51,13 +52,19 @@ description: 특허그룹 디딤 네이버 블로그의 주제 추천·주간 �
 
 ### 1. 기록 읽기
 1. Notion 커넥터가 있으면 data source `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed`("디딤 블로그 콘텐츠")를 조회한다. 다른 워크스페이스면 이름으로 찾고, 없으면 `history-input.md` 스키마로 생성을 **제안만** 한다.
-2. 조회한 행을 그대로 입력 JSON 의 `notion_rows` 에 넣는다 → 스크립트가 `S4 발행완료`/`S5 성과측정` 행은 이력, `추천 피드백=부적합` 은 부적합 이력, `대기`/`적합` 은 최근 노출로 나눈다.
-3. Notion 이 없으면 `python3 scripts/fetch_rss_history.py > history.json`. 표에 없는 카테고리 이름이 `unknown_categories` 로 나오면 categoryNo 를 묻고 `--map` 으로 다시 실행한다. RSS 도 막히면 붙여넣기를 요청한다.
+2. 조회한 행을 그대로 입력 JSON 의 `notion_rows` 에 넣는다 → 스크립트가 `S4 발행완료`/`S5 성과측정` 행은 이력, `추천 피드백=부적합` 은 부적합 이력(`부적합 키워드` 열이 있으면 그 값, 없으면 제목·키워드에서 자동 추출), `대기`/`적합` 은 최근 노출로 나눈다.
+3. 같은 커넥터로 나머지 DB 3개도 읽어 행을 그대로 넣는다(SQL 조회 결과처럼 속성 이름을 키로, 페이지 `url` 포함):
+   - **키워드 DB** 전체 → `keyword_rows`(키워드·카테고리·주제 축·매출 가중치·우선순위·커버리지). 스크립트가 `커버리지=작성됨` 을 빼고 주제 축별로 묶어 키워드를 고른다(우선순위 높음/보통/낮음 50·30·20 순서 + 매출 가중치 비례). **행이 0개면(빈 DB) 넣지 않는다 → 내장 상수로 폴백**하고 결과 `sources.keyword_pool` 이 `builtin` 으로 나온다. DB 가 비어 있으면 아래 '키워드 DB 초기 행'으로 채우자고 제안한다.
+   - **공고 후보 DB** 중 `상태=후보` → `grant_rows`. 스크립트가 마감일 지난 행을 빼고(제외 목록에 "상태를 '마감'으로" 안내) 마감 7일 이내를 URGENT 로 다시 매긴다.
+   - **사례 메모 DB** → `case_memo_rows`. 스크립트가 `익명화 확인=체크` + `고객 공개 동의`가 `불필요(완전 익명)`/`받음` + `사용 상태=미사용` 인 메모만 쓰고, 나머지는 경고로 사유를 보여 준다. `출처 사건번호`는 결과에 넣지 않는다(글 노출 금지).
+4. Notion 이 없으면 `python3 scripts/fetch_rss_history.py > history.json`. 표에 없는 카테고리 이름이 `unknown_categories` 로 나오면 categoryNo 를 묻고 `--map` 으로 다시 실행한다. RSS 도 막히면 붙여넣기를 요청한다. 키워드 풀은 내장 상수를 쓴다.
+
+**키워드 DB 초기 행**: `python3 scripts/recommend.py export-keyword-seed --out assets/keyword-seed.json`(이미 만들어 둔 파일: `assets/keyword-seed.json`, 48행). 카테고리 = 신규 카테고리, 주제 축 = 원래 2차 분류 이름, 매출 가중치 = 원본 keyword_pool 시드(UPGRADE_SPEC §4.4)에 같은 키워드가 있으면 그 priority(HIGH 5·MEDIUM 3·LOW 1, 우선순위 높음/보통/낮음), 없으면 3·보통, 커버리지 = 미작성. 키워드 DB 가 비어 있을 때 사용자 확인을 받아 이 행들로 채운다.
 
 ### 2. 공고·뉴스 모으기
-- **지원매치 공고**(있으면): `grant_items` 에 넣는다. 스크립트가 자격·가점 원문에 특허·인증 용어가 있는 것만 남기고 마감 7일 이내는 URGENT 로 표시한다(`python3 scripts/recommend.py grant-check grants.json` 으로 따로 볼 수도 있다). 규칙: `references/grant-source-draft.md`.
+- **지원매치 공고**(새 리포트가 있으면): 먼저 `python3 scripts/recommend.py grant-check grants.json` 으로 자격·가점(·우대) 원문에 특허·인증 용어가 있는 것만 추린다. 통과분은 결과의 `notion_grant_rows_to_create`(특허·인증 역할, 관련 권리·인증, 근거 원문, 우선순위, 상태=후보, 마감일·리포트 일자·공고 URL)로 **공고 후보 DB 에 저장**한다(같은 공고명·URL 행이 이미 있으면 새로 만들지 않는다). 그다음 `grant_items` 와 `grant_rows` 를 함께 plan 에 넣는다(같은 공고는 DB 행 우선). 규칙: `references/grant-source-draft.md`.
 - **뉴스**: §4 절차. 통과한 기사만 `news_items` 에 넣는다. 웹 검색이 안 되면 건너뛴다.
-- **사례**: 사용자가 사건 메모를 주면 `case_memos` 에 넣는다. 메모 없이 사례 글을 만들지 않는다.
+- **사례**: 사례 메모 DB 행(`case_memo_rows`)만 쓴다. 커넥터가 없어 사용자가 대화로 메모를 주면 익명화 여부와 고객 공개 동의(불필요(완전 익명)/받음)를 확인해 `case_memos` 에 `anonymized: true`, `consent` 와 함께 넣는다(확인 안 되면 스크립트가 뺀다). 사용 가능한 메모 없이 사례 글을 만들지 않는다.
 
 ### 3. 추천 계산
 ```bash
@@ -66,7 +73,7 @@ python3 scripts/recommend.py plan input.json > result.json    # 전체 JSON (not
 ```
 스크립트 규칙:
 1. 이력을 categoryNo 로 분류하고 레거시는 신규로 합산해 이번 주·최근 4주·이번 달 발행 수를 센다.
-2. 이번 주 메인 = ISO 주차(KST) 로테이션 칸(1:25 → 2:27 → 3:24 → 4:26). 4주차는 사건 메모가 없으면 27. 메인이 직전 발행 글과 같은 카테고리면 다음 칸으로 넘긴다(연속 2주 방지).
+2. 이번 주 메인 = ISO 주차(KST) 로테이션 칸(1:25 → 2:27 → 3:24 → 4:26). 4주차는 사용 가능한 사례 메모가 없으면 27. 메인이 직전 발행 글과 같은 카테고리면 다음 칸으로 넘긴다(연속 2주 방지).
 3. 메인 후보 2건: 25 주간은 지원매치 공고 우선, 24 주간은 연재 다음 회차 우선, 나머지는 주제 축 키워드(같은 축 반복 회피, 직전 글의 축 회피).
 4. 대안: 나머지 로테이션 카테고리 1건씩(사례는 메모 있을 때만). 로테이션 외: 디딤 소식(뉴스, URGENT), 디딤 다이어리 1건.
 5. 필터(원본 그대로): 30일 안 부적합 키워드·3회 이상 부적합은 **절대 노출 금지**, 48시간 안 노출·화면의 추천·이미 발행한 키워드는 **가능하면 회피**.
@@ -82,15 +89,16 @@ python3 scripts/recommend.py plan input.json > result.json    # 전체 JSON (not
 5. 기사 원문 링크로 사실을 확인하고, 못 한 숫자·날짜는 "확인 필요"로 둔다.
 
 ### 5. 표 보여 주기와 피드백
-- 표를 보여 준 뒤 Notion 이 있으면 `notion_rows_to_create` 를 콘텐츠 DB 에 새 행으로 만든다(`추천 피드백=대기`, `추천 소스` = 키워드 풀/뉴스/지원매치 리포트/로테이션/직접 입력). 커넥터가 없으면 표를 대화에 남기고 사용자가 붙여넣게 한다.
-- **부적합**: 사유를 고르게 한다(주제가 디딤 서비스와 관련 없음 / 이미 다룬 주제 / 시의성 없음 / 기타) → 행의 `추천 피드백=부적합`, `부적합 사유` 기록. 부적합 키워드는 다음 실행에서 제목·타깃 키워드로 자동 추출된다. `reject-keywords` 결과에 `2026년` 같은 연도 토큰이 있으면(원본 동작) 이후 그 연도가 든 뉴스 제목이 모두 막히므로, 빼려면 `메모` 에 `부적합 키워드: a, b` 로 직접 적는다.
+- 표를 보여 준 뒤 Notion 이 있으면 `notion_rows_to_create` 를 콘텐츠 DB 에 새 행으로 만든다(`추천 피드백=대기`, `추천 소스` = 키워드 풀/뉴스/지원매치 리포트/로테이션/직접 입력, 뉴스·공고 링크는 **`근거 URL`** 열, 키워드 DB·공고 후보 DB·사례 메모 DB 에서 온 카드는 `키워드`/`공고`/`사례 메모` 관계 열에 그 페이지 URL). 커넥터가 없으면 표를 대화에 남기고 사용자가 붙여넣게 한다. **`메모` 열에는 쓰지 않는다**(사람이 쓰는 자유 기록 전용, _DECISIONS.md §7).
+- **부적합**: 사유를 고르게 한다(주제가 디딤 서비스와 관련 없음 / 이미 다룬 주제 / 시의성 없음 / 기타) → 행의 `추천 피드백=부적합`, `부적합 사유`, 그리고 `python3 scripts/recommend.py reject-keywords --title … --keywords …` 결과를 쉼표로 이어 **`부적합 키워드`** 열에 기록한다(원본 rejection_keywords 저장과 같음). 결과에 `2026년` 같은 연도 토큰이 있으면(원본 동작) 이후 그 연도가 든 뉴스 제목이 모두 막히므로 사용자에게 보여 주고 빼도 되는지 묻는다. 열이 비어 있는 옛 행은 다음 실행에서 제목·타깃 키워드로 자동 추출된다.
 - **새로고침**: 지금 보이는 제목을 `exclude` 에, 피할 주제 축 ID 를 `avoid_topic_axes` 에 넣고 다른 `--seed` 로 다시 돌린다.
-- **적합**: 행을 `추천 피드백=적합`, `상태=S0 기획중` 으로 바꾸고 §6 으로.
+- **적합**: 행을 `추천 피드백=적합`, `상태=S0 기획중` 으로 바꾸고 §6 으로. 공고 카드면 공고 후보 DB 행을 `상태=채택` 으로 바꾸고 `사용 글` 관계를 잇는다(콘텐츠 행 `공고` 관계와 같은 연결). 사례 카드면 사례 메모 DB 행을 `사용 상태=사용함` 으로 바꾸고 `사용 글` 관계를 잇는다(다음 추천에서 빠진다. 글을 접으면 사용자가 `미사용` 으로 되돌린다). 키워드 카드는 `키워드` 관계만 잇는다(커버리지 갱신은 didim-blog-health).
 
 ### 6. writer 로 넘길 브리핑
 `references/news-and-briefing.md` §6 브리핑 프롬프트를 Claude 가 직접 따르되, 카테고리는 표에서 정한 **네이버 카테고리 이름 + categoryNo** 로 고정한다(프롬프트의 CAT-* 목록은 레거시라 쓰지 않는다).
-- `episode`(실제 사례)는 지어내지 않는다. 사례(26)는 사건 메모를 익명화해서만 쓴다. 없으면 "대표 음성 브리핑에서 받을 것".
-- 뉴스·공고 기반이면 참고사항에 `참고 자료(뉴스 원문): URL` 또는 `지원사업 공고 원문: URL` 을 넣는다.
+- `episode`(실제 사례)는 지어내지 않는다. 사례(26)는 사례 메모 DB 의 사용 가능한 메모(상황·대응·결과·핵심 수치)만 익명화된 그대로 쓰고 `출처 사건번호`는 브리핑에도 넣지 않는다. 없으면 "대표 음성 브리핑에서 받을 것".
+- 뉴스·공고 기반이면 참고사항에 `참고 자료(뉴스 원문): URL` 또는 `지원사업 공고 원문: URL` 을 넣는다(공고 후보 DB 행이면 `근거 원문` 도 함께).
+- Notion 이 있으면 브리핑을 해당 콘텐츠 행 페이지 본문의 `## 브리핑` 섹션에 둔다(_DECISIONS.md §7 페이지 구조).
 
 ## 출력 형식
 ```
@@ -129,10 +137,11 @@ python3 scripts/recommend.py plan input.json > result.json    # 전체 JSON (not
 |---|---|
 | references/recommendation-rules.md | recommendation-engine.ts 원문, UPGRADE_SPEC §7, ID 불일치 |
 | references/filters-and-rotation.md | recommendations.ts 원문(필터, 로테이션, 카드, 부적합 처리, 레거시 경로) |
-| references/keyword-pools.md | 주제 축 키워드 풀·다이어리 주제 풀, keyword_pool 스키마·가중치 |
+| references/keyword-pools.md | 주제 축 키워드 풀·다이어리 주제 풀, keyword_pool 스키마·가중치, 키워드 DB(정본) 대응 |
+| assets/keyword-seed.json | 내장 풀 → 키워드 DB 초기 행 48개(`export-keyword-seed` 결과) |
 | references/schedule-12weeks.md | [폐기] 12주 스케줄 기록과 차이표 |
 | references/news-and-briefing.md | 뉴스 API·프롬프트 원문, 브리핑 프롬프트, placeholder 표 |
-| references/history-input.md | 입력 JSON, Notion DB(ID·필드·선택지), RSS·붙여넣기 |
+| references/history-input.md | 입력 JSON, Notion DB 4개(콘텐츠·키워드·공고 후보·사례 메모 — ID·필드·선택지), RSS·붙여넣기 |
 | references/grant-source-draft.md | 지원매치 공고 입력 슬롯과 주제화 규칙 |
-| scripts/recommend.py | `plan` / `grant-check` / `news-check` / `reject-keywords` / `week` |
+| scripts/recommend.py | `plan` / `grant-check` / `export-keyword-seed` / `news-check` / `reject-keywords` / `week` |
 | scripts/fetch_rss_history.py | 네이버 RSS → 발행 이력(categoryNo) |

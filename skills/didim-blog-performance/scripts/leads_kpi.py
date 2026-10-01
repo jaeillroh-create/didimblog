@@ -8,6 +8,7 @@
   - src/components/leads/lead-table.tsx   : 라벨 매핑
   - src/actions/recommendations.ts        : getTopPerformingPosts() 의 글별 상담 건수 집계
   - src/components/analytics/keyword-ranking-tracker.tsx : 월 키(YYYY-MM-01), 변동 = 지난달 - 이번달
+  - Notion "디딤 블로그 키워드" (collection://4e0fae54-aeb3-48dd-b948-b78886a8e859): 현재 순위·순위 확인일
 
 Notion "디딤 블로그 상담" (data source collection://e1272822-7efd-4850-b8c8-cfce02db7d00) 행을 그대로 받는다:
   회사명, 상담일, 유입 경로(블로그/지원매치/특허인증센터/소개/기타), 경유 글, 관심 서비스(다중:
@@ -241,15 +242,52 @@ def month_key(d):
     return f"{d.year}-{d.month:02d}-01"
 
 
+KW_PRIORITY = {"높음": "HIGH", "보통": "MEDIUM", "낮음": "LOW"}
+
+
+def normalize_kw(k):
+    out = dict(k)
+    for a, b in (("키워드", "keyword"), ("우선순위", "priority_ko"), ("현재 순위", "current_rank"),
+                 ("순위 확인일", "rank_checked_at"), ("매출 가중치", "revenue_weight"), ("카테고리", "category")):
+        if a in k and b not in k:
+            out[b] = k[a]
+    if not out.get("priority") and out.get("priority_ko") in KW_PRIORITY:
+        out["priority"] = KW_PRIORITY[out["priority_ko"]]
+    out.setdefault("id", out.get("keyword"))
+    return out
+
+
 def cmd_keyword_rank(args):
-    keywords = load_json(args.keywords)
-    rankings = load_json(args.rankings) if args.rankings else []
+    keywords = [normalize_kw(k) for k in load_json(args.keywords)]
     now = date.fromisoformat(args.now[:10]) if args.now else date.today()
-    cur_m = month_key(now)
-    last_m = month_key(now.replace(day=1) - timedelta(days=1))
     if args.only_high:
         keywords = [k for k in keywords if k.get("priority") == "HIGH"]
     keywords = sorted(keywords, key=lambda k: k.get("keyword") or "")
+
+    if args.new_ranks:
+        # Notion 키워드 DB 방식: '현재 순위' 하나만 저장 → 새 측정값과 비교 후 덮어쓴다
+        new = load_json(args.new_ranks)
+        rows, updates = [], []
+        for k in keywords:
+            if k.get("keyword") not in new:
+                continue
+            old, nr = k.get("current_rank"), new[k["keyword"]]
+            change, trend = None, "-"
+            if old is not None and nr is not None:
+                change = old - nr
+                trend = "상승" if change > 0 else ("하락" if change < 0 else "유지")
+            rows.append({"keyword": k["keyword"], "previous_rank": old, "previous_checked": k.get("rank_checked_at"),
+                         "new_rank": nr, "change": change, "trend": trend})
+            updates.append({"키워드": k["keyword"], "현재 순위": nr, "순위 확인일": now.isoformat()})
+        print(json.dumps({"checked_on": now.isoformat(), "rows": rows, "notion_keyword_updates": updates,
+                          "note": "순위 없음(TOP 100 밖·미노출)은 null 로 비운다. 변동 = 이전 - 새 순위(양수=개선). "
+                                  "이전 값은 덮어쓰므로 변동은 이번 보고에만 남는다."}, ensure_ascii=False, indent=2))
+        return
+
+    # 원본 방식(keyword_rankings 월별 행): 이번 달·지난 달 비교
+    rankings = load_json(args.rankings) if args.rankings else []
+    cur_m = month_key(now)
+    last_m = month_key(now.replace(day=1) - timedelta(days=1))
 
     def rank(kid, m):
         r = next((r for r in rankings if r.get("keyword_id") == kid and str(r.get("month"))[:7] == m[:7]), None)
@@ -257,7 +295,7 @@ def cmd_keyword_rank(args):
 
     rows = []
     for k in keywords:
-        kid = k.get("id") or k.get("keyword")
+        kid = k.get("id")
         cr, lr = rank(kid, cur_m), rank(kid, last_m)
         change, trend = None, "-"
         if cr is not None and lr is not None:
@@ -288,8 +326,9 @@ def main():
     n.add_argument("--today", help="상담일 기본값 YYYY-MM-DD (기본: 오늘)")
     n.set_defaults(func=cmd_new_lead)
 
-    k = sub.add_parser("keyword-rank", help="키워드 월별 순위(이번 달/지난 달/변동)")
-    k.add_argument("--keywords", required=True, help="[{id?, keyword, priority?}]")
+    k = sub.add_parser("keyword-rank", help="키워드 순위 갱신(키워드 DB 현재 순위) 또는 월별 비교(원본)")
+    k.add_argument("--keywords", required=True, help="Notion '디딤 블로그 키워드' 행 또는 [{id, keyword, priority}]")
+    k.add_argument("--new-ranks", help='새로 확인한 순위 JSON {"키워드": 순위 또는 null}')
     k.add_argument("--rankings", help="[{keyword_id(또는 키워드), month:'YYYY-MM(-01)', rank}]")
     k.add_argument("--now", help="기준일 YYYY-MM-DD")
     k.add_argument("--only-high", action="store_true", help="원본처럼 HIGH 키워드만")

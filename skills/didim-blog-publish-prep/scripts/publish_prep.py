@@ -1003,6 +1003,10 @@ def build(content: dict) -> dict:
     override = content.get("cta_override_key")
     if cta_none_reason and (is_diary or mode == "fixed" or (row and row["kind"] == "diary")):
         matched = None  # 다이어리·고정 페이지는 수동 선택도 무시
+    elif content.get("cta_none"):
+        # [스킬] Notion 'CTA' 열 = 없음 (notion_page.py to-content) — 사용자가 CTA 를 빼기로 한 글
+        matched = None
+        cta_none_reason = content.get("cta_none_reason") or "Notion 'CTA' 열 = 없음"
     else:
         matched = (options.get(override) or auto_cta) if override else auto_cta
     cta_text = enforce_email(matched.get("text")) if matched and matched.get("text") else None
@@ -1015,7 +1019,7 @@ def build(content: dict) -> dict:
     preview_mode = status is not None and status not in ("S3", "S4", "S5")
     blocks = image_blocks(body)
     chips = tag_states(tags)
-    return {
+    result = {
         "preview_mode": preview_mode,
         "status": status,
         "status_label": STATUS_LABELS.get(status, status),
@@ -1042,7 +1046,7 @@ def build(content: dict) -> dict:
         "cta": None if no_cta else {
             "key": matched.get("key") if matched else None,
             "category_name": matched.get("categoryName") if matched else None,
-            "matched_by": (matched or {}).get("_matched_by", "수동 선택" if override else None),
+            "matched_by": (matched or {}).get("_matched_by", (content.get("cta_override_label") or "수동 선택") if override else None),
             "text": cta_text,
             "note": matched.get("note") if matched else None,
             "options": [t["key"] for t in options.values()],
@@ -1073,11 +1077,35 @@ def build(content: dict) -> dict:
             "line_format_guide": line_format_guide(body),
         },
     }
+    # ── [스킬] Notion 전용 열 값 (_DECISIONS.md 7절) — 계산 결과를 열 선택지로 옮기기만 한다 ──
+    ex = result["extra"]
+    if override and override not in options and not (cta_none_reason and matched is None):
+        ex["warnings"].append(f"CTA '{override}' 는 이 카테고리의 템플릿 목록에 없어 자동 매칭을 사용했습니다")
+    for w in (content.get("_notion") or {}).get("warnings") or []:
+        ex["warnings"].append(w)
+    result["notion_values"] = notion_values(result, tags)
+    return result
 
 
-def render_text(r: dict) -> str:
+_NOTION_CTA_BY_KEY = {"현장수첩_절세": "절세 시뮬레이션", "현장수첩_인증": "인증 진단", "현장수첩_연구소": "연구소 진단",
+                      "현장수첩_출원": "출원 상담", "이웃추가": "이웃 추가", "디딤소식_이웃추가": "이웃 추가"}
+
+
+def notion_values(r: dict, tags: list[str]) -> dict:
+    """build 결과 → Notion "디딤 블로그 콘텐츠" 전용 열 값(CTA·면책 레벨·태그). 선택지 없는 CTA 는 None."""
+    cta = r.get("cta")
+    if cta is None:
+        cta_v = "없음"
+    else:
+        cta_v = _NOTION_CTA_BY_KEY.get(cta.get("key"))
+    lv = r["disclaimer"]["level"]
+    return {"CTA": cta_v, "면책 레벨": {"none": "없음"}.get(lv, lv),
+            "태그": ", ".join(re.sub(r"\s+", "", t).lstrip("#") for t in tags if str(t).strip())}
+
+
+def render_text(r: dict, fence: str = "````", heading: str = "##") -> str:
     """'네이버 에디터에 그대로 붙여넣을 블록' 텍스트 렌더링."""
-    F = "````"
+    F = fence
     out = []
     if r["preview_mode"]:
         out.append(f"⚠️ 미리보기 모드 — 현재 상태가 {r['status_label']}이므로 본문/CTA/태그 확인 및 복사만 가능합니다. "

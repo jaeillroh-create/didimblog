@@ -82,9 +82,11 @@ def resolve_category(value):
 
 
 def content_category(c):
-    # Notion: 카테고리="레거시" 이면 "2차 분류" 값(원래 이름)으로 판정
-    if c.get("category_name") == "레거시" or c.get("카테고리") == "레거시":
-        r = resolve_category(c.get("legacy_sub") or c.get("2차 분류"))
+    # Notion: 카테고리="레거시" 이면 "레거시 2차 분류" 값(원래 이름)으로 판정
+    # Notion: 카테고리="레거시"(또는 디딤 다이어리) 이면 "2차 분류" 값(원래 이름)으로 판정
+    sub = c.get("legacy_sub") or c.get("2차 분류") or c.get("레거시 2차 분류")
+    if sub and (c.get("category_name") in ("레거시", "디딤 다이어리") or c.get("카테고리") in ("레거시", "디딤 다이어리")):
+        r = resolve_category(sub)
         if r:
             return r
     for key in ("category_no", "categoryNo", "category_id", "category_name", "category", "카테고리"):
@@ -97,7 +99,11 @@ def content_category(c):
 # ── Notion "디딤 블로그 콘텐츠" (data source collection://463bc815-11ab-4290-9d86-22bd1aa9cfed) 속성 → 내부 키 ──
 # 본문·태그·콘텐츠 ID 는 DB 속성이 아니다(본문=페이지 내용). 대화에서 받은 값을 같은 키로 넣으면 된다.
 NOTION_KEYS = {
-    "콘텐츠 ID": "id", "제목": "title", "2차 분류": "legacy_sub", "상담": "consultations", "상태": "status", "카테고리": "category_name",
+    "콘텐츠 ID": "id", "제목": "title", "2차 분류": "legacy_sub", "레거시 2차 분류": "legacy_sub",
+    "상담": "consultations", "키워드": "keyword_pages", "디딤 소식 종류": "news_kind", "CTA": "cta_type",
+    "면책 레벨": "disclaimer_level", "검수 상태": "review_status_ko", "수정 횟수": "revision_count",
+    "검수 메모": "review_memo", "SEO 점수": "seo_score", "SEO 판정": "seo_verdict_ko",
+    "교차검증": "cross_validation_ko", "교차검증일": "cross_validated_at", "건강 상태": "health_status_ko", "상태": "status", "카테고리": "category_name",
     "categoryNo": "category_no", "타깃 키워드": "target_keyword",
     "발행예정일": "publish_date",  # SLA 역산·캘린더 기준 (초안 단계부터 기입)
     "발행일": "published_at",      # 실제 발행 후에만 기입
@@ -107,6 +113,10 @@ NOTION_KEYS = {
     "시리즈 회차": "series_order", "마지막 업데이트일": "last_updated_at", "메모": "notes",
     "본문": "body", "태그": "tags", "삭제됨": "is_deleted",
 }
+REVIEW_KO = {"미검수": "pending", "승인": "approved", "수정 요청": "revision_requested", "재검수 요청": "pending"}
+REVIEW_TO_KO = {"pending": "미검수", "approved": "승인", "revision_requested": "수정 요청"}
+SEO_VERDICT_KO = {"통과": "pass", "수정 필요": "fix_required", "발행 불가": "blocked"}
+HEALTH_KO = {"정상": "HEALTHY", "업데이트 필요": "UPDATE_NEEDED", "법률 변경 확인": "CHECK_NEEDED"}
 STATUS_FULL = {"S0": "S0 기획중", "S1": "S1 초안완료", "S2": "S2 검토완료", "S3": "S3 발행예정",
                "S4": "S4 발행완료", "S5": "S5 성과측정"}  # Notion "상태" 선택지 값 그대로
 STATUS_NAMES = {"기획중": "S0", "초안완료": "S1", "검토완료": "S2", "발행예정": "S3", "발행완료": "S4", "성과측정": "S5"}
@@ -125,6 +135,14 @@ def normalize_content(c):
             out["status"] = "S" + s[1]
         elif s in STATUS_NAMES:
             out["status"] = STATUS_NAMES[s]
+    if out.get("review_status") is None and out.get("review_status_ko") in REVIEW_KO:
+        out["review_status"] = REVIEW_KO[out["review_status_ko"]]
+    if out.get("seo_verdict") is None and out.get("seo_verdict_ko") in SEO_VERDICT_KO:
+        out["seo_verdict"] = SEO_VERDICT_KO[out["seo_verdict_ko"]]
+    if out.get("health_status") is None and out.get("health_status_ko") in HEALTH_KO:
+        out["health_status"] = HEALTH_KO[out["health_status_ko"]]
+    if out.get("news_kind") == "사무소 소식":
+        out["no_cta"] = True  # _DECISIONS.md §5: 사무소 소식은 CTA 없음
     if isinstance(out.get("tags"), str):
         out["tags"] = [t.strip() for t in out["tags"].replace("#", ",").split(",") if t.strip()]
     if out.get("status") in ("S4", "S5") and not out.get("published_at") and out.get("publish_date"):
@@ -206,22 +224,61 @@ def auto_match(keyword, contents):
     return None, None
 
 
+# Notion "디딤 블로그 키워드" (collection://4e0fae54-aeb3-48dd-b948-b78886a8e859) — 키워드 풀 정본
+KW_KEYS = {"키워드": "keyword", "카테고리": "category", "주제 축": "topic_axis", "매출 가중치": "revenue_weight",
+           "우선순위": "priority_ko", "커버리지": "coverage_ko", "현재 순위": "current_rank",
+           "순위 확인일": "rank_checked_at", "발행 글": "published_posts", "메모": "notes"}
+PRIORITY_KO = {"높음": "HIGH", "보통": "MEDIUM", "낮음": "LOW"}
+PRIORITY_TO_KO = {v: k for k, v in PRIORITY_KO.items()}
+
+
+def normalize_keyword(k):
+    out = dict(k)
+    for key, v in k.items():
+        if key in KW_KEYS and KW_KEYS[key] not in k:
+            out[KW_KEYS[key]] = v
+    if not out.get("priority") and out.get("priority_ko") in PRIORITY_KO:
+        out["priority"] = PRIORITY_KO[out["priority_ko"]]
+    pp = out.get("published_posts")
+    if isinstance(pp, str):
+        try:
+            pp = json.loads(pp)
+        except ValueError:
+            pp = [x.strip() for x in pp.split(",") if x.strip()]
+    out["published_posts"] = pp or []
+    if not out.get("covered_content_id") and out["published_posts"]:
+        out["covered_content_id"] = out["published_posts"][0]
+    if not out.get("id"):
+        out["id"] = out.get("keyword")
+    return out
+
+
 def cmd_coverage(args):
     contents = [normalize_content(c) for c in load_json(args.contents)] if args.contents else []
-    keywords = load_json(args.keywords) if args.keywords else seed_keywords()
+    keywords = [normalize_keyword(k) for k in (load_json(args.keywords) if args.keywords else seed_keywords())]
     # .order("priority", asc).order("category_id", asc) — 텍스트 정렬이므로 HIGH, LOW, MEDIUM 순
     keywords = sorted(keywords, key=lambda k: (k.get("priority") or "", k.get("category_id") or ""))
-    by_id = {(c.get("id") or c.get("title")): c for c in contents}
+    by_id = {}
+    for c in contents:
+        for key in (c.get("id"), c.get("title"), c.get("naver_url"), c.get("url")):
+            if key:
+                by_id[key] = c
 
     data = []
     for kw in keywords:
         covered = None
         match_rule = None
         cid = kw.get("covered_content_id")
-        if cid:
+        if kw.get("coverage_ko") in ("작성됨", "재작성 필요") and not cid:
+            covered = {"id": None, "title": "(키워드 DB 커버리지=" + kw["coverage_ko"] + ")"}
+            match_rule = "키워드 DB 커버리지 열"
+        elif cid:
             c = by_id.get(cid)
+            if c is None and kw.get("published_posts"):  # Notion 관계 URL 은 콘텐츠 목록에 없을 수 있다
+                c = {"title": str(cid)}
             covered = {"id": cid, "title": c.get("title") or "제목 없음"} if c else None
-            match_rule = "covered_content_id" if c else "covered_content_id(콘텐츠 없음 → 미커버 처리)"
+            match_rule = ("발행 글 관계" if kw.get("published_posts") else "covered_content_id") if c \
+                else "covered_content_id(콘텐츠 없음 → 미커버 처리)"
         elif args.auto_match:
             c, rule = auto_match(kw.get("keyword") or "", contents)
             if c:
@@ -252,14 +309,28 @@ def cmd_coverage(args):
                            "uncovered_keywords": [d["keyword"]["keyword"] for d in items if not d["coveredContent"]],
                            "recommendation_weight": PRIORITY_WEIGHT[pr]}
 
-    updates = [{"keyword_id": d["keyword"].get("id"), "covered_content_id": d["coveredContent"]["id"]}
+    updates = [{"키워드": d["keyword"].get("keyword"), "커버리지": "작성됨",
+                "발행 글(관계 추가)": d["coveredContent"]["title"], "keyword_id": d["keyword"].get("id")}
                for d in data if d["matchRule"] and d["matchRule"].startswith("auto:")]
+    # 연결 글이 '업데이트 필요'면 키워드 커버리지 '재작성 필요' 제안
+    for d in data:
+        cc = d["coveredContent"]
+        c = by_id.get(cc["id"]) if cc and cc.get("id") else None
+        if c and c.get("health_status_ko") == "업데이트 필요" and d["keyword"].get("coverage_ko") != "재작성 필요":
+            updates.append({"키워드": d["keyword"].get("keyword"), "커버리지": "재작성 필요",
+                            "이유": f"연결 글 '{c.get('title')}' 건강 상태=업데이트 필요"})
+    next_up = sorted([d["keyword"] for d in data if not d["coveredContent"]],
+                     key=lambda k: (-(k.get("revenue_weight") or 0), {"HIGH": 0, "MEDIUM": 1, "LOW": 2}.get(k.get("priority"), 3)))
+    rewrite = [d["keyword"].get("keyword") for d in data if d["keyword"].get("coverage_ko") == "재작성 필요"]
     print(json.dumps({
         "stats": {"total": total, "covered": covered_n, "uncovered": total - covered_n},
         "coverage_percent": pct, "color_band": band,
         "by_category": groups, "by_priority": by_priority,
-        "auto_match_updates": updates,
-        "keyword_source": args.keywords or "UPGRADE_SPEC §4.4 시드(19개) — 실제 DB 키워드 풀은 확인 필요",
+        "notion_keyword_updates": updates,
+        "next_keywords": [{"keyword": k.get("keyword"), "매출 가중치": k.get("revenue_weight"),
+                           "우선순위": PRIORITY_TO_KO.get(k.get("priority"), k.get("priority"))} for k in next_up[:10]],
+        "rewrite_needed": rewrite,
+        "keyword_source": args.keywords or "UPGRADE_SPEC §4.4 시드(19개) — Notion '디딤 블로그 키워드' DB 가 정본",
     }, ensure_ascii=False, indent=2))
 
 
@@ -316,7 +387,7 @@ def main():
 
     c = sub.add_parser("coverage", help="키워드 풀 vs 발행 글 커버리지")
     c.add_argument("--contents", help="콘텐츠 JSON 배열(커버 글 제목 조회·자동 매칭용)")
-    c.add_argument("--keywords", help="keyword_pool JSON 배열(생략 시 UPGRADE_SPEC 시드 19개)")
+    c.add_argument("--keywords", help="Notion '디딤 블로그 키워드' 행 또는 keyword_pool JSON 배열(생략 시 UPGRADE_SPEC 시드 19개)")
     c.add_argument("--auto-match", action="store_true", help="미지정 키워드를 발행 글과 자동 매칭(스킬 보완)")
     c.set_defaults(func=cmd_coverage)
 
