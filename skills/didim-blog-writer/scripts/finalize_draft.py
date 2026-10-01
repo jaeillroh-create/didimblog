@@ -338,7 +338,7 @@ def finalize(phase2_body, phase3_body, category_id, keyword, title, outline=None
         "edit_notes": edit_notes,
         "markers_restored": restored,
         "publish_date": next_tuesday(today or dt.date.today()).isoformat(),
-        "status_after_save": "S1",  # Notion 상태 열에서는 'S1'로 시작하는 기존 옵션을 선택
+        "status_after_save": "S1 초안완료",  # Notion 상태 선택지 정확한 값 (없으면 'S1' 접두사 선택지로 폴백)
         "warnings": warnings,
     }
 

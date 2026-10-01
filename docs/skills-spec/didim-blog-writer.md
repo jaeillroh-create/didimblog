@@ -96,17 +96,18 @@
 | 백오피스 테이블.컬럼 | Notion 열 (타입) | 스킬이 쓰는 값 |
 |---|---|---|
 | contents.title | 제목 (title) | Phase 1 제목 |
-| contents.status | 상태 (select: S0 기획 / S1 초안 / S2 검토 / S3 예약 / S4 발행 / S5 성과 측정) | 'S1'로 시작하는 기존 선택지. _DECISIONS.md 표기는 "S1 초안완료"이나 실제 DB 선택지는 "S1 초안" — 새 선택지를 만들지 않음 |
+| contents.status | 상태 (select: S0 기획중 / S1 초안완료 / S2 검토완료 / S3 발행예정 / S4 발행완료 / S5 성과측정) | "S1 초안완료" (정확한 값 우선, 없으면 'S1' 접두사 선택지로 폴백, 새 선택지 생성 금지) |
 | contents.category_id | 카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시) | 신규 이름, 레거시면 "레거시" |
 | (2차 분류) | 레거시 2차 분류 (select: 절세 시뮬레이션 … 대표의 생각) | 레거시 2차·다이어리 하위(18~20) 이름 |
 | (신규) | categoryNo (number) | 네이버 categoryNo |
 | contents.target_keyword | 타깃 키워드 (text) | 핵심 키워드 |
-| contents.publish_date | 발행일 (date) | 비워 둠(발행 후 기록). 발행예정일은 메모에 |
+| contents.publish_date | 발행예정일 (date) | 다음 화요일(`publish_date`) |
+| (실제 발행) | 발행일 (date) | 비워 둠 — 실제 발행 후에만 기록 |
 | (신규) | 발행 URL (url) | 비워 둠 |
 | (추천 출처) | 추천 소스 (select: 키워드 풀 / 뉴스 / 지원매치 리포트 / 로테이션 / 직접 입력) | planner가 준 값, 없으면 직접 입력 |
 | (신규) | 시리즈 (text) / 시리즈 회차 (number) | 연재일 때 |
 | contents.updated_at | 마지막 업데이트일 (date) | 오늘 |
-| contents.tags, seo/면책/검증 | 메모 (text) | `발행예정일 · 면책 레벨 · 품질 점수 · 태그 · 수정 내역 요약` |
+| contents.tags, seo/면책/검증 | 메모 (text) | `면책 레벨 · 품질 점수 · 태그 · 수정 내역 요약` |
 | contents.body | 페이지 본문 | 최종 본문 마크다운 |
 | contents.draft_done_at, is_ai_generated, ai_generations.* | 없음 | 저장하지 않음 (Phase 1 아웃라인 등 중간 산출물은 작업 폴더) |
 
@@ -131,7 +132,7 @@
 17. **[결정 사항 반영] 브리핑의 CAT-A-04 누락 재현 폐기**: 원본 briefing.ts는 CAT-A-04를 2차 유효 목록에서 빠뜨려 빈 값으로 바꾸지만, 스킬은 재현하지 않고 신규 구조로 매핑한다(4절 29).
 18. **[결정 사항 반영] 저장소**: contents 테이블 → Notion "디딤 블로그 콘텐츠"(7절). AI 생성 여부·초안 완료일 등은 저장하지 않음.
 19. **레거시 14·15의 CTA**: 코드 CAT-B-01/02 뒤바뀜 대신 이름 의미대로 고정(특허 전략 노트 = 포트폴리오 CTA, AI와 IP = AI CTA).
-20. **25 지원사업·인증과 특허 CTA 기본값 = 인증 진단**: 결정 문서가 기본값을 정하지 않아 허브 성격(지원사업·인증)에 맞춰 정함 — 확인 필요.
+20. **25 지원사업·인증과 특허 CTA 기본값 = 인증 진단**: 키워드 미매칭 시 인증 진단 CTA (코디네이터 확정, 2026-10-01).
 
 원본에 그대로 둔 코드 내부 모순(스킬도 원문 유지, 확인 필요)
 - `PHASE2_PROMPT`에 `{{visual_rules}}` 자리가 없음(주석·호출부는 전달).
@@ -153,5 +154,5 @@
 | 넘김 → 받음 | didim-blog-factcheck | Phase 2(+2.5) 직후: 문단 ID 본문 → 사용자가 고른 수정 반영 본문 |
 | 넘김 | didim-blog-seo | 최종 제목·본문·키워드·카테고리 → SEO 점수 |
 | 넘김 | didim-blog-publish-prep | 최종 본문·태그 → 네이버 붙여넣기용 텍스트·태그·ALT·체크리스트 |
-| 넘김 | didim-blog-ops | Notion 상태 S1·발행예정일(메모) → 검수·상태 전이·캘린더 |
+| 넘김 | didim-blog-ops | Notion 상태 "S1 초안완료"·발행예정일 열 → 검수·상태 전이·캘린더 |
 | 참고 | didim-blog-health | 기존 글과 중복 회피·내부 링크([내부링크] 마커) 후보 |

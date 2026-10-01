@@ -41,15 +41,15 @@
 ## 4. 처리 규칙
 
 1. **카테고리 판별**: 신규 구조(skills/_DECISIONS.md §1·§2)를 v2 카테고리 규칙에 매핑한다 — 지원사업·인증과 특허(25)·출원·심판 실무(27)·사례(26) → 현장 수첩 규칙(팔레트·개수 2~3), 지식재산 경영(24) → IP 라운지 규칙(1~2), 디딤 소식(28) → IP 뉴스 한 입 규칙(0~1, C만), 디딤 다이어리(17~20) → 분위기 사진. 레거시 이름도 받는다(`scripts/categories.py`). 원본은 카테고리명 문자열에 "다이어리" 포함 여부만 본다(client-generate.ts:857).
-2. **다이어리**: 설계 단계를 실행하지 않고 분위기 사진 1~2장 프롬프트만(글자·로고·CTA·사람 얼굴 없음, 4:3 1080×810). 원본은 다이어리에도 Phase 2.5를 "정확히 3"개로 실행한다(client-generate.ts:857-860) — v2에서 폐지. 장면 예시 12개는 원본 `VISUAL_RULES_DIARY`(prompts.ts:462-473).
-3. **후보 데이터 추출**: 비교 숫자 쌍 / 핵심 수치 3개+ / 3단계+ 절차 / 요건 5개+ / 제도·기관 구조 중 하나 이상 (v2 "개수와 배치"). 원본의 1단계 데이터 추출 목록은 prompts.ts:1032-1041.
-4. **유형 매칭**: A~H 8유형(정의 v2 "본문 인포그래픽 유형" 표, 원본 prompts.ts:1043-1054). 같은 유형 1회, B와 F 동시 금지(원본 prompts.ts:1059-1064와 동일). 카테고리별 우선 유형(v2).
-5. **개수**: 썸네일 1 + 카테고리별 범위(4.1). 원본은 "정확히 4"(비다이어리)/"정확히 3"(다이어리) 고정(client-generate.ts:860) — v2에서 범위로.
-6. **위치**: 썸네일 "top", 본문은 데이터 문단 바로 뒤 "p:N"(원본 prompts.ts:1066-1068, 1114). 이미지 사이 문단 2개 이상(v2; 원본 VISUAL_RULES "연속 2개 금지" prompts.ts:324).
-7. **설계 JSON 8항목**: type, position, headline(20자 이내), texts(이미지의 모든 글자), data_source(본문 원문 인용), emphasis(1~2개), footnote(출처·기준일·단위, 사례면 "개별 상황에 따라 다름"), alt(20~40자, 키워드 앞). 원본 항목(type_name, selection_reason, korean_prompt, english_prompt, emotion, data_source)은 prompts.ts:1081-1112, client-generate.ts:825-834.
+2. **다이어리**: 설계 단계를 실행하지 않고 분위기 사진 1~2장 프롬프트만(글자·로고·CTA·사람 얼굴 없음, 4:3 1080×810). 원본은 다이어리에도 Phase 2.5를 "정확히 3"개로 실행한다(client-generate.ts:857-859) — v2에서 폐지. 장면 예시 12개는 원본 `VISUAL_RULES_DIARY`(prompts.ts:462-473).
+3. **후보 데이터 추출**: 비교 숫자 쌍 / 핵심 수치 3개+ / 3단계+ 절차 / 요건 5개+ / 제도·기관 구조 중 하나 이상 (v2 "개수와 배치"). 원본의 1단계 데이터 추출 목록은 prompts.ts:1031-1040.
+4. **유형 매칭**: A~H 8유형(정의 v2 "본문 인포그래픽 유형" 표, 원본 prompts.ts:1041-1054). 같은 유형 1회, B와 F 동시 금지(원본 prompts.ts:1055-1062와 동일). 카테고리별 우선 유형(v2).
+5. **개수**: 썸네일 1 + 카테고리별 범위(4.1). 원본은 "정확히 4"(비다이어리)/"정확히 3"(다이어리) 고정(client-generate.ts:859) — v2에서 범위로.
+6. **위치**: 썸네일 "top", 본문은 데이터 문단 바로 뒤 "p:N"(원본 prompts.ts:1063-1065, 1115). 이미지 사이 문단 2개 이상(v2; 원본 VISUAL_RULES "연속 2개 금지" prompts.ts:324).
+7. **설계 JSON 8항목**: type, position, headline(20자 이내), texts(이미지의 모든 글자), data_source(본문 원문 인용), emphasis(1~2개), footnote(출처·기준일·단위, 사례면 "개별 상황에 따라 다름"), alt(20~40자, 키워드 앞). 원본 항목(type_name, selection_reason, korean_prompt, english_prompt, emotion, data_source)은 prompts.ts:1084-1113, client-generate.ts:825-834.
 8. **texts 배치 순서**(스킬이 정함, 렌더러 계약): T=[태그, 메인 2~3줄, (서브)], A=[라벨A, 값A, 라벨B, 값B, (차이)], B=["제목|설명"…], C·D·F·H=[라벨, 값…], E=[항목…], G=[중심, "주체|관계"…]. 확인 필요: v2 문서에는 texts의 순서 규칙이 없다.
 9. **검사**(`scripts/check_sources.py`): data_source가 본문에 그대로 있는지(공백 정규화, 굵게 표시·문단 ID 제거 후 비교), headline·texts·footnote의 모든 숫자 표기가 본문에 있는지(띄어쓰기만 다르면 경고), texts 숫자가 data_source에 있는지, 글자 수(헤드라인 20·라벨 10·썸네일 한 줄 10), 강조 1~2개·texts 안, 수치 5개 이하, 결과 보장 표현, 사례 주석, 연락처·URL·전화, 다른 '디딤' 표기, '특허청', 이모지, ALT 길이·키워드 위치·반복(3회 초과), 썸네일 1개, 카테고리별 개수, 유형 중복, B+F, 이미지 간격. 원본에는 data_source 검증이 없다(v2 "코드에 반영할 위치"에서 요구).
-10. **렌더링**(`scripts/render.py`): 유형별 SVG 템플릿에 texts·팔레트를 넣어 그린다. 팔레트 `BLOG_IMAGE_PALETTE`(v2 표): 현장 수첩 #D4740A/강조 #1B3A5C, IP 라운지 #1B3A5C/#C28B2E, IP 뉴스 한 입 #3A3A3A/#C5302B, 썸네일 글자 #FFFFFF, 본문 흰 배경·글자 #191F28·강조=대표색, 보조 회색 #8B95A1(확인 필요: v2에 hex 없음). 폰트 `'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif`. 최소 글자 28px(폭 2.5%). 긴 글자는 크기 축소 → 줄바꿈(외톨이 단어 방지 균형 줄바꿈), 넘치면 warnings. 썸네일 레이아웃: 상단 태그(0~15%) / 메인 문구(폭 약 80%) / 하단 얇은 구분선 + "특허그룹 디딤"(메인의 약 20%) — 원본 FIRST_IMAGE_RULES(prompts.ts:404-433)와 v2 동일.
+10. **렌더링**(`scripts/render.py`): 유형별 SVG 템플릿에 texts·팔레트를 넣어 그린다. 팔레트 `BLOG_IMAGE_PALETTE`(v2 표): 현장 수첩 #D4740A/강조 #1B3A5C, IP 라운지 #1B3A5C/#C28B2E, IP 뉴스 한 입 #3A3A3A/#C5302B, 썸네일 글자 #FFFFFF, 본문 흰 배경·글자 #191F28·강조=대표색, 보조 회색 #8B95A1(확인 필요: v2에 hex 없음). 폰트 `'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif`. 최소 글자 28px(폭 2.5%). 긴 글자는 크기 축소 → 줄바꿈(외톨이 단어 방지 균형 줄바꿈), 넘치면 warnings. 썸네일 레이아웃: 상단 태그(0~15%) / 메인 문구(폭 약 80%) / 하단 얇은 구분선 + "특허그룹 디딤"(메인의 약 20%) — 원본 FIRST_IMAGE_RULES(prompts.ts:403-433)와 v2 동일.
 11. **PNG 변환**: cairosvg → Python playwright → Node playwright 순으로 시도, 없으면 SVG + preview.html. 원본은 DALL·E 3 b64 PNG(providers/image-gen.ts:15-22).
 12. **마커 삽입**(`scripts/insert_markers.py`): 원본 `insertInfographicMarkers` 포팅(뒤에서부터, top→제목 다음, p:N→다음 문단 앞, ##소제목, 숫자, 균등 분배; client-generate.ts:984-1086). 레거시 모드는 원본과 바이트 단위로 같은 출력, v2 모드는 설명=alt·한국어=headline+texts·(2) 파일명.
 13. **JSON 복구**(`scripts/design_json.py`): 원본 `parsePhase25Json` 3단계(펜스 제거·그대로 파싱 / 잘린 JSON 괄호 닫기 / 개별 객체 정규식 추출; client-generate.ts:904-978) 포팅.
@@ -64,7 +64,7 @@
 | 검사 결과 | `{"ok","errors","warnings","images":[{"index","type","numbers","missing_sources"}]}` (오류 시 종료 코드 1) |
 | 이미지 | `NN_<type>.svg`, 가능하면 `.png`, `preview.html`; 렌더 결과 JSON `{"outputs":[{index,type,position,alt,category,palette,svg,png,width,height,warnings}],"png_engine","preview","font_note"}` |
 | 다이어리 | 분위기 사진 1~2장 프롬프트(위치·장면·ALT·영문 프롬프트) |
-| 마커 삽입 본문 | 레거시 `━━ 📷 이미지 N ━━ / [IMAGE: …] / ━━━━` 형식 (`extractImageMarkers` 박스 정규식 호환, ai-editor-client.tsx:519) |
+| 마커 삽입 본문 | 레거시 `━━ 📷 이미지 N ━━ / [IMAGE: …] / ━━━━` 형식 (`extractImageMarkers` 박스 정규식 호환, ai-editor-client.tsx:510) |
 | 검수 체크리스트 | 8항목 ✓/✗ |
 
 ## 6. 예외·오류 처리
@@ -72,9 +72,9 @@
 | 상황 | 원본 | 스킬 |
 |---|---|---|
 | LLM 스트리밍 실패 | `{success:false, error}` (client-generate.ts:880-882), toast로 건너뜀 (ai-editor-client.tsx:833-839) | 해당 없음(Claude가 직접 설계) |
-| JSON 파싱 실패 | 3단계 복구 후 실패 시 "Phase 2.5 JSON 파싱 완전 실패" (client-generate.ts:886-889) | `design_json.py` 동일 복구 + 3단계 보정, 실패 시 종료 메시지 |
+| JSON 파싱 실패 | 3단계 복구 후 실패 시 "Phase 2.5 JSON 파싱 완전 실패" (client-generate.ts:888) | `design_json.py` 동일 복구 + 3단계 보정, 실패 시 종료 메시지 |
 | 설계 결과 비어 있음 | "인포그래픽 설계 결과가 비어있습니다" (client-generate.ts:892-895) | 썸네일만 있는 것도 허용(본문 0개 가능 카테고리), 썸네일 0개면 검사 오류 |
-| 위치를 못 찾음 | 소제목 → 숫자 → 균등 분배 → 본문 끝 폴백 (client-generate.ts:1031-1081) | 동일. 단 검사 단계에서 존재하지 않는 p:N은 오류로 먼저 잡음 |
+| 위치를 못 찾음 | 소제목 → 숫자 → 균등 분배 → 본문 끝 폴백 (client-generate.ts:1038-1082) | 동일. 단 검사 단계에서 존재하지 않는 p:N은 오류로 먼저 잡음 |
 | 숫자가 본문에 없음 | 검사 없음 | 오류 — 숫자를 지우거나 본문 표기로 수정. 본문 수정은 사용자에게 알림 |
 | 글자가 넘침 | 해당 없음 | 크기 축소(최소 28px) → 줄바꿈 → warnings. 문구를 줄여 재렌더링 |
 | 한글 폰트 없음 | 해당 없음 | `font_note`로 알림(설치 시도 안 함). SVG를 한글 폰트가 있는 PC에서 열도록 안내 |
@@ -103,18 +103,18 @@
 
 | 항목 | 원본 코드 (근거) | 스킬 (v2) |
 |---|---|---|
-| 이미지 속 글자 | 설계는 "ALL text in image must be Korean" (prompts.ts:335, 1072), 그림 단계는 "NO text in the image" (prompts.ts:1754) | 인포그래픽은 코드 렌더링으로 한국어 글자를 그림. "NO text"는 이미지 모델(다이어리 사진)에만 |
-| 개수 | VISUAL_RULES "1~5개" (prompts.ts:323), PROMPT_FIELD "1~5개" (prompts.ts:550), Phase 2.5 "정확히 4/3" (client-generate.ts:860) | 썸네일 1 + 카테고리별 0~3 |
-| 다이어리 | VISUAL_RULES_DIARY "사진 1~2장" (prompts.ts:462-473)인데 Phase 2.5는 다이어리에도 3개 설계 (client-generate.ts:856-860) | 설계 단계 건너뜀, 분위기 사진만 |
-| 비율·크기 | 16:9 (prompts.ts:357), 1:1 1080 (prompts.ts:404), DALL·E 1024×1024 (prompts.ts:1756, providers/image-gen.ts:11) | 썸네일 1:1 1080×1080, 본문 4:5 1080×1350, 다이어리 4:3 1080×810 |
-| 색상 | "특정 색상 고정 금지·감정 톤에 맞게 자유 선택" (prompts.ts:326, 352, 355), 썸네일 네이비 #1A2B4A 하드코딩 (prompts.ts:423-425), DALL·E 네이비 #1A1A2E (prompts.ts:1752) | `BLOG_IMAGE_PALETTE` 하나, 네이비 #1B3A5C로 통일, 감정 톤은 문구로만 |
-| 헤드라인 표현 | 예시 "150만 원으로 법인세 6천만 원 절감한 방법" (prompts.ts:347), "4주 만에 연구소 설립 완료" (prompts.ts:387) | 광고 규정 적용: 사례·범위 표현 ("…줄인 사례") |
-| 설계 출력 | korean_prompt·english_prompt·emotion·type_name·selection_reason (prompts.ts:1081-1112) | headline·texts·data_source·emphasis·footnote·alt |
-| 이중 프롬프트 | 한국어+영문 필수 (prompts.ts:328-336, 1070-1072) | 없음 |
-| ALT | 글 전체 "핵심 3개" (prompts.ts:480) | 이미지마다 1개, 같은 키워드 3회 초과 반복 금지 |
-| 현장 수첩 A | "Before/After 비교(A) 필수 1개 이상" (prompts.ts:449) | "A 우선", 비교 숫자가 본문에 없으면 만들지 않음 |
+| 이미지 속 글자 | 설계는 "ALL text in image must be Korean" (prompts.ts:335, 1069), 그림 단계는 "NO text in the image" (prompts.ts:1752) | 인포그래픽은 코드 렌더링으로 한국어 글자를 그림. "NO text"는 이미지 모델(다이어리 사진)에만 |
+| 개수 | VISUAL_RULES "1~5개" (prompts.ts:323), PROMPT_FIELD "1~5개" (prompts.ts:550), Phase 2.5 "정확히 4/3" (client-generate.ts:859) | 썸네일 1 + 카테고리별 0~3 |
+| 다이어리 | VISUAL_RULES_DIARY "사진 1~2장" (prompts.ts:462-473)인데 Phase 2.5는 다이어리에도 3개 설계 (client-generate.ts:857-859) | 설계 단계 건너뜀, 분위기 사진만 |
+| 비율·크기 | 16:9 (prompts.ts:362), 1:1 1080 (prompts.ts:403), DALL·E 1024×1024 (prompts.ts:1755, providers/image-gen.ts:11) | 썸네일 1:1 1080×1080, 본문 4:5 1080×1350, 다이어리 4:3 1080×810 |
+| 색상 | "특정 색상 고정 금지·감정 톤에 맞게 자유 선택" (prompts.ts:326, 358, 361), 썸네일 네이비 #1A2B4A 하드코딩 (prompts.ts:422-424), DALL·E 네이비 #1A1A2E (prompts.ts:1751) | `BLOG_IMAGE_PALETTE` 하나, 네이비 #1B3A5C로 통일, 감정 톤은 문구로만 |
+| 헤드라인 표현 | 예시 "150만 원으로 법인세 6천만 원 절감한 방법" (prompts.ts:357), "4주 만에 연구소 설립 완료" (prompts.ts:385) | 광고 규정 적용: 사례·범위 표현 ("…줄인 사례") |
+| 설계 출력 | korean_prompt·english_prompt·emotion·type_name·selection_reason (prompts.ts:1084-1113) | headline·texts·data_source·emphasis·footnote·alt |
+| 이중 프롬프트 | 한국어+영문 필수 (prompts.ts:328-336, 1068-1070) | 없음 |
+| ALT | 글 전체 "핵심 3개" (prompts.ts:481) | 이미지마다 1개, 같은 키워드 3회 초과 반복 금지 |
+| 현장 수첩 A | "Before/After 비교(A) 필수 1개 이상" (prompts.ts:448) | "A 우선", 비교 숫자가 본문에 없으면 만들지 않음 |
 | data_source | 출력만 하고 검증 없음 (client-generate.ts:846-898) | 본문 원문 존재 검사 (`check_sources.py`) |
-| 이모지 | 예시에 📋💰📅 아이콘 (prompts.ts:363-365) | 금지 |
+| 이모지 | 예시에 📋💰📅 아이콘 (prompts.ts:369) | 금지 |
 | 이미지 생성 경로 | 모든 마커를 DALL·E 3로 (image-gen.ts:120-285) | T·A~H는 SVG 템플릿, 이미지 모델은 다이어리 사진만 |
 
 ### 8.2 신규 카테고리 매핑 (skills/_DECISIONS.md 반영)
@@ -128,8 +128,8 @@
 | 항목 | 원본 동작 (근거) | 스킬 처리 |
 |---|---|---|
 | JSON 복구 3단계 | 정규식 매치가 따옴표로 끝나는데 `'"}'`+`'}'`을 붙여 `…"값""}}`가 되어 JSON.parse가 항상 실패 (client-generate.ts:951-955). 깨진 따옴표 입력에서 TS는 `null`, 동일 입력 실행으로 확인 | 원본 시도 후 실패하면 값 뒤에서 바로 `}`로 닫는 보정 시도 (design_json.py) |
-| 썸네일 이중 삽입 | T 삽입 뒤 p:N 분기에 `!inserted` 조건이 없어 T가 "p:N" position을 가지면 두 번 삽입 (client-generate.ts:1006-1034). 테스트에서 설계 6개 → 마커 7개로 확인 | v2 모드는 1회만. legacy 모드는 원본 그대로 |
-| 썸네일 위치 | Phase 2.5 전에 문단 ID를 주입하면(ai-editor-client.tsx:800-803) 본문이 `<!-- p:1 -->\n# 제목`으로 시작해 `/^#[^\n]*\n/`(client-generate.ts:1009)이 실패 → 썸네일 마커가 제목 위(문서 맨 앞)에 들어감 | v2 모드는 문단 ID 주석 다음 제목 줄 뒤에 삽입 |
+| 썸네일 이중 삽입 | T 삽입 뒤 p:N 분기에 `!inserted` 조건이 없어 T가 "p:N" position을 가지면 두 번 삽입 (client-generate.ts:1008-1034). 테스트에서 설계 6개 → 마커 7개로 확인 | v2 모드는 1회만. legacy 모드는 원본 그대로 |
+| 썸네일 위치 | Phase 2.5 전에 문단 ID를 주입하면(ai-editor-client.tsx:800-803) 본문이 `<!-- p:1 -->\n# 제목`으로 시작해 `/^#[^\n]*\n/`(client-generate.ts:1010)이 실패 → 썸네일 마커가 제목 위(문서 맨 앞)에 들어감 | v2 모드는 문단 ID 주석 다음 제목 줄 뒤에 삽입 |
 | ALT 저장 | `generated_images.alt_text`를 조회만 하고 쓰는 코드가 없음 (image-gen.ts:168-178, 320) | 설계 JSON의 alt로 대체. 확인 필요 |
 | Phase 2 시각 규칙 | 3단계 파이프라인의 Phase 2는 `visualRules: ""`로 호출 (ai-editor-client.tsx:781) — 마커는 Phase 2.5만 만듦. 반면 시스템 프롬프트(PROMPT_FIELD 등, prompts.ts:552·645·739·821)에는 VISUAL_RULES가 들어 있어 단일 생성 경로에서는 본문 작성 중 마커를 만든다. 어느 경로가 운영 중인지는 확인 필요 | 스킬은 본문 완성 후 별도 설계 1가지 경로만 |
 | `buildImagePrompt` | `String.replace`라 같은 placeholder가 두 번 있으면 첫 번째만 치환 (image-gen.ts:72-76). 현재 템플릿은 각 1회라 영향 없음 | 해당 없음 |
