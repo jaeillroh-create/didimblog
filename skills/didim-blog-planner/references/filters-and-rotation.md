@@ -1,0 +1,1310 @@
+# 필터·로테이션·카드 생성 원문 (verbatim) — src/actions/recommendations.ts
+
+> 코드 원문 그대로. `scripts/recommend.py` 가 이 로직을 포팅했다(mulberry32 난수 주입 시 원본과 동일 결과 확인).
+
+## 목차
+1. 부적합 이력·블랙리스트·hard/soft 필터 (727-898)
+2. 가중치 키워드 샘플링 HIGH/MEDIUM/LOW (900-939)
+3. 멀티소스 추천·저장·키워드/뉴스/스케줄 카드 (941-1176)
+4. 카테고리별 추천 — 대시보드가 실제로 쓰는 경로 (1221-1442)
+5. 적합/부적합 처리와 rejection_keywords 추출 (1178-1220, 1444-1495)
+6. 레거시 주간 추천 getWeeklyRecommendations — UI 미사용 (25-271)
+7. 긴급 뉴스 추천·관련 기존 글 (273-485)
+8. 대시보드 부적합 사유 프리셋 (weekly-recommendation.tsx)
+
+## 1. 부적합 이력·블랙리스트·hard/soft 필터
+
+원문: `src/actions/recommendations.ts:722-898`
+
+```typescript
+// ─────────────────────────────────────────────────────────────
+// 멀티소스 추천 (키워드 풀 / 뉴스 / 스케줄) — 2~3개 동시 표시
+// 010 migration: content_recommendations 테이블을 사용해 피드백 저장 & 블랙리스트
+// ─────────────────────────────────────────────────────────────
+
+const REJECT_LOOKBACK_DAYS = 30;
+const BLACKLIST_REJECT_COUNT = 3;
+
+/**
+ * generateTitleSuggestion 템플릿 등에서 나오는 무의미 토큰 — 부적합 키워드
+ * 추출 시 제외해 무관한 추천이 과도하게 필터링되는 것을 방지.
+ */
+const TITLE_STOPWORDS = new Set<string>([
+  "실무에서",
+  "대표님이",
+  "확인해야",
+  "알아야",
+  "완벽",
+  "가이드",
+  "최신",
+  "핵심",
+  "정리",
+  "이유",
+  "직접",
+  "후속편",
+]);
+
+/**
+ * 최근 REJECT_LOOKBACK_DAYS 일 이내에 rejected 된 추천에서 rejection_keywords 를
+ * 집계. BLACKLIST_REJECT_COUNT 회 이상 반복 rejected 된 키워드는 블랙리스트.
+ *
+ * 반환: { rejectedKeywords: 30일 내 한 번이라도 거부된 키워드 Set,
+ *        blacklist: 3회 이상 거부된 키워드 Set }
+ */
+export async function getRejectedKeywordStats(): Promise<{
+  rejectedKeywords: Set<string>;
+  blacklist: Set<string>;
+}> {
+  try {
+    const supabase = await createClient();
+    const since = new Date(Date.now() - REJECT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+    const { data, error } = await supabase
+      .from("content_recommendations")
+      .select("rejection_keywords, recommended_topic")
+      .eq("status", "rejected")
+      .gte("created_at", since.toISOString());
+
+    if (error) {
+      console.warn("[getRejectedKeywordStats] 조회 실패 (table 없을 수도 있음):", error.message);
+      return { rejectedKeywords: new Set(), blacklist: new Set() };
+    }
+
+    const counts = new Map<string, number>();
+    for (const row of data ?? []) {
+      const kws = (row.rejection_keywords as string[] | null) ?? [];
+      for (const k of kws) {
+        const norm = k.trim().toLowerCase();
+        if (!norm) continue;
+        counts.set(norm, (counts.get(norm) ?? 0) + 1);
+      }
+    }
+
+    const rejectedKeywords = new Set<string>(counts.keys());
+    const blacklist = new Set<string>();
+    for (const [k, cnt] of counts.entries()) {
+      if (cnt >= BLACKLIST_REJECT_COUNT) blacklist.add(k);
+    }
+    return { rejectedKeywords, blacklist };
+  } catch (err) {
+    console.error("[getRejectedKeywordStats] 예외:", err);
+    return { rejectedKeywords: new Set(), blacklist: new Set() };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 통합 추천 필터 (avoid / rejected / blacklist)
+//
+// - blacklist: 3회 이상 거부된 키워드 — 절대 노출 금지(hard)
+// - rejected:  최근 30일 내 1회라도 거부된 키워드 — 노출 금지(hard)
+// - avoid:     최근 48시간 내 이미 노출된 주제/키워드 — 회피하되,
+//              대안이 없으면 노출 허용(soft)
+//
+// 기존 구현은 "이미 본 추천"을 content_recommendations.id 로만 제외했는데,
+// 새로고침마다 새 row(새 UUID)가 생성돼 제외가 전혀 작동하지 않았다.
+// 그래서 제목/키워드(콘텐츠) 기준 회피로 전환한다.
+// ─────────────────────────────────────────────────────────────
+
+interface RecoFilters {
+  /** 최근 노출 주제/키워드 (soft — 대안 없으면 허용) */
+  avoid: Set<string>;
+  /** 30일 내 거부된 키워드 (hard) */
+  rejected: Set<string>;
+  /** 3회 이상 거부된 키워드 (hard) */
+  blacklist: Set<string>;
+}
+
+const RECENT_SHOWN_WINDOW_HOURS = 48;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** set 의 항목 중 하나라도 text 에 포함되면 true */
+function containsAny(text: string, set: Set<string>): boolean {
+  if (set.size === 0) return false;
+  const lower = text.toLowerCase();
+  for (const k of set) {
+    if (k && lower.includes(k)) return true;
+  }
+  return false;
+}
+
+/** 절대 노출 금지 (블랙리스트 또는 거부 키워드) */
+function isHardBlocked(text: string, f: RecoFilters): boolean {
+  return containsAny(text, f.blacklist) || containsAny(text, f.rejected);
+}
+
+/** 최근 노출되어 회피 대상 (대안 없으면 허용) */
+function isSoftAvoided(text: string, f: RecoFilters): boolean {
+  return containsAny(text, f.avoid);
+}
+
+/** Fisher-Yates 셔플 (원본 불변) */
+function shuffle<T>(arr: readonly T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/**
+ * 최근 RECENT_SHOWN_WINDOW_HOURS 시간 내 content_recommendations 에 기록된
+ * 모든 주제/키워드를 정규화하여 반환 (status 무관).
+ * 페이지 로드/새로고침 때마다 row 가 쌓이므로, 직전에 노출된 주제를
+ * 콘텐츠 단위로 회피할 수 있다.
+ */
+async function getRecentlyShownTopics(): Promise<Set<string>> {
+  const set = new Set<string>();
+  try {
+    const supabase = await createClient();
+    const since = new Date(
+      Date.now() - RECENT_SHOWN_WINDOW_HOURS * 60 * 60 * 1000
+    );
+    const { data, error } = await supabase
+      .from("content_recommendations")
+      .select("recommended_topic, recommended_keywords")
+      .gte("created_at", since.toISOString());
+    if (error) return set;
+    for (const row of data ?? []) {
+      const topic = (row.recommended_topic as string | null)?.trim().toLowerCase();
+      if (topic) set.add(topic);
+      for (const k of (row.recommended_keywords as string[] | null) ?? []) {
+        const nk = k?.trim().toLowerCase();
+        if (nk) set.add(nk);
+      }
+    }
+  } catch (err) {
+    console.warn("[getRecentlyShownTopics] 조회 실패:", err);
+  }
+  return set;
+}
+
+/**
+ * 추천 생성에 필요한 모든 필터를 한 번에 로드.
+ * @param excludeRecIds 클라이언트가 넘긴 제외 식별자. UUID 가 아닌 값(제목 폴백)은
+ *                      avoid 셋에 직접 추가한다.
+ */
+async function loadRecoFilters(excludeRecIds: string[] = []): Promise<RecoFilters> {
+  const [{ rejectedKeywords, blacklist }, avoid] = await Promise.all([
+    getRejectedKeywordStats(),
+    getRecentlyShownTopics(),
+  ]);
+  for (const id of excludeRecIds) {
+    if (id && !UUID_RE.test(id)) avoid.add(id.trim().toLowerCase());
+  }
+  return { avoid, rejected: rejectedKeywords, blacklist };
+}
+```
+
+## 2. 가중치 키워드 샘플링
+
+원문: `src/actions/recommendations.ts:900-939`
+
+```typescript
+/**
+ * 가중치 기반 키워드 샘플링
+ * HIGH 50% / MEDIUM 30% / LOW 20% 확률로 한 카테고리에서 미커버 키워드를 선택.
+ * 이번 달 이미 커버된 키워드와 블랙리스트는 제외.
+ */
+async function pickWeightedKeyword(
+  categoryId: string,
+  excludeKeywordIds: Set<string>,
+  filters: RecoFilters
+): Promise<KeywordPool | null> {
+  const supabase = await createClient();
+
+  // 우선순위 랜덤 선택 (HIGH 50 / MED 30 / LOW 20)
+  const roll = Math.random();
+  const tryOrder: Array<"HIGH" | "MEDIUM" | "LOW"> =
+    roll < 0.5 ? ["HIGH", "MEDIUM", "LOW"]
+    : roll < 0.8 ? ["MEDIUM", "HIGH", "LOW"]
+    : ["LOW", "MEDIUM", "HIGH"];
+
+  for (const priority of tryOrder) {
+    const { data } = await supabase
+      .from("keyword_pool")
+      .select("*")
+      .eq("category_id", categoryId)
+      .eq("priority", priority)
+      .is("covered_content_id", null)
+      .limit(30);
+
+    // hard 차단(블랙리스트/거부) 제외 → 그중 최근 노출(soft) 회피, 없으면 전체
+    const hard = ((data ?? []) as KeywordPool[]).filter(
+      (k) => !excludeKeywordIds.has(k.id) && !isHardBlocked(k.keyword, filters)
+    );
+    const soft = hard.filter((k) => !isSoftAvoided(k.keyword, filters));
+    const pool = soft.length > 0 ? soft : hard;
+    if (pool.length > 0) {
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+  }
+  return null;
+}
+```
+
+## 3. 멀티소스 추천·저장·카드 빌더
+
+원문: `src/actions/recommendations.ts:941-1176`
+
+```typescript
+export type RecommendationCategoryId = "CAT-A" | "CAT-B" | "CAT-C";
+
+export interface MultiSourceRecommendations {
+  cards: Recommendation[];
+  /** 현재 표시된 카드의 DB id 목록 — 새로고침 시 exclude 에 사용 */
+  pendingIds: string[];
+}
+
+/** 카테고리별 구조화된 추천 결과 */
+export type CategoryRecommendationMap = Record<RecommendationCategoryId, Recommendation[]>;
+
+/**
+ * 멀티소스 추천 — 3개 소스에서 각 1개씩 (최대 3개 카드).
+ *
+ * @param excludeRecIds 이미 표시 중인 content_recommendations.id 목록
+ *                     (새로고침 시 중복 방지). 빈 배열이면 첫 로드.
+ */
+export async function getMultiSourceRecommendations(
+  excludeRecIds: string[] = []
+): Promise<MultiSourceRecommendations> {
+  const cards: Recommendation[] = [];
+  const filters = await loadRecoFilters(excludeRecIds);
+  const excludeSet = new Set(excludeRecIds);
+
+  // ── 1) 키워드 풀 기반 (가중치 샘플링) ──
+  const keywordCard = await buildKeywordCard(filters);
+  if (keywordCard && !excludeSet.has(keywordCard.recId ?? "")) {
+    cards.push(keywordCard);
+  }
+
+  // ── 2) 뉴스 API 기반 ──
+  const newsCard = await buildNewsCard(filters);
+  if (newsCard && !excludeSet.has(newsCard.recId ?? "")) {
+    cards.push(newsCard);
+  }
+
+  // ── 3) 12주 스케줄 기반 ──
+  const scheduleCard = await buildScheduleCard(filters);
+  if (scheduleCard && !excludeSet.has(scheduleCard.recId ?? "")) {
+    cards.push(scheduleCard);
+  }
+
+  return {
+    cards,
+    pendingIds: cards.map((c) => c.recId).filter((id): id is string => !!id),
+  };
+}
+
+/**
+ * content_recommendations row 를 생성하고 recId 를 Recommendation 에 박아 반환.
+ * 이미 pending 상태의 같은 topic 이 있으면 그 id 를 재사용.
+ */
+async function persistRecommendation(
+  rec: Recommendation,
+  source: "keyword_pool" | "news_api" | "schedule",
+  sourceDetail?: Record<string, unknown>
+): Promise<Recommendation> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("content_recommendations")
+      .insert({
+        recommended_topic: rec.title,
+        recommended_category: rec.category,
+        recommended_subcategory: rec.subCategory ?? null,
+        recommended_keywords: rec.keywords ?? null,
+        source,
+        source_detail: sourceDetail ?? null,
+        status: "pending",
+      })
+      .select("id")
+      .single();
+    if (error || !data) {
+      console.warn("[persistRecommendation] insert 실패:", error?.message);
+      return { ...rec, source };
+    }
+    return { ...rec, source, recId: data.id };
+  } catch (err) {
+    console.warn("[persistRecommendation] 예외:", err);
+    return { ...rec, source };
+  }
+}
+
+async function buildKeywordCard(
+  filters: RecoFilters,
+  categoryId?: "CAT-A" | "CAT-B" | "CAT-C"
+): Promise<Recommendation | null> {
+  // categoryId 가 명시되면 해당 카테고리만, 아니면 CAT-A 우선 → CAT-B 폴백
+  const tryOrder: string[] = categoryId ? [categoryId] : ["CAT-A", "CAT-B"];
+  for (const catId of tryOrder) {
+    const kw = await pickWeightedKeyword(catId, new Set(), filters);
+    if (!kw) continue;
+    const catName =
+      catId === "CAT-A"
+        ? "변리사의 현장 수첩"
+        : catId === "CAT-B"
+          ? "IP 라운지"
+          : "디딤 다이어리";
+    const rec: Recommendation = {
+      priority: "PRIMARY",
+      category: catName,
+      categoryId: catId,
+      subCategoryId: kw.sub_category_id ?? undefined,
+      title: generateTitleSuggestion(kw.keyword),
+      reason: `키워드 풀에서 자동 추출 — ${kw.priority} 가중치 / 미발행 / 랜덤 샘플링`,
+      keywords: [kw.keyword],
+    };
+    return persistRecommendation(rec, "keyword_pool", {
+      keyword_id: kw.id,
+      priority: kw.priority,
+    });
+  }
+  return null;
+}
+
+async function buildNewsCard(
+  filters: RecoFilters
+): Promise<Recommendation | null> {
+  try {
+    const supabase = await createClient();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const { data } = await supabase
+      .from("news_items")
+      .select("*")
+      .eq("is_used", false)
+      .gte("created_at", sevenDaysAgo.toISOString())
+      .order("created_at", { ascending: false })
+      .limit(15);
+
+    const items = (data ?? []) as NewsItem[];
+
+    // hard 차단(블랙리스트/거부 키워드) 제외 → soft 회피(최근 노출) → 랜덤 선택.
+    // 기존엔 정렬 첫 기사를 항상 반환해 새로고침마다 동일 뉴스가 반복됐다.
+    const usable = items.filter(
+      (it) =>
+        !isHardBlocked(it.title, filters) &&
+        !isHardBlocked(it.search_keyword ?? "", filters)
+    );
+    const preferred = usable.filter(
+      (it) =>
+        !isSoftAvoided(it.title, filters) &&
+        !isSoftAvoided(it.search_keyword ?? "", filters)
+    );
+    const pool = shuffle(preferred.length > 0 ? preferred : usable);
+    if (pool.length === 0) return null;
+
+    const item = pool[0];
+    const cleanTitle = item.title.replace(/<\/?b>/g, "");
+    const rec: Recommendation = {
+      priority: "URGENT",
+      category: "IP 라운지",
+      categoryId: "CAT-B",
+      subCategory: "IP 뉴스 한 입",
+      subCategoryId: "CAT-B-03",
+      title: cleanTitle,
+      reason:
+        item.blog_angle ??
+        item.ai_summary ??
+        `최근 7일 뉴스 — 검색 키워드: ${item.search_keyword}`,
+      keywords: [item.search_keyword],
+      newsUrl: item.link,
+      relevanceReason: item.ai_summary ?? undefined,
+      suggestedAngle: item.blog_angle ?? undefined,
+    };
+    return persistRecommendation(rec, "news_api", {
+      news_id: item.id,
+      link: item.link,
+      search_keyword: item.search_keyword,
+      source: item.source,
+    });
+  } catch (err) {
+    console.warn("[buildNewsCard] news_items 조회 실패:", err);
+  }
+  return null;
+}
+
+/** 스케줄 아이템의 category 문자열 → CAT-A/B/C 매핑 */
+function scheduleCategoryToId(category: string): "CAT-A" | "CAT-B" | "CAT-C" {
+  if (category === "변리사의 현장 수첩" || category === "현장 수첩") return "CAT-A";
+  if (category === "IP 라운지") return "CAT-B";
+  return "CAT-C";
+}
+
+async function buildScheduleCard(
+  filters: RecoFilters,
+  categoryId?: "CAT-A" | "CAT-B" | "CAT-C",
+  excludeTitles: Set<string> = new Set()
+): Promise<Recommendation | null> {
+  const currentWeek = getCurrentWeek();
+  // 이번 주 기준 ±1 주의 스케줄 아이템 → 없으면 해당 카테고리 전체로 폴백
+  let pool = SCHEDULE_DATA.filter(
+    (it) => it.week >= currentWeek && it.week <= currentWeek + 1
+  );
+  if (categoryId) {
+    pool = pool.filter((it) => scheduleCategoryToId(it.category) === categoryId);
+  }
+  if (pool.length === 0) {
+    pool = categoryId
+      ? SCHEDULE_DATA.filter((it) => scheduleCategoryToId(it.category) === categoryId)
+      : [...SCHEDULE_DATA];
+  }
+  if (pool.length === 0) return null;
+
+  // hard 차단/명시적 제외 통과 → soft 회피(최근 노출) → 랜덤 선택.
+  // 기존엔 후보 첫 항목을 항상 반환해 같은 주 동안 동일 주제가 고정됐다.
+  const usable = pool.filter(
+    (it) =>
+      !excludeTitles.has(it.title) &&
+      !isHardBlocked(it.title, filters) &&
+      !it.keywords.some((k) => isHardBlocked(k, filters))
+  );
+  const preferred = usable.filter(
+    (it) =>
+      !isSoftAvoided(it.title, filters) &&
+      !it.keywords.some((k) => isSoftAvoided(k, filters))
+  );
+  const finalPool = preferred.length > 0 ? preferred : usable;
+  if (finalPool.length === 0) return null;
+
+  const item = finalPool[Math.floor(Math.random() * finalPool.length)];
+  const catId = scheduleCategoryToId(item.category);
+  const rec: Recommendation = {
+    priority: "PRIMARY",
+    category: item.category,
+    categoryId: catId,
+    subCategory: item.subCategory,
+    title: item.title,
+    reason: `12주 발행 스케줄 W${item.week} — ${item.subCategory}`,
+    keywords: item.keywords,
+  };
+  return persistRecommendation(rec, "schedule", {
+    week: item.week,
+    sub_category: item.subCategory,
+    cta: item.cta,
+  });
+}
+```
+
+## 4. 카테고리별 추천 (대시보드 경로)
+
+원문: `src/actions/recommendations.ts:1221-1442`
+
+```typescript
+// ─────────────────────────────────────────────────────────────
+// 카테고리별 추천 — 탭 구조 위젯에서 사용
+// ─────────────────────────────────────────────────────────────
+
+/** 카테고리별 카드 최대 개수 */
+const CARDS_PER_CATEGORY: Record<RecommendationCategoryId, number> = {
+  "CAT-A": 2, // 현장 수첩: 월 2편 목표 → 2개
+  "CAT-B": 2, // IP 라운지: 월 1편 목표 → 2개까지 후보 제시
+  "CAT-C": 1, // 디딤 다이어리: 월 1편 목표 → 1개
+};
+
+/**
+ * 2차 분류 풀에서 랜덤 키워드 1개 선택 — hard(블랙리스트/거부)/soft(최근 노출) 필터 적용.
+ * excludeSubIds 에 든 2차 분류는 우선 회피(이미 노출/사용 중) — 모두 소진되면 전체에서 재시도.
+ */
+function pickSubCategoryKeyword(
+  parentId: "CAT-A" | "CAT-B" | "CAT-C",
+  filters: RecoFilters,
+  excludeKeywords: Set<string> = new Set(),
+  excludeSubIds: Set<string> = new Set()
+): { sub: SubCategoryMeta; keyword: string } | null {
+  const allSubs = getSubCategoriesFor(parentId).filter((s) => s.keywords.length > 0);
+  if (allSubs.length === 0) return null;
+
+  // 아직 안 쓴 2차 분류 우선, 없으면 전체 — 매번 셔플로 로테이션
+  const fresh = allSubs.filter((s) => !excludeSubIds.has(s.id));
+  const order = shuffle(fresh.length > 0 ? fresh : allSubs);
+
+  for (const sub of order) {
+    const hard = sub.keywords.filter(
+      (k) => !excludeKeywords.has(k.toLowerCase()) && !isHardBlocked(k, filters)
+    );
+    const soft = hard.filter((k) => !isSoftAvoided(k, filters));
+    const pool = soft.length > 0 ? soft : hard;
+    if (pool.length === 0) continue;
+    const keyword = pool[Math.floor(Math.random() * pool.length)];
+    return { sub, keyword };
+  }
+  return null;
+}
+
+/**
+ * 2차 분류 기반 키워드 카드 생성 — 2차 분류를 로테이션하며 키워드 선택.
+ */
+async function buildSubCategoryKeywordCard(
+  parentId: "CAT-A" | "CAT-B" | "CAT-C",
+  filters: RecoFilters,
+  excludeKeywords: Set<string>,
+  excludeSubIds: Set<string> = new Set()
+): Promise<Recommendation | null> {
+  const picked = pickSubCategoryKeyword(parentId, filters, excludeKeywords, excludeSubIds);
+  if (!picked) return null;
+
+  const { sub, keyword } = picked;
+  const catName =
+    parentId === "CAT-A"
+      ? "변리사의 현장 수첩"
+      : parentId === "CAT-B"
+        ? "IP 라운지"
+        : "디딤 다이어리";
+
+  const rec: Recommendation = {
+    priority: "PRIMARY",
+    category: catName,
+    categoryId: parentId,
+    subCategory: sub.name,
+    subCategoryId: sub.id,
+    title: generateTitleSuggestion(keyword),
+    reason: `${sub.name} — '${keyword}' 키워드 기반 추천`,
+    keywords: [keyword],
+  };
+  return persistRecommendation(rec, "keyword_pool", {
+    sub_category_id: sub.id,
+    keyword,
+  });
+}
+
+/**
+ * 디딤 다이어리 주제 풀 기반 카드 생성 — 키워드 대신 사전 정의된 주제 샘플링.
+ */
+async function buildDiaryTopicCard(
+  filters: RecoFilters,
+  excludeTitles: Set<string>
+): Promise<Recommendation | null> {
+  const usable = DIARY_TOPIC_POOL.filter(
+    (t) =>
+      !excludeTitles.has(t.title) &&
+      !isHardBlocked(t.title, filters) &&
+      !t.keywords.some((k) => isHardBlocked(k, filters))
+  );
+  const preferred = usable.filter(
+    (t) =>
+      !isSoftAvoided(t.title, filters) &&
+      !t.keywords.some((k) => isSoftAvoided(k, filters))
+  );
+  const pool = preferred.length > 0 ? preferred : usable;
+  if (pool.length === 0) return null;
+
+  const picked = pool[Math.floor(Math.random() * pool.length)];
+  const subMeta = getSubCategoryMeta(picked.subCategoryId);
+  const rec: Recommendation = {
+    priority: "PRIMARY",
+    category: "디딤 다이어리",
+    categoryId: "CAT-C",
+    subCategory: subMeta?.name ?? picked.subCategoryId,
+    subCategoryId: picked.subCategoryId,
+    title: picked.title,
+    reason: `디딤 다이어리 — ${subMeta?.name ?? ""} 주제 풀에서 샘플링`,
+    keywords: picked.keywords,
+  };
+  return persistRecommendation(rec, "schedule", {
+    diary_topic: true,
+    sub_category_id: picked.subCategoryId,
+  });
+}
+
+/**
+ * 특정 카테고리의 추천 카드 생성.
+ *
+ * 카테고리별 소스 우선순위:
+ *   - CAT-A (현장 수첩): 2차 분류 키워드 풀 → 12주 스케줄
+ *   - CAT-B (IP 라운지): 2차 분류 뉴스 → 2차 분류 키워드 풀 → 스케줄
+ *   - CAT-C (디딤 다이어리): 주제 풀 → 12주 스케줄
+ *
+ * @param categoryId 대상 카테고리
+ * @param excludeRecIds 이미 표시 중/처리된 content_recommendations.id (새로고침용)
+ * @param preferredSubId 로테이션용 — 이 2차 분류는 우선순위를 낮춤 (이미 표시 중인 것 회피)
+ */
+export async function getCategoryRecommendations(
+  categoryId: RecommendationCategoryId,
+  excludeRecIds: string[] = [],
+  preferredSubId?: string | null
+): Promise<Recommendation[]> {
+  const cards: Recommendation[] = [];
+  const filters = await loadRecoFilters(excludeRecIds);
+  const maxCards = CARDS_PER_CATEGORY[categoryId];
+
+  // 이전에 노출 중이던 2차 분류는 우선 회피해 로테이션 유도
+  if (preferredSubId) filters.avoid.add(preferredSubId.toLowerCase());
+
+  /** 중복 제목/키워드/서브 방지 */
+  const usedTitles = new Set<string>();
+  const usedKeywords = new Set<string>();
+  const usedSubIds = new Set<string>(preferredSubId ? [preferredSubId] : []);
+
+  const addIfNew = (rec: Recommendation | null): boolean => {
+    if (!rec) return false;
+    if (usedTitles.has(rec.title)) return false;
+    cards.push(rec);
+    usedTitles.add(rec.title);
+    for (const k of rec.keywords ?? []) usedKeywords.add(k.toLowerCase());
+    if (rec.subCategoryId) usedSubIds.add(rec.subCategoryId);
+    // 방금 추가한 카드를 avoid 에 반영 → 같은 호출 내 다음 카드와 중복 방지
+    filters.avoid.add(rec.title.toLowerCase());
+    for (const k of rec.keywords ?? []) filters.avoid.add(k.toLowerCase());
+    return true;
+  };
+
+  if (categoryId === "CAT-A") {
+    // 현장 수첩: 2차 분류 로테이션 (이미 쓴 서브는 회피)
+    while (cards.length < maxCards) {
+      const kw = await buildSubCategoryKeywordCard(
+        "CAT-A",
+        filters,
+        usedKeywords,
+        usedSubIds
+      );
+      if (!addIfNew(kw)) break;
+    }
+    if (cards.length < maxCards) {
+      const sched = await buildScheduleCard(filters, "CAT-A", usedTitles);
+      addIfNew(sched);
+    }
+  } else if (categoryId === "CAT-B") {
+    // IP 라운지: 뉴스 → 2차 분류 키워드 풀 → 스케줄
+    if (cards.length < maxCards) {
+      const news = await buildNewsCard(filters);
+      if (news && news.categoryId === "CAT-B") addIfNew(news);
+    }
+    if (cards.length < maxCards) {
+      const kw = await buildSubCategoryKeywordCard(
+        "CAT-B",
+        filters,
+        usedKeywords,
+        usedSubIds
+      );
+      addIfNew(kw);
+    }
+    if (cards.length < maxCards) {
+      const sched = await buildScheduleCard(filters, "CAT-B", usedTitles);
+      addIfNew(sched);
+    }
+  } else if (categoryId === "CAT-C") {
+    // 디딤 다이어리: 주제 풀 → 스케줄 폴백
+    if (cards.length < maxCards) {
+      const diary = await buildDiaryTopicCard(filters, usedTitles);
+      addIfNew(diary);
+    }
+    if (cards.length < maxCards) {
+      const sched = await buildScheduleCard(filters, "CAT-C", usedTitles);
+      addIfNew(sched);
+    }
+  }
+
+  return cards;
+}
+
+/**
+ * 3개 카테고리의 추천을 병렬 생성해 map 으로 반환. 초기 페이지 로드용.
+ */
+export async function getAllCategoryRecommendations(): Promise<CategoryRecommendationMap> {
+  const [a, b, c] = await Promise.all([
+    getCategoryRecommendations("CAT-A"),
+    getCategoryRecommendations("CAT-B"),
+    getCategoryRecommendations("CAT-C"),
+  ]);
+  return {
+    "CAT-A": a,
+    "CAT-B": b,
+    "CAT-C": c,
+  };
+}
+```
+
+## 5. 적합/부적합 처리
+
+원문: `src/actions/recommendations.ts:1178-1220`
+
+```typescript
+// ─────────────────────────────────────────────────────────────
+// 추천 피드백 액션 (accept / reject)
+// ─────────────────────────────────────────────────────────────
+
+export interface AcceptRecommendationResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * 사용자가 "적합 → 초안 생성" 클릭 시 호출.
+ * status 를 'accepted' 로 변경하고 acted_at 을 기록.
+ */
+export async function acceptRecommendation(
+  recId: string
+): Promise<AcceptRecommendationResult> {
+  if (!recId) return { success: false, error: "recId 누락" };
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("content_recommendations")
+      .update({
+        status: "accepted",
+        acted_at: new Date().toISOString(),
+      })
+      .eq("id", recId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "적합 처리 실패" };
+  }
+}
+
+export interface RejectRecommendationInput {
+  recId: string;
+  reason?: string;
+}
+
+/**
+ * 사용자가 "부적합 — 건너뛰기" 클릭 시 호출.
+ * status='rejected' + acted_at + rejection_reason + 자동 추출한 rejection_keywords 저장.
+ * 재추천 필터에서 이 키워드를 블랙리스트/필터링에 사용.
+ */
+```
+
+원문: `src/actions/recommendations.ts:1444-1495`
+
+```typescript
+export async function rejectRecommendation(
+  input: RejectRecommendationInput
+): Promise<AcceptRecommendationResult> {
+  if (!input.recId) return { success: false, error: "recId 누락" };
+  try {
+    const supabase = await createClient();
+
+    // 원본 추천 조회해서 rejection_keywords 추출
+    const { data: original } = await supabase
+      .from("content_recommendations")
+      .select("recommended_topic, recommended_keywords, recommended_category")
+      .eq("id", input.recId)
+      .maybeSingle();
+
+    let rejectionKeywords: string[] = [];
+    if (original) {
+      // 구조상 Recommendation 이 아니라 DB row → 간이 추출.
+      // recommended_keywords 를 우선 신뢰하고, 제목에선 의미 토큰만 보조 추출.
+      const kws = new Set<string>();
+      for (const k of (original.recommended_keywords as string[] | null) ?? []) {
+        if (k?.trim()) kws.add(k.trim());
+      }
+      for (const chunk of ((original.recommended_topic as string) ?? "").split(/\s+/)) {
+        const cleaned = chunk.replace(/[^\w가-힣]/g, "");
+        // 제목 생성 템플릿/조사성 토큰은 과도 필터링을 유발하므로 제외
+        if (
+          cleaned.length >= 4 &&
+          !/^[0-9]+$/.test(cleaned) &&
+          !TITLE_STOPWORDS.has(cleaned)
+        ) {
+          kws.add(cleaned);
+        }
+      }
+      rejectionKeywords = Array.from(kws).slice(0, 8);
+    }
+
+    const { error } = await supabase
+      .from("content_recommendations")
+      .update({
+        status: "rejected",
+        acted_at: new Date().toISOString(),
+        rejection_reason: input.reason ?? null,
+        rejection_keywords: rejectionKeywords,
+      })
+      .eq("id", input.recId);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "부적합 처리 실패" };
+  }
+}
+```
+
+## 6. 레거시 주간 추천 (UI에서 호출하지 않음)
+
+원문: `src/actions/recommendations.ts:25-271`
+
+```typescript
+// ── 뉴스 캐시 (1시간) ──
+
+interface NewsCache {
+  data: Recommendation[];
+  timestamp: number;
+}
+
+let newsCache: NewsCache | null = null;
+const NEWS_CACHE_TTL = 60 * 60 * 1000; // 1시간
+
+// ── 추천 새로고침 (캐시 초기화 + 재생성) ──
+
+export async function refreshWeeklyRecommendations(): Promise<Recommendation[]> {
+  // 뉴스 캐시 강제 초기화
+  newsCache = null;
+  return getWeeklyRecommendations();
+}
+
+// ── 메인 추천 함수 ──
+
+export async function getWeeklyRecommendations(): Promise<Recommendation[]> {
+  const recommendations: Recommendation[] = [];
+
+  try {
+    // Step 1: 긴급 뉴스 체크 (캐싱)
+    const urgentNews = await getUrgentNewsRecommendations();
+    recommendations.push(...urgentNews);
+  } catch (err) {
+    console.error("[추천엔진] 뉴스 검색 실패:", err);
+    // 뉴스 실패해도 나머지 추천은 진행
+  }
+
+  try {
+    const supabase = await createClient();
+
+    // Step 2: 이번 달 발행 이력
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const { data: published } = await supabase
+      .from("contents")
+      .select("category_id")
+      .eq("status", "S4")
+      .gte("published_at", firstDay.toISOString())
+      .eq("is_deleted", false);
+
+    const monthlyStats = calcMonthlyStats(published ?? []);
+
+    // Step 3: 전주 발행 카테고리
+    const { data: lastPub } = await supabase
+      .from("contents")
+      .select("category_id")
+      .eq("status", "S4")
+      .eq("is_deleted", false)
+      .order("published_at", { ascending: false })
+      .limit(1);
+
+    const lastCategoryId = lastPub?.[0]?.category_id
+      ? getPrimaryCategoryId(lastPub[0].category_id)
+      : null;
+
+    // Step 4: 필요 카테고리 결정
+    const needed = determineNeededCategory(monthlyStats, lastCategoryId);
+
+    // Step 5: 주제 결정
+    if (needed.categoryId === "CAT-C") {
+      // 다이어리: 자유 주제
+      const sub = suggestDiarySub();
+      recommendations.push({
+        priority: "PRIMARY",
+        category: needed.categoryName,
+        categoryId: needed.categoryId,
+        subCategory: sub.name,
+        subCategoryId: sub.id,
+        title: "(자유 주제)",
+        reason: `이번 달 다이어리 ${monthlyStats.diary}/${1}편 — 자유 에세이를 작성하세요`,
+      });
+    } else {
+      // HIGH 미커버 키워드 확인
+      const topicRec = await getTopicForCategory(
+        needed.categoryId,
+        needed.categoryName,
+        monthlyStats
+      );
+      if (topicRec) {
+        recommendations.push(topicRec);
+      }
+    }
+
+    // Step 6: 보조 추천 (다른 카테고리의 미커버 키워드)
+    const secondaryCategories = ["CAT-A", "CAT-B", "CAT-C"].filter(
+      (id) => id !== needed.categoryId
+    );
+    for (const catId of secondaryCategories) {
+      const { data: uncovered } = await supabase
+        .from("keyword_pool")
+        .select("*")
+        .eq("category_id", catId)
+        .eq("priority", "HIGH")
+        .is("covered_content_id", null)
+        .limit(1);
+
+      if (uncovered && uncovered.length > 0) {
+        const kw = uncovered[0] as KeywordPool;
+        const catName =
+          catId === "CAT-A"
+            ? "변리사의 현장 수첩"
+            : catId === "CAT-B"
+              ? "IP 라운지"
+              : "디딤 다이어리";
+        recommendations.push({
+          priority: "SECONDARY",
+          category: catName,
+          categoryId: catId,
+          subCategoryId: kw.sub_category_id ?? undefined,
+          title: generateTitleSuggestion(kw.keyword),
+          reason: `키워드 '${kw.keyword}' 미발행 (HIGH)`,
+          keywords: [kw.keyword],
+        });
+        break; // 보조 추천 1개만
+      }
+    }
+  } catch (err) {
+    console.error("[추천엔진] 추천 생성 실패:", err);
+  }
+
+  return recommendations;
+}
+
+// ── 카테고리별 주제 결정 ──
+
+async function getTopicForCategory(
+  categoryId: string,
+  categoryName: string,
+  stats: MonthlyPublishStats
+): Promise<Recommendation | null> {
+  try {
+    const supabase = await createClient();
+
+    // 1. HIGH 미커버 키워드
+    const { data: highUncovered } = await supabase
+      .from("keyword_pool")
+      .select("*")
+      .eq("category_id", categoryId)
+      .eq("priority", "HIGH")
+      .is("covered_content_id", null)
+      .limit(1);
+
+    if (highUncovered && highUncovered.length > 0) {
+      const kw = highUncovered[0] as KeywordPool;
+      const target = categoryId === "CAT-A" ? 2 : 1;
+      const current =
+        categoryId === "CAT-A"
+          ? stats.field
+          : categoryId === "CAT-B"
+            ? stats.lounge
+            : stats.diary;
+      return {
+        priority: "PRIMARY",
+        category: categoryName,
+        categoryId,
+        subCategoryId: kw.sub_category_id ?? undefined,
+        title: generateTitleSuggestion(kw.keyword),
+        reason: `키워드 '${kw.keyword}' 미발행 (매출 가중치 HIGH) | 이번 달 ${current}/${target}편`,
+        keywords: [kw.keyword],
+      };
+    }
+
+    // 2. MEDIUM 미커버 키워드
+    const { data: medUncovered } = await supabase
+      .from("keyword_pool")
+      .select("*")
+      .eq("category_id", categoryId)
+      .eq("priority", "MEDIUM")
+      .is("covered_content_id", null)
+      .limit(1);
+
+    if (medUncovered && medUncovered.length > 0) {
+      const kw = medUncovered[0] as KeywordPool;
+      return {
+        priority: "PRIMARY",
+        category: categoryName,
+        categoryId,
+        subCategoryId: kw.sub_category_id ?? undefined,
+        title: generateTitleSuggestion(kw.keyword),
+        reason: `키워드 '${kw.keyword}' 미발행 (MEDIUM)`,
+        keywords: [kw.keyword],
+      };
+    }
+
+    // 3. 성과 기반 후속편 (조회수 + 상담 건수 기반)
+    const { data: topPosts } = await supabase
+      .from("contents")
+      .select("id, title, views_1m, category_id, target_keyword")
+      .eq("status", "S4")
+      .eq("is_deleted", false)
+      .not("views_1m", "is", null)
+      .order("views_1m", { ascending: false })
+      .limit(10);
+
+    // 상담 건수 집계
+    const { data: leads } = await supabase
+      .from("leads")
+      .select("source_content_id")
+      .not("source_content_id", "is", null);
+
+    const leadCounts: Record<string, number> = {};
+    for (const lead of leads ?? []) {
+      if (lead.source_content_id) {
+        leadCounts[lead.source_content_id] =
+          (leadCounts[lead.source_content_id] ?? 0) + 1;
+      }
+    }
+
+    // 종합 점수 = 조회수 × 1 + 상담건수 × 500
+    const catPosts = (topPosts ?? [])
+      .filter((p) => getPrimaryCategoryId(p.category_id ?? "") === categoryId)
+      .map((p) => ({
+        ...p,
+        score: (p.views_1m ?? 0) + (leadCounts[p.id] ?? 0) * 500,
+        consultations: leadCounts[p.id] ?? 0,
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    if (catPosts.length > 0) {
+      const post = catPosts[0];
+      const keyword = post.target_keyword ?? post.title ?? "";
+      const consultText =
+        post.consultations > 0
+          ? `, 상담 ${post.consultations}건 유입`
+          : "";
+      return {
+        priority: "SECONDARY",
+        category: categoryName,
+        categoryId,
+        title: `"${post.title}" 후속편`,
+        reason: `원글 조회수 ${(post.views_1m ?? 0).toLocaleString()}회${consultText} — 후속편 추천`,
+        sourcePostId: post.id,
+        keywords: keyword ? [keyword] : undefined,
+      };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+```
+
+## 7. 긴급 뉴스 추천·관련 기존 글
+
+원문: `src/actions/recommendations.ts:273-485`
+
+```typescript
+// ── 긴급 뉴스 추천 ──
+
+async function getUrgentNewsRecommendations(): Promise<Recommendation[]> {
+  // 캐시 확인
+  if (newsCache && Date.now() - newsCache.timestamp < NEWS_CACHE_TTL) {
+    return newsCache.data;
+  }
+
+  const results: Recommendation[] = [];
+
+  // 1. 뉴스 기반 긴급 추천 시도
+  const newsRec = await tryNewsBasedRecommendation();
+  if (newsRec) {
+    results.push(newsRec);
+  } else {
+    // 2. 뉴스 없거나 관련성 검증 실패 → 키워드 기반 긴급 추천 (뉴스 불필요)
+    const keywordRec = await tryKeywordBasedUrgentRecommendation();
+    if (keywordRec) {
+      results.push(keywordRec);
+    }
+  }
+
+  // 캐시 저장
+  newsCache = { data: results, timestamp: Date.now() };
+  return results;
+}
+
+/** 뉴스 기반 긴급 추천: 관련성 검증 + 다중 기사 후보 중 최적 선택 */
+async function tryNewsBasedRecommendation(): Promise<Recommendation | null> {
+  try {
+    const { searchNews } = await import("@/actions/news-search");
+
+    // 여러 키워드로 검색하여 최적 기사 찾기 (최대 3개 키워드)
+    const shuffled = [...URGENT_NEWS_KEYWORDS].sort(() => Math.random() - 0.5);
+    const keywordsToTry = shuffled.slice(0, 3);
+
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+    interface ScoredArticle {
+      title: string;
+      link: string;
+      keyword: string;
+      score: number;
+      positiveMatches: string[];
+    }
+
+    const candidates: ScoredArticle[] = [];
+
+    for (const keyword of keywordsToTry) {
+      const searchResult = await searchNews(keyword, 5, "date");
+      if (!searchResult.success || !searchResult.articles) continue;
+
+      for (const article of searchResult.articles) {
+        // 날짜 필터
+        try {
+          const pubDate = new Date(article.pubDate);
+          if (pubDate < threeDaysAgo) continue;
+        } catch {
+          continue;
+        }
+
+        // 관련성 검증
+        const relevance = validateNewsRelevance(article.title, keyword);
+        if (!relevance.isRelevant) {
+          console.log(
+            `[추천엔진] 뉴스 부적합 필터링: "${article.title.replace(/<[^>]*>/g, "").slice(0, 30)}..." — ${relevance.reason}`
+          );
+          continue;
+        }
+
+        candidates.push({
+          title: article.title.replace(/<[^>]*>/g, ""),
+          link: article.link,
+          keyword,
+          score: relevance.score,
+          positiveMatches: relevance.positiveMatches,
+        });
+      }
+    }
+
+    // 관련성 점수 높은 순으로 정렬, 최적 기사 선택
+    candidates.sort((a, b) => b.score - a.score);
+
+    if (candidates.length === 0) {
+      console.log("[추천엔진] 관련성 검증을 통과한 뉴스 기사 없음");
+      return null;
+    }
+
+    const best = candidates[0];
+    const matchedKeywords = [best.keyword];
+    const reasonInfo = generateNewsRecommendationReason(matchedKeywords);
+    const affectedPosts = await findAffectedExistingPosts(matchedKeywords);
+
+    return {
+      priority: "URGENT",
+      category: "IP 라운지",
+      categoryId: "CAT-B",
+      subCategory: "IP 뉴스 한 입",
+      subCategoryId: "CAT-B-03",
+      title: best.title,
+      reason: `시의성 뉴스: ${best.title.slice(0, 40)}...`,
+      newsUrl: best.link,
+      keywords: matchedKeywords,
+      matchedWatchKeywords: matchedKeywords,
+      relevanceReason: reasonInfo.relevanceReason,
+      targetAudience: reasonInfo.targetAudience,
+      suggestedAngle: reasonInfo.suggestedAngle,
+      affectedExistingPosts: affectedPosts,
+      verificationStatus: "pending",
+    };
+  } catch (err) {
+    console.error("[추천엔진] 뉴스 API 실패:", err);
+    return null;
+  }
+}
+
+/** 뉴스 없이 키워드 기반 긴급 추천 (뉴스가 없거나 관련 뉴스가 없을 때) */
+async function tryKeywordBasedUrgentRecommendation(): Promise<Recommendation | null> {
+  try {
+    const supabase = await createClient();
+
+    // HIGH 우선순위 미커버 키워드 중 가장 오래된 것
+    const { data: urgentKeywords } = await supabase
+      .from("keyword_pool")
+      .select("*")
+      .eq("priority", "HIGH")
+      .is("covered_content_id", null)
+      .order("created_at", { ascending: true })
+      .limit(3);
+
+    if (!urgentKeywords || urgentKeywords.length === 0) return null;
+
+    // 첫 번째 미커버 HIGH 키워드로 긴급 추천
+    const kw = urgentKeywords[0] as KeywordPool;
+    const matchedKeywords = [kw.keyword];
+    const reasonInfo = generateNewsRecommendationReason(matchedKeywords);
+
+    return {
+      priority: "URGENT",
+      category: "IP 라운지",
+      categoryId: kw.category_id ?? "CAT-B",
+      title: generateTitleSuggestion(kw.keyword),
+      reason: `HIGH 우선순위 키워드 '${kw.keyword}' 미발행 — 긴급 작성 권장`,
+      keywords: matchedKeywords,
+      matchedWatchKeywords: matchedKeywords,
+      relevanceReason: reasonInfo.relevanceReason,
+      targetAudience: reasonInfo.targetAudience,
+      suggestedAngle: reasonInfo.suggestedAngle,
+      verificationStatus: "pending",
+    };
+  } catch (err) {
+    console.error("[추천엔진] 키워드 기반 긴급 추천 실패:", err);
+    return null;
+  }
+}
+
+// ── 관련 기존 발행 글 검색 ──
+
+async function findAffectedExistingPosts(
+  matchedKeywords: string[]
+): Promise<string[]> {
+  try {
+    const supabase = await createClient();
+
+    // 키워드와 관련된 발행 글 검색 (제목/타겟키워드에 키워드 포함)
+    const titles: string[] = [];
+
+    for (const keyword of matchedKeywords) {
+      // keyword_pool에서 covered_content_id 조회
+      const { data: coveredKeywords } = await supabase
+        .from("keyword_pool")
+        .select("covered_content_id")
+        .ilike("keyword", `%${keyword}%`)
+        .not("covered_content_id", "is", null)
+        .limit(3);
+
+      if (coveredKeywords && coveredKeywords.length > 0) {
+        const contentIds = coveredKeywords
+          .map((k) => k.covered_content_id)
+          .filter(Boolean);
+        if (contentIds.length > 0) {
+          const { data: contents } = await supabase
+            .from("contents")
+            .select("title")
+            .in("id", contentIds)
+            .eq("is_deleted", false);
+          if (contents) {
+            titles.push(...contents.map((c) => c.title ?? "제목 없음"));
+          }
+        }
+      }
+
+      // target_keyword에서 직접 매칭
+      const { data: directMatch } = await supabase
+        .from("contents")
+        .select("title")
+        .eq("status", "S4")
+        .eq("is_deleted", false)
+        .ilike("target_keyword", `%${keyword}%`)
+        .limit(3);
+
+      if (directMatch) {
+        titles.push(...directMatch.map((c) => c.title ?? "제목 없음"));
+      }
+    }
+
+    // 중복 제거
+    return [...new Set(titles)].slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+```
+
+## 8. 부적합 사유 프리셋
+
+원문: `src/components/dashboard/weekly-recommendation.tsx:72-77`
+
+```typescript
+const REJECT_PRESETS = [
+  "주제가 디딤 서비스와 관련 없음",
+  "이미 다룬 주제",
+  "시의성 없음",
+  "기타 (아래에 직접 입력)",
+];
+```
