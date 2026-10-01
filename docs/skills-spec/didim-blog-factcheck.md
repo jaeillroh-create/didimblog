@@ -48,6 +48,7 @@ Phase 2 초안(또는 사용자가 준 글)의 사실 정확성과 논리 일관
 - 병합 그룹 목록: effectiveSeverity(⬆ 여부), 표시 라벨, 지적 패스, 단순 치환/문단 재작성, 처리 상태
 - 요약 카운트: 심각/주의/경미(대기 기준), 반영/무시/대기
 - 반영된 최종 본문(문단 ID 제거) 및 모드별 안내(근사 반영 시 확인 요청), 매칭 실패 시 수동 수정용 원문/수정안
+- (스킬) `notion_record`: 콘텐츠 DB `교차검증`·`교차검증일` 값, 남은 심각 수, 페이지 `## 검수 기록` 에 붙일 마크다운
 
 ## 6. 예외·오류 처리
 - 교차검증 LLM 0개 → 안내 + 건너뛰기 (원본). 스킬: 서브에이전트 없으면 별도 검증 패스로 대체.
@@ -59,17 +60,22 @@ Phase 2 초안(또는 사용자가 준 글)의 사실 정확성과 논리 일관
 
 ## 7. 데이터 저장
 원본 V2 교차검증 결과는 DB 에 저장되지 않는다(패널 React 상태로만 존재). 레거시 requestCrossValidation 만 ai_generations(generation_type="cross_validation").validation_results 에 저장했다.
+스킬은 _DECISIONS.md §6·§7(Notion 확장)에 따라 Notion **"디딤 블로그 콘텐츠"** `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed` 의 전용 열과 페이지 본문에 기록한다. **`메모` 열은 쓰지 않는다**(사람이 쓰는 자유 기록 전용).
 
 | 백오피스 | 스킬에서의 대체 |
 |---|---|
 | ai_generations.phase1_output.legal_references | 사용자 입력 또는 didim-blog-writer 의 Phase 1 결과 |
-| ai_generations.phase2_output / 편집 본문(editText) | 사용자가 붙여넣은 본문, 또는 Notion "디딤 블로그 콘텐츠" DB 의 본문 |
+| ai_generations.phase2_output / 편집 본문(editText) | 사용자가 붙여넣은 본문, 또는 콘텐츠 DB 해당 글 페이지 본문 `## 본문` 섹션 |
 | llm_configs (교차검증 LLM) | 없음 — 독립 검토 패스(서브에이전트) |
-| 패널 groupStatus(반영/무시) | 대화 내 상태 |
-| (선택) 검증 요약 | Notion "디딤 블로그 콘텐츠".메모 에 "교차검증 YYYY-MM-DD: 심각 n · 반영 n · 무시 n" 한 줄 (커넥터 없으면 대화 출력) |
-| content-detail 의 "교차검증 완료(권장)" 체크 (validation_results 의 high 개수) | merge_issues.py 의 critical_count_raw 로 같은 값을 계산해 보고 |
+| 패널 groupStatus(반영/무시) | 대화 내 상태 → merge_issues.py `status` 입력 |
+| validation_results(검증 결과) / content-detail 의 "교차검증 완료(권장)" 체크 | **`교차검증`** select: `미실시`(성공한 검토 패스 없음) / `통과`(반영 후 남은 심각 이슈 0건) / `심각 이슈 남음`. merge_issues.py `notion_record.properties` |
+| (없음 — 검증 시각) | **`교차검증일`** date(KST 판정일) |
+| (검증 요약·이슈 목록) | 페이지 본문 **`## 검수 기록`** 섹션 끝에 `notion_record.review_log_md` 추가: `### 교차검증 YYYY-MM-DD — 판정`, 검토 패스·점수, 반영/무시/대기 수, 남은 심각 이슈 원문·문제, 반영 항목 |
+| 반영된 최종 본문 | 사용자 확인 후 페이지 `## 본문` 갱신(문단 ID 제거본) |
 
-(_DECISIONS.md §4: Notion DB 는 "디딤 블로그 콘텐츠", "디딤 블로그 상담" 2개만 쓴다.)
+통과 판정 규칙: 남은 심각 이슈 = 병합 그룹 중 표시 심각도(effectiveSeverity, 2개 이상 패스 중복 시 ⬆ 상향 포함)가 `high`(심각)이고 상태가 `applied`(반영)가 아닌 것(대기·무시). 0건이면 통과, 1건 이상이면 심각 이슈 남음. 주의·경미만 남은 경우는 통과. QUICK 모드(단일 패스 팩트체크) 결과로는 `교차검증` 을 바꾸지 않는다.
+
+(_DECISIONS.md §7: `교차검증` 은 factcheck 가 쓰고 didim-blog-ops 가 S1→S2 전이의 권장 조건으로 읽는다.)
 
 ## 8. 원본 코드와 달라진 점
 1. **기준 시점 검증 포함** — main 에는 없고 열린 PR #89(open, 커밋 2627f20)에만 있는 "오늘 날짜/올해 기준" 규칙을 스킬 템플릿에 넣었다(_DECISIONS.md §5). PR 은 숫자 4단계 트랙(a53ac08) 이전 main 에서 갈라져 `2. 숫자 정확성` 문맥이 충돌하므로, main 원문에 PR 의 ① 기준 시점 블록 ② 법률 팩트 시행일·일몰 문구 ③ 연도·유효기간·조문 번호 검증 4줄을 얹고, PR 의 "우회 표현" 문장은 main Step 2(교정, 완화 X)와 충돌해 제외했다. 원문·diff·병합본을 references/prompts.md 에 나란히 둔다.
@@ -79,11 +85,11 @@ Phase 2 초안(또는 사용자가 준 글)의 사실 정확성과 논리 일관
 5. **ID 주입 후 재시도** — 원본 handleApplyGroup/handleConfirmParagraph 는 실패 시 onEnsureParagraphIds() 후 재시도하지만, setEditText 가 비동기라 재시도가 같은(오래된) editText 로 실행된다(React stale closure) — 사실상 재시도 효과 없음(확인 필요). apply_fix.py 는 기본값을 원본 실제 동작(재시도 없음)으로 두고, `--retry-with-ids` 로 의도된 동작을 선택할 수 있게 했다.
 6. **hasParagraphIds 상태 버그 미재현** — 원본은 전역(/g) 정규식에 `.test()` 를 써서 호출할 때마다 lastIndex 가 남아 같은 본문에도 true/false 가 번갈아 나온다(node 로 확인: `[true,false,true,false]`). 그 결과 fuzzyApplyFix 의 문단 ID 단계가 간헐적으로 건너뛰어진다. 포팅은 상태 없이 판정한다.
 7. **문자열 길이 단위** — JS 는 UTF-16 코드 유닛, Python 은 코드 포인트. 이모지(📷 등)가 포함된 original_text 의 앞 20자·1.8배 한도·앞 60자 그룹 키가 몇 글자 다를 수 있다. 판정 길이(5자/8자/50% 비율)는 UTF-16 기준으로 맞췄다.
-8. **결과 기록** — 원본은 저장하지 않음. 스킬은 원하면 Notion 메모 한 줄.
-9. **콘텐츠 상세의 "교차검증 완료(권장)" 체크는 현재 동작하지 않는 것으로 보임(확인 필요)** — content-detail 은 contents.ai_generation_id 행의 validation_results 를 읽는데(page.tsx:48-59), V2 는 저장하지 않고 레거시 requestCrossValidation 은 별도 행(cross_validation)에 저장하며 그 패널도 import 되지 않는다. 스킬은 이 체크를 critical_count_raw 로 대신 보고한다.
+8. **결과 기록(결정 사항 7절 반영)** — 원본 V2 는 저장하지 않음. 스킬은 콘텐츠 DB `교차검증`(미실시/통과/심각 이슈 남음)·`교차검증일` 열에 쓰고 요약은 페이지 본문 `## 검수 기록` 섹션에 붙인다. 이전에 쓰던 `메모` 열 한 줄 기록은 중지(메모는 사람 전용). 통과 기준은 원본에 없는 스킬 규칙: 반영 후 남은 심각(표시 심각도 high, ⬆ 포함) 그룹 0건 — 원본 "교차검증 완료(권장)" 체크가 쓰던 high 개수(validation_results)에 사용자 반영 여부를 더한 것(merge_issues.py `notion_record`).
+9. **콘텐츠 상세의 "교차검증 완료(권장)" 체크는 현재 동작하지 않는 것으로 보임(확인 필요)** — content-detail 은 contents.ai_generation_id 행의 validation_results 를 읽는데(page.tsx:48-59), V2 는 저장하지 않고 레거시 requestCrossValidation 은 별도 행(cross_validation)에 저장하며 그 패널도 import 되지 않는다. 스킬은 이 체크를 Notion `교차검증` 열(8번 규칙)로 대신하고 critical_count_raw 는 검수 기록에 참고로 남긴다.
 10. **Known Facts 기준일** — LEGAL_FACTS_META.last_updated 2026-01-15. 오늘(2026-10-01) 기준 개정 여부는 코드로 보장되지 않으므로, 스킬은 표와 다르다는 이유만으로 단정하지 말고 사용자 확인을 받도록 했다.
 11. PROMPT_FACT_CHECK/_QUICK, clientFactCheck, clientCrossValidate, clientRewriteWithFeedback, FactCheckPanel 은 현재 UI 에서 호출되지 않는다(정의만 존재). 스킬은 QUICK 모드로만 활용한다.
 
 ## 9. 다른 스킬과의 연결
-- 받는 쪽: **didim-blog-writer** — Phase 2 본문, Phase 1 outline(legal_references, category_name), 핵심 키워드, CATEGORY_TONE_RULES(문단 재작성 톤). **didim-blog-core** — 광고 규정·명칭 매핑(특허청→지식재산처)·카테고리.
-- 넘기는 쪽: **didim-blog-writer** Phase 3(SEO 다듬기)로 수정된 본문(문단 ID 제거). **didim-blog-seo** 로 점검 대상 본문. **didim-blog-ops** 발행 전 체크("교차검증 완료(권장)", 심각 0건 여부). **didim-blog-infographic** 은 교정된 수치를 기준으로 설계해야 하므로 반영 후 본문을 넘긴다.
+- 받는 쪽: **didim-blog-writer** — Phase 2 본문(페이지 `## 본문`), Phase 1 outline(legal_references, category_name), 핵심 키워드, CATEGORY_TONE_RULES(문단 재작성 톤). **didim-blog-core** — 광고 규정·명칭 매핑(특허청→지식재산처)·카테고리·Notion 저장소 규칙. **didim-blog-planner** — 뉴스·공고 기반 글의 원문 링크(콘텐츠 DB `근거 URL`).
+- 넘기는 쪽: **didim-blog-writer** Phase 3(SEO 다듬기)로 수정된 본문(문단 ID 제거). **didim-blog-seo** 로 점검 대상 본문. **didim-blog-ops** — 콘텐츠 DB `교차검증`(통과 여부 = S1→S2 권장 조건)·`교차검증일`, 페이지 `## 검수 기록`. **didim-blog-infographic** 은 교정된 수치를 기준으로 설계해야 하므로 반영 후 본문을 넘긴다. **didim-blog-health** 는 `교차검증일` 을 재점검 판단에 참고할 수 있다.

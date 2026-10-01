@@ -1,12 +1,12 @@
 ---
 name: didim-blog-core
-description: 특허그룹 디딤 네이버 블로그(didimip)의 공통 기반 규칙집. 네이버 실제 카테고리(categoryNo 25 지원사업·인증과 특허, 27 출원·심판 실무, 26 사례, 24 지식재산 경영, 28 디딤 소식, 17 디딤 다이어리, 레거시 9·13 하위)와 레거시 CAT-* 별칭 매핑, 카테고리별 역할·퍼널·프롬프트 키·톤 규칙, CTA 문구 원문과 선택 규칙, 면책조항 A/B/C, '특허청'→'지식재산처' 치환, 전화·이메일·서명·변리사 프로필, 절대원칙(이메일은 admin@didimip.com만, 디딤 다이어리 CTA 금지), 변리사 광고 규정 표현 규칙, Notion 기록 DB(디딤 블로그 콘텐츠/상담) 위치와 선택지를 담는다. 디딤 블로그 글을 기획·작성·검수·발행 준비·기록할 때 다른 didim-blog-* 스킬보다 먼저 함께 읽는다. "디딤 블로그 카테고리 뭐 있어?", "이 글 어느 카테고리야?", "CTA 뭐 넣어?", "면책 문구 줘", "다이어리에 상담 안내 넣어도 돼?", "특허청 표기 고쳐줘", "광고 규정 위반 표현 봐줘", "디딤 연락처·서명", "CAT-B-02가 뭐야?" 같은 요청에 사용한다.
+description: 특허그룹 디딤 네이버 블로그(didimip)의 공통 기반 규칙집. 네이버 실제 카테고리(categoryNo 25 지원사업·인증과 특허, 27 출원·심판 실무, 26 사례, 24 지식재산 경영, 28 디딤 소식, 17 디딤 다이어리, 레거시 9·13 하위)와 레거시 CAT-* 별칭 매핑, 카테고리별 역할·퍼널·프롬프트 키·톤 규칙, CTA 문구 원문과 선택 규칙, 면책조항 A/B/C, '특허청'→'지식재산처' 치환, 전화·이메일·서명·변리사 프로필, 절대원칙(이메일은 admin@didimip.com만, 디딤 다이어리 CTA 금지), 변리사 광고 규정 표현 규칙, Notion 기록 DB 5개(디딤 블로그 콘텐츠/상담/사례 메모/공고 후보/키워드)의 위치·열·선택지와 글 페이지 5개 섹션(브리핑·본문·인포그래픽·발행 블록·검수 기록) 형식을 담는다. 디딤 블로그 글을 기획·작성·검수·발행 준비·기록할 때 다른 didim-blog-* 스킬보다 먼저 함께 읽는다. "디딤 블로그 카테고리 뭐 있어?", "이 글 어느 카테고리야?", "CTA 뭐 넣어?", "면책 문구 줘", "다이어리에 상담 안내 넣어도 돼?", "특허청 표기 고쳐줘", "광고 규정 위반 표현 봐줘", "디딤 연락처·서명", "CAT-B-02가 뭐야?", "Notion 어느 열에 적어?", "글 페이지 섹션 구조" 같은 요청에 사용한다.
 ---
 
 # 디딤 블로그 공통 규칙 (didim-blog-core)
 
 특허그룹 디딤 네이버 블로그의 카테고리·CTA·면책·명칭·광고 규정·기록 저장소를 한곳에 모은 기반 스킬이다.
-백오피스(Next.js + Supabase) 코드의 상수·규칙을 원문 그대로 옮기고, 2026-10-01 확정 결정(skills/_DECISIONS.md: 네이버 categoryNo 정본, 신규 카테고리 구조, Notion DB)을 반영했다. 다른 didim-blog-* 스킬은 이 스킬의 references 를 근거로 쓴다.
+백오피스(Next.js + Supabase) 코드의 상수·규칙을 원문 그대로 옮기고, 2026-10-01 확정 결정(skills/_DECISIONS.md: 네이버 categoryNo 정본, 신규 카테고리 구조, Notion DB 5개·전용 열·페이지 섹션 — 6·7절)을 반영했다. 다른 didim-blog-* 스킬은 이 스킬의 references 를 근거로 쓴다.
 
 ## 언제 쓰나
 - 글의 카테고리·프롬프트 키·톤을 정해야 할 때
@@ -14,7 +14,7 @@ description: 특허그룹 디딤 네이버 블로그(didimip)의 공통 기반 �
 - 초안·발행본이 절대원칙과 광고 규정을 지키는지 검수할 때
 - '특허청' 같은 옛 기관명을 현행 명칭으로 바꿀 때
 - 레거시 카테고리(변리사의 현장 수첩, IP 라운지)나 코드의 CAT-* ID 를 신규 구조로 옮겨 읽을 때
-- Notion "디딤 블로그 콘텐츠"/"디딤 블로그 상담" 에 무엇을 어떤 값으로 적을지 정할 때
+- Notion "디딤 블로그 콘텐츠"(전용 열·글 페이지 5개 섹션)와 상담·사례 메모·공고 후보·키워드 DB 에 무엇을 어떤 값으로 적을지 정할 때
 
 ## 절대원칙 (반드시 지킨다 — docs/UPGRADE_SPEC.md §0 + _DECISIONS.md)
 1. 이메일은 **admin@didimip.com** 만. 다른 주소가 보이면 버그다. 전화 02-571-6613, 서명 "특허그룹 디딤 | 기업을 아는 변리사".
@@ -23,7 +23,8 @@ description: 특허그룹 디딤 네이버 블로그(didimip)의 공통 기반 �
 4. 카테고리별 글쓰기 공식(톤·분량·구조)은 섞지 않는다. 프롬프트 4종은 서로 독립이다.
 5. 현재 시점 서술에서 '특허청' 대신 **'지식재산처'**(2025-10-01 승격). 과거 맥락("당시 특허청")·법령명·"특허청(현 지식재산처)"는 그대로 둔다.
 6. 결과 보장·단정 표현 금지("반드시 절세됩니다", "법인세를 5천만원으로 줄였습니다"). 사례·수치에는 전제 조건(매출 규모·업종·기간)을 붙인다.
-7. 사례(26) 글은 사용자가 준 사건 메모 없이는 쓰지 않는다.
+7. 사례(26) 글은 사건 메모 없이는 쓰지 않는다. 메모는 사용자가 준 것 또는 Notion "디딤 블로그 사례 메모" 중 `익명화 확인` = 체크 이고 `고객 공개 동의` ≠ 미확인 인 것만. `출처 사건번호`는 글에 절대 노출하지 않는다.
+8. Notion 의 '메모' 열은 사람 전용이다. 스킬은 전용 열(태그·CTA·면책 레벨·디딤 소식 종류·발행예정일 등)과 글 페이지 섹션에만 쓴다.
 
 ## 입력
 - 판단 대상: 카테고리(네이버 이름, categoryNo, 또는 CAT-*), 주제·타깃 키워드·제목, 검수할 본문, AI 도움 여부, (디딤 소식이면) 사무소 소식 여부.
@@ -59,8 +60,11 @@ description: 특허그룹 디딤 네이버 블로그(didimip)의 공통 기반 �
 2. `references/ad-regulations.md` 1절로 결과 단정·절대적 약속·전제 없는 수치·"업계 최고"를 찾는다.
 3. 다른 이메일은 `core_rules.py enforce-email` 로 바꾼다.
 
-### 7. 기록 (`references/notion-storage.md`)
-- "디딤 블로그 콘텐츠"의 `카테고리`·`categoryNo`·`2차 분류`·`상태` 값은 그 파일의 선택지 문자열 그대로 쓴다. 쓰기 전에 사용자 확인을 받는다. 커넥터가 없으면 표로 출력해 붙여넣기를 요청한다.
+### 7. 기록 (`references/notion-storage.md`, `scripts/notion_page.py`)
+- 위치: "DIDIM 블로그 운영" 아래 DB 5개 — 콘텐츠 `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed`, 상담 `collection://e1272822-7efd-4850-b8c8-cfce02db7d00`, 사례 메모 `collection://d0dc583f-9a93-482c-af24-fede97f446a0`, 공고 후보 `collection://22228030-8382-4930-926e-fd46dc2f0bac`, 키워드 `collection://4e0fae54-aeb3-48dd-b948-b78886a8e859`.
+- 콘텐츠 DB 의 `카테고리`·`categoryNo`·`2차 분류`·`디딤 소식 종류`·`상태`·`CTA`·`면책 레벨`·`태그` 값은 notion-storage.md 2절의 선택지·변환표 그대로 쓴다(면책 `none` → `없음`, 태그는 `#` 없이 쉼표 구분, CTA 는 템플릿 key → 선택지). **'메모' 열에는 쓰지 않는다.**
+- 글 내용은 페이지 본문 5개 섹션(`## 브리핑` / `## 본문` / `## 인포그래픽` / `## 발행 블록` / `## 검수 기록`)에 둔다. 섹션별 담당 스킬과 읽기·쓰기 방법은 notion-storage.md 3절. `## 본문` 은 ```markdown 코드 블록에 원문 그대로.
+- 쓰기 전에 바꿀 값을 보여 주고 사용자 확인을 받는다. 커넥터가 없으면 표로 출력해 붙여넣기를 요청한다. 코어는 직접 쓰지 않고 규칙·변환만 제공한다.
 
 ## 출력 형식
 - 조회: 표 하나(예: | categoryNo | 이름 | 구분 | 프롬프트 키 | CTA | 신규 대응 |).
@@ -79,6 +83,9 @@ description: 특허그룹 디딤 네이버 블로그(didimip)의 공통 기반 �
 - `category {key}` · `cta {category, target_keyword, title, office_news}` · `prompt-key` · `field-cta`(레거시 생성용)
 - `disclaimer {category|category_id, body, is_ai_generated}` · `replace-names {body}` · `enforce-email {text}` · `check {text, category}` · `constants`
 예: `echo '{"category":"지원사업·인증과 특허","target_keyword":"벤처인증"}' | python3 scripts/core_rules.py cta`
+
+`scripts/notion_page.py` (정본, writer·publish-prep·infographic 에 같은 파일 사본) — Notion 저장 형식 도우미. 계산은 하지 않고 이미 계산된 값을 열 값으로 옮기고 페이지 섹션을 만들고 읽는다.
+- `page`(새 글 페이지 5개 섹션) · `split`(fetch 결과 → 섹션별 텍스트) · `section`(한 섹션만 바꾸는 update_content 인자) · `writer-props`(초안 → 콘텐츠 DB 속성·검수 기록 줄) · `case-memo`(사례 메모 사용 조건·참고 사항, 사건번호 제외) · `leak-check`(사건번호 노출 검사) · `infographic-section`(설계 요약 표) · `to-content`(페이지 → publish-prep 입력) · `publish-props`(발행 후 S4 속성)
 실행할 수 없으면 references 의 규칙을 같은 순서로 손으로 적용한다.
 
 ## 참조 파일
@@ -92,4 +99,4 @@ description: 특허그룹 디딤 네이버 블로그(didimip)의 공통 기반 �
 | references/brand-constants.md | 전화·이메일·서명·변리사 프로필·브랜드 태그·서명 블록 |
 | references/absolute-principles.md | UPGRADE_SPEC §0·§11 원문, 코드상 강제 지점 |
 | references/ad-regulations.md | 변리사 광고 규정 관련 프롬프트·검증 규칙 원문 |
-| references/notion-storage.md | Notion DB 2개 위치·ID·속성·선택지, 기록 규칙 |
+| references/notion-storage.md | Notion DB 5개(콘텐츠·상담·사례 메모·공고 후보·키워드) 위치·data source ID·열·선택지(2026-10-01 fetch), 값 변환표, 글 페이지 5개 섹션 구조와 읽기·쓰기 규칙 |

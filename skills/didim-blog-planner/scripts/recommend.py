@@ -1210,9 +1210,29 @@ def iso_week_kst(dt):
     return y, w
 
 
+PUBLISH_WEEKDAY = 1        # 화요일 (월=0)
+PUBLISH_HOUR_KST = 9       # 발행 시각 09:00 KST
+
+
+def next_publish_tuesday(now):
+    """[결정 §8] 다음 발행 화요일(KST 날짜). 오늘이 화요일 09:00 이전이면 오늘, 그 이후면 다음 화요일."""
+    n = now.astimezone(KST)
+    d = n.date() + timedelta(days=(PUBLISH_WEEKDAY - n.weekday()) % 7)
+    if n.weekday() == PUBLISH_WEEKDAY and n.hour >= PUBLISH_HOUR_KST:
+        d += timedelta(days=7)
+    return d
+
+
+def publish_week(now):
+    """로테이션 기준 주 = 다음 발행 화요일이 속한 ISO 주(KST) → (iso_year, iso_week, 화요일 date)."""
+    tue = next_publish_tuesday(now)
+    y, w, _ = tue.isocalendar()
+    return y, w, tue
+
+
 def rotation_slot(now, offset=0):
-    """ISO 주차(KST) 기준 4주 로테이션 위치 0~3 (0=1주차)."""
-    _, w = iso_week_kst(now)
+    """4주 로테이션 위치 0~3 (0=1주차). 기준 = 다음 발행 화요일의 ISO 주차(KST, _DECISIONS.md §8)."""
+    _, w, _ = publish_week(now)
     return (w - 1 + offset) % 4
 
 
@@ -1434,6 +1454,8 @@ def run_plan(data, seed=None, verify_mode=False):
 
     # 2) 현황: 이번 ISO 주 / 최근 4주 / 이번 달 (신규 카테고리 합산)
     cur_iso = iso_week_kst(now)
+    pub_y, pub_w, pub_tue = publish_week(now)
+    target_posts = []
     week_start = (now.astimezone(KST) - timedelta(days=now.astimezone(KST).weekday())).replace(
         hour=0, minute=0, second=0, microsecond=0)
     four_weeks_start = week_start - timedelta(weeks=3)
@@ -1447,6 +1469,8 @@ def run_plan(data, seed=None, verify_mode=False):
         if iso_week_kst(dt) == cur_iso:
             counts["this_week"][n] = counts["this_week"].get(n, 0) + 1
             this_week_posts.append(h.get("title"))
+        if iso_week_kst(dt) == (pub_y, pub_w):
+            target_posts.append(h.get("title"))
         if dt >= four_weeks_start:
             counts["last_4_weeks"][n] = counts["last_4_weeks"].get(n, 0) + 1
         if dt >= month_start:
@@ -1458,8 +1482,8 @@ def run_plan(data, seed=None, verify_mode=False):
     rot = resolve_rotation(now, last_new, bool(case_memos), int(data.get("rotation_offset", 0)))
     main_no = rot["categoryNo"]
     warnings = list(rot["notes"]) + source_warnings
-    if this_week_posts:
-        warnings.append(f"이번 주(ISO {cur_iso[1]}주) 이미 {len(this_week_posts)}편 발행 — 주 1편 기본 충족. "
+    if target_posts:
+        warnings.append(f"발행 주(ISO {pub_w}주, 화 {pub_tue.isoformat()})에 이미 {len(target_posts)}편 발행 — 주 1편 기본 충족. "
                         "추가 발행은 디딤 소식·디딤 다이어리 권장.")
     if len(dated) >= 2 and dated[0][1].get("new_category_no") and \
             dated[0][1].get("new_category_no") == dated[1][1].get("new_category_no"):
@@ -1598,6 +1622,8 @@ def run_plan(data, seed=None, verify_mode=False):
     return {
         "now": now.isoformat(), "seed": int(seed),
         "iso_week": {"year": cur_iso[0], "week": cur_iso[1]},
+        "publish_week": {"year": pub_y, "week": pub_w, "publish_tuesday": pub_tue.isoformat(),
+                         "rule": "다음 발행 화요일(화 09:00 이전이면 오늘)이 속한 ISO 주(KST) — _DECISIONS.md §8"},
         "rotation": {"slot": rot["slot"], "used_slot": rot["used_slot"], "sequence": [cat_name(n) for n in ROTATION],
                      "main_categoryNo": main_no, "main_category": cat_name(main_no)},
         "last_published": ({"date": last.get("date"), "title": last.get("title"), "category_no": last.get("category_no"),
@@ -1628,7 +1654,8 @@ def to_markdown(result):
     if "rotation" not in result:
         return to_markdown_legacy(result)
     r = result["rotation"]
-    lines = [f"**이번 주(ISO {result['iso_week']['year']}-W{result['iso_week']['week']:02d})**: 로테이션 {r['slot']}주차 → "
+    pw = result.get("publish_week") or {**result["iso_week"], "publish_tuesday": "?"}
+    lines = [f"**발행 주(ISO {pw['year']}-W{pw['week']:02d}, 화 {pw['publish_tuesday']})**: 로테이션 {r['slot']}주차 → "
              f"메인 **{r['main_category']} ({r['main_categoryNo']})**  "]
     lw = ", ".join(f"{s['category']} {s['count']}" for s in result["status"]["last_4_weeks"]) or "없음"
     lines.append(f"**최근 4주 발행**: {lw}  ")
@@ -1967,8 +1994,11 @@ def main(argv=None):
         now = parse_dt(a.now) or datetime.now(KST)
         w = get_current_week(now, a.start)
         y, iw = iso_week_kst(now)
+        py, pw, ptue = publish_week(now)
         slot = rotation_slot(now)
-        _dump({"now": now.isoformat(), "iso_year": y, "iso_week": iw, "rotation_slot": slot + 1,
+        _dump({"now": now.isoformat(), "iso_year": y, "iso_week": iw,
+               "publish_tuesday": ptue.isoformat(), "publish_iso_year": py, "publish_iso_week": pw,
+               "rotation_slot": slot + 1,
                "rotation_category": cat_name(ROTATION[slot]), "rotation_categoryNo": ROTATION[slot],
                "legacy_12week": {"blog_start_date": a.start, "current_week": w, "month_weeks": get_month_weeks(w),
                                  "schedule_in_range": w <= 12, "note": "12주 스케줄은 폐기(결정 사항 §3) — 참고용"}})

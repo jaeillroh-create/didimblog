@@ -25,7 +25,13 @@ status 는 "S1" 또는 Notion 값 "S1 초안완료" 형태 모두 가능.
 28+사무소 소식 → DIDIM-NEWS-OFFICE(CAT-B-03 수치 + CTA 없으면 +10), 17~20 → CAT-C(다이어리),
 레거시 9~12·23 → CAT-A, 13~15 → CAT-B, 16 → CAT-B-03. (_DECISIONS.md 2026-10-01)
 출력(JSON): totalScore, maxPossibleScore, normalizedScore, items[], verdict, activeItemCount,
-           + verdictLabel, scoreColor, scoreBgColor, progressColor, blockedMessage, rubricKey
+           + verdictLabel, scoreColor, scoreBgColor, progressColor, blockedMessage, rubricKey,
+           + notion_record (결정 사항 §7: 콘텐츠 DB 'SEO 점수'·'SEO 판정' 열 값 + '## 검수 기록' 마크다운)
+
+[결정 사항 §7] Notion "디딤 블로그 콘텐츠" 기록: 'SEO 점수' = normalizedScore(0~100),
+'SEO 판정' = 통과 / 수정 필요 / 발행 불가 (verdict pass / fix_required / blocked).
+미충족 항목(점수 항목 passed=false, --checklist-file 을 주면 18항목 미통과·사람 확인 대기 포함)은
+페이지 본문 '## 검수 기록' 섹션에 붙인다. '메모' 열은 쓰지 않는다.
 """
 
 import argparse
@@ -33,6 +39,7 @@ import json
 import math
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 
 from _jscompat import JS_DOT, JS_WS, js_len, js_round
 from seo_editor_check import extract_image_markers
@@ -457,6 +464,44 @@ def decorate(result, rubric_key):
     return out
 
 
+NOTION_CONTENT_DS = "collection://463bc815-11ab-4290-9d86-22bd1aa9cfed"
+KST = timezone(timedelta(hours=9))
+
+
+def notion_record(out, status=None, checked_date=None, checklist=None, title=None):
+    """[결정 §7] 콘텐츠 DB 'SEO 점수'·'SEO 판정' 값과 '## 검수 기록' 에 붙일 미충족 항목 마크다운."""
+    date = checked_date or datetime.now(KST).date().isoformat()
+    label = VERDICT_LABELS[out["verdict"]]
+    lines = [f"### SEO 점검 {date} — {out['normalizedScore']}점 · {label}" + (f" ({title})" if title else ""),
+             f"- 루브릭 {out['rubricKey']} · 상태 {status or '?'} · {out['summary']}"]
+    failed = [i for i in out["items"] if not i["passed"]]
+    if failed:
+        lines.append("- 미충족 항목:")
+        for i in failed:
+            hint = f" — {i['hint']}" if i.get("hint") else ""
+            lines.append(f"  - {i['label']}: {i['actual']} (기준 {i['expected']}, {i['score']}/{i['maxScore']}점){hint}")
+    else:
+        lines.append("- 미충족 항목 없음")
+    if out.get("blockedMessage"):
+        lines.append("- " + out["blockedMessage"].replace("\n", " "))
+    if checklist:
+        fail18 = [r for r in checklist.get("items") or [] if r.get("passed") is False]
+        pend18 = [r for r in checklist.get("items") or [] if r.get("passed") is None]
+        summ = checklist.get("summary_unknown_as_fail") or {}
+        lines.append(f"- 18항목: 필수 {summ.get('required_pass_count', '?')}/10 · 권장 {summ.get('recommended_pass_count', '?')}/4 · "
+                     f"선택 {summ.get('optional_pass_count', '?')}/3 (미확인=미통과 집계)")
+        for r in fail18:
+            lines.append(f"  - 미통과 {r['id']}. {r['item']}: {r.get('observed', '')}".rstrip(": "))
+        if pend18:
+            lines.append("  - 사람 확인 대기: " + ", ".join(f"{r['id']}. {r['item']}" for r in pend18))
+    return {
+        "data_source": NOTION_CONTENT_DS,
+        "properties": {"SEO 점수": out["normalizedScore"], "SEO 판정": label},
+        "review_log_section": "## 검수 기록",
+        "review_log_md": "\n".join(lines),
+    }
+
+
 def main():
     ap = argparse.ArgumentParser(description="카테고리별 루브릭·상태별 범위로 SEO 점수를 계산한다 (seo-calculator.ts 포팅).")
     ap.add_argument("--input", help="입력 JSON 파일. 없으면 stdin")
@@ -466,6 +511,8 @@ def main():
         action="store_true",
         help="원본 seo-calculator 의 이미지 정규식을 그대로 재현 (박스형 다중 줄 마커를 세지 않음). 기본은 올바른 카운트",
     )
+    ap.add_argument("--checklist-file", help="seo_checklist.py 출력 JSON — 18항목 미통과·확인 대기를 검수 기록에 포함")
+    ap.add_argument("--date", help="검수 기록 날짜(YYYY-MM-DD). 기본: 오늘(KST)")
     args = ap.parse_args()
     data = json.load(open(args.input, encoding="utf-8")) if args.input else json.load(sys.stdin)
     if args.body_file:
@@ -476,6 +523,8 @@ def main():
     out = decorate(res, rk)
     out["imageCountMode"] = "legacy(원본 정규식)" if args.legacy_image_count else "박스형+한 줄형"
     out["categoryInfo"] = info
+    checklist = json.load(open(args.checklist_file, encoding="utf-8")) if args.checklist_file else None
+    out["notion_record"] = notion_record(out, data.get("status"), args.date, checklist, data.get("title"))
     print(json.dumps(out, ensure_ascii=False, indent=2))
 
 

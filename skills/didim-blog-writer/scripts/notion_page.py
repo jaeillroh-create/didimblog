@@ -510,6 +510,7 @@ def to_content(fetched: str, row: dict | None = None) -> dict:
     }
     if cta_key:
         content["cta_override_key"] = cta_key
+        content["cta_override_label"] = "Notion 'CTA' 열"
     if cta_none:
         content["cta_none"] = True
     if lv:

@@ -69,7 +69,7 @@
 | 18 | 예약 시간 | 입력 시 자동 | 화요일 09:00 |
 
 ## 5. 출력
-- SeoScoreResult: totalScore, maxPossibleScore, normalizedScore, items[{key, label, score, maxScore, actual, expected, passed, hint}], verdict, activeItemCount (+스킬: verdictLabel, 색상 클래스, blockedMessage, rubricKey, categoryInfo)
+- SeoScoreResult: totalScore, maxPossibleScore, normalizedScore, items[{key, label, score, maxScore, actual, expected, passed, hint}], verdict, activeItemCount (+스킬: verdictLabel, 색상 클래스, blockedMessage, rubricKey, categoryInfo, notion_record — 콘텐츠 DB `SEO 점수`·`SEO 판정` 값과 `## 검수 기록` 마크다운)
 - 18항목: 항목별 passed/observed/basis/note, pending_human, 등급별 통과 수와 verdict
 - 간이 점수: checks[{label, passed, detail}], score, passedCount, totalCount
 - 품질 점수: score, grade, gradeLabel, badgeText, circleColor
@@ -83,16 +83,19 @@
 - saveSeoCheck 실패 → "SEO 체크 저장에 실패했습니다." (레거시).
 
 ## 7. 데이터 저장
+_DECISIONS.md §6·§7(Notion 확장): Notion **"디딤 블로그 콘텐츠"** `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed` 의 전용 열과 페이지 본문에 기록한다. **`메모` 열은 쓰지 않는다**(사람이 쓰는 자유 기록 전용).
+
 | 백오피스 | 스킬에서의 대체 |
 |---|---|
-| contents.title / body / target_keyword / tags | 사용자 입력, 또는 Notion "디딤 블로그 콘텐츠" 의 제목·타깃 키워드 + 해당 글 페이지 본문(본문·태그 열 없음 → 태그는 사용자 입력) |
+| contents.title / body / target_keyword / tags | 사용자 입력, 또는 콘텐츠 DB 의 제목·타깃 키워드·**태그**(쉼표 구분 10개) 열 + 해당 글 페이지 본문 `## 본문` 섹션 |
 | contents.status | "디딤 블로그 콘텐츠".상태 ("S0 기획중"~"S5 성과측정") |
-| contents.category_id / secondary_category | "디딤 블로그 콘텐츠".카테고리(신규 이름 또는 "레거시" + 2차 분류), categoryNo |
-| contents.seo_score | 전용 열 없음 — 요청 시 메모에 "SEO 72 (YYYY-MM-DD, 수정 필요)" 한 줄, 커넥터 없으면 대화 출력 |
-| seo_checks (items, pass counts, verdict) | 저장하지 않음(대화 출력). 필요하면 메모 |
+| contents.category_id / secondary_category | "디딤 블로그 콘텐츠".카테고리(신규 이름 또는 "레거시" + 2차 분류 — 기존 "레거시 2차 분류"에서 이름 변경), categoryNo, 디딤 소식 종류(사무소 소식 → subtype) |
+| contents.seo_score | **`SEO 점수`** number(0~100) = normalizedScore |
+| (verdict, 원본은 저장하지 않고 화면 계산) | **`SEO 판정`** select: `통과` / `수정 필요` / `발행 불가` ← pass / fix_required / blocked (자동 점수 판정. 18항목 레거시 판정은 넣지 않음) |
+| seo_checks (items, pass counts, verdict) / 점수 항목 힌트 | 페이지 본문 **`## 검수 기록`** 섹션 끝에 `### SEO 점검 YYYY-MM-DD — n점 · 판정` + 미충족 점수 항목(실측·기준·점수·힌트) + 18항목 미통과·사람 확인 대기(`--checklist-file` 시). seo_score.py `notion_record` |
 | contents.quality_score_1st / quality_score_final / quality_grade | 전용 열 없음 — 계산해 대화로 보고. 입력값 조회수는 "조회수(최근)" 열, 체류시간·CTA 클릭은 사용자 입력 |
 
-(_DECISIONS.md §4·§6: Notion DB 는 "디딤 블로그 콘텐츠", "디딤 블로그 상담" 두 개만.)
+(_DECISIONS.md §7: `SEO 점수`·`SEO 판정` 은 seo 가 쓰고 didim-blog-ops 가 S1→S2 전이 조건으로 읽는다.)
 
 ## 8. 원본 코드와 달라진 점
 1. **카테고리 매핑 추가** — _DECISIONS.md(2026-10-01)에 따라 네이버 categoryNo/이름을 받아 기존 루브릭 4종에 매핑한다. 루브릭 수치는 바꾸지 않았다. 디딤 소식의 사무소 소식은 CAT-B-03 수치에 다이어리식 CTA 부재 가점(10점)을 쓰는 스킬 전용 루브릭 `DIDIM-NEWS-OFFICE` 를 추가했다(가점 10은 다이어리 값으로, 사용자 결정에 따라 유지). CAT-* 입력은 원본 getRubric 과 같게 처리한다.
@@ -106,7 +109,8 @@
 9. **품질 점수** — SPEC §5.3 은 `×40/×30/×30` 이지만 코드는 `×0.4/×0.3/×0.3`(0~100 유지). calculateQualityScore/getQualityGrade 는 코드에서 호출되지 않는다(정의만 존재, 값은 수동 입력 표시 — 확인 필요). 스킬은 월 글 목록을 주면 최댓값을 직접 구하는 편의 기능을 추가했다.
 10. **문자열 길이** — 제목·본문·태그 길이는 JS 와 같은 UTF-16 기준으로 계산한다(이모지 2). 정규식의 공백(`\s`)·줄 시작(`^`)·`.` 은 JS 규칙에 맞춘 문자 클래스로 포팅했다.
 11. **검증** — seo_score.py(`--legacy-image-count` 모드)·seo_editor_check.py·quality_score.py 를 원본 TS(node 타입 제거 실행)와 같은 입력 35건으로 대조해 모두 일치(정수/실수 표기 차이 100 vs 100.0 은 출력에서 정수로 맞춤). 기본 모드는 3번의 이미지 카운트만 다르다.
+12. **결과 기록(결정 사항 7절 반영)** — 원본은 seo_score 만 contents 에 저장하고 판정·항목은 화면에서만 보였다. 스킬은 콘텐츠 DB `SEO 점수`·`SEO 판정`(통과/수정 필요/발행 불가 ← pass/fix_required/blocked) 열에 쓰고 미충족 항목은 페이지 본문 `## 검수 기록` 섹션에 붙인다(seo_score.py `notion_record`, `--checklist-file`·`--date`). 이전에 쓰던 `메모` 열 한 줄 기록("SEO 72 (…, 수정 필요)")은 중지. 태그는 새 `태그` 열에서 읽을 수 있다.
 
 ## 9. 다른 스킬과의 연결
-- 받는 쪽: **didim-blog-writer**(Phase 3 결과 본문·제목·태그·키워드), **didim-blog-factcheck**(교정된 본문), **didim-blog-core**(카테고리·CTA 규칙), **didim-blog-publish-prep**(최종 태그 10개·ALT).
-- 넘기는 쪽: **didim-blog-ops**(상태 전이 체크 "SEO 점수 70점 이상(권장)", S3 이상 발행 불가 판단), **didim-blog-writer**(힌트 기반 수정), **didim-blog-performance**(품질 점수·등급 — 성과 수치 입력은 performance 담당), **didim-blog-health**(오래된 글 재점검).
+- 받는 쪽: **didim-blog-writer**(Phase 3 결과 본문 — 페이지 `## 본문`·제목·키워드), **didim-blog-factcheck**(교정된 본문), **didim-blog-core**(카테고리·CTA 규칙·Notion 저장소 규칙), **didim-blog-publish-prep**(최종 태그 10개 — 콘텐츠 DB `태그` 열·ALT).
+- 넘기는 쪽: **didim-blog-ops**(콘텐츠 DB `SEO 점수`·`SEO 판정` — 상태 전이 체크 "SEO 점수 70점 이상(권장)", 발행 불가 판단 / 페이지 `## 검수 기록`), **didim-blog-writer**(힌트 기반 수정 — `## 검수 기록` 의 미충족 항목), **didim-blog-performance**(품질 점수·등급 — 성과 수치 입력은 performance 담당), **didim-blog-health**(오래된 글 재점검).

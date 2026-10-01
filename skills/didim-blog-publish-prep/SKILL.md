@@ -1,6 +1,6 @@
 ---
 name: didim-blog-publish-prep
-description: 특허그룹 디딤 블로그 글(마크다운 초안)을 네이버 블로그 에디터에 그대로 붙여넣을 수 있는 발행 준비 블록으로 바꾼다. 제목, 마크다운을 걷어낸 본문 순수 텍스트, 표 데이터(탭 구분), 면책조항(A/B/C), CTA(네이버 카테고리별 규칙·타깃 키워드 매칭, 이메일 admin@didimip.com 강제), 네이버 태그(#태그, 100자 이내, 10개), 이미지 위치·ALT 텍스트, 카테고리별 포맷 가이드, 서식 행 가이드, 발행 전 체크리스트 7개를 만든다. 디딤 다이어리·사무소 소식은 CTA 없이 만들고, 발행 후 Notion '디딤 블로그 콘텐츠'에 상태·발행일·발행 URL 기록을 돕는다. "이 글 네이버에 올리게 정리해줘", "발행 준비해줘", "복사용 텍스트로 바꿔줘", "마크다운 기호 빼줘", "태그 10개 #으로 만들어줘", "ALT 텍스트 뽑아줘", "발행 체크리스트", "CTA 뭐 붙여?" 같은 요청에 사용한다. 실제 발행은 사용자가 수동으로 한다.
+description: 특허그룹 디딤 블로그 글(마크다운 초안)을 네이버 블로그 에디터에 그대로 붙여넣을 수 있는 발행 준비 블록으로 바꾼다. 제목, 마크다운을 걷어낸 본문 순수 텍스트, 표 데이터(탭 구분), 면책조항(A/B/C), CTA(네이버 카테고리별 규칙·타깃 키워드 매칭, 이메일 admin@didimip.com 강제), 네이버 태그(#태그, 100자 이내, 10개), 이미지 위치·ALT 텍스트, 카테고리별 포맷 가이드, 서식 행 가이드, 발행 전 체크리스트 7개를 만든다. Notion '디딤 블로그 콘텐츠'의 글 페이지('## 본문' 섹션)와 제목·태그·CTA·면책 레벨·카테고리 열을 읽어 블록을 만들고 '## 발행 블록' 섹션에 저장하며, 디딤 다이어리·사무소 소식은 CTA 없이 만든다. 발행 후 사용자 확인을 받아 상태 S4 발행완료·발행일·발행 URL을 기록한다. "이 글 네이버에 올리게 정리해줘", "발행 준비해줘", "복사용 텍스트로 바꿔줘", "마크다운 기호 빼줘", "태그 10개 #으로 만들어줘", "ALT 텍스트 뽑아줘", "발행 체크리스트", "CTA 뭐 붙여?", "Notion에 있는 그 글 발행 블록 만들어줘", "발행했어, URL은 …" 같은 요청에 사용한다. 실제 발행은 사용자가 수동으로 한다.
 ---
 
 # 네이버 발행 준비 (didim-blog-publish-prep)
@@ -31,9 +31,22 @@ description: 특허그룹 디딤 블로그 글(마크다운 초안)을 네이버
 | publish_date | | 발행예정일 |
 | cta_override_key / disclaimer_override | | 사용자가 CTA·면책 레벨을 직접 고를 때 |
 
-가져오는 순서: 사용자가 붙여넣은 내용 → Notion 커넥터가 있으면 "디딤 블로그 콘텐츠" DB(data source `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed`)의 해당 글 — 속성: 제목·상태·카테고리·2차 분류·categoryNo·타깃 키워드·발행예정일(→ publish_date), 페이지 본문: 초안·태그 줄·AI 도움 여부 → 없으면 사용자에게 묻는다. 레거시 글(`카테고리 = 레거시`)은 `2차 분류` 이름을 category 로 쓴다.
+가져오는 순서: 사용자가 붙여넣은 내용 → Notion 커넥터가 있으면 "디딤 블로그 콘텐츠" DB(data source `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed`)의 해당 글(0단계) → 없으면 사용자에게 묻는다.
+
+| build 입력 | Notion (didim-blog-core `references/notion-storage.md` 2·3절) |
+|---|---|
+| title | `제목` |
+| body | 페이지 `## 본문` 섹션(```markdown 코드 블록 안 원문) |
+| tags | `태그` (쉼표 구분 → 배열) |
+| category / office_news | `categoryNo`·`카테고리`·`2차 분류`(레거시면 2차 분류 이름, 다이어리 하위면 그 이름) / `디딤 소식 종류` = 사무소 소식 → true |
+| cta_override_key / cta_none | `CTA`: 절세 시뮬레이션→현장수첩_절세, 인증 진단→현장수첩_인증, 연구소 진단→현장수첩_연구소, 출원 상담→현장수첩_출원, 이웃 추가→이웃추가(28이면 디딤소식_이웃추가), **없음 → CTA 블록 없음**, 비어 있음 → 자동 매칭 |
+| disclaimer_override | `면책 레벨`: A/B/C, 없음 → none, 비어 있음 → 자동 판정 |
+| target_keyword · status · publish_date | `타깃 키워드` · `상태` 앞 두 글자(S3) · `발행예정일` |
+| is_ai_generated | 기본 true (페이지 섹션에 "AI 도움: 아니오" 줄이 있으면 false) |
+'메모' 열은 사람 전용이라 입력으로 쓰지 않고, 그 열에 쓰지도 않는다.
 
 ## 절차
+0. **Notion에서 읽기**(커넥터가 있을 때): 글 페이지를 notion-fetch 해 결과 전체를 `page.txt`로 저장하고 `python3 scripts/publish_prep.py from-notion -i page.txt [--row row.json]` → `content.json`(위 표대로 채움, `_notion.warnings`는 블록 위 "⚠️ 확인 필요"로 나온다). fetch 결과에 속성이 안 보이면 data source 조회로 얻은 행 속성을 `row.json`(한글 열 이름 그대로)으로 넘긴다. `## 본문` 섹션이 없거나 비어 있으면 본문을 사용자에게 받는다. 이 경우 1·2단계는 content.json 확인으로 대신한다.
 1. **입력 확인**: 제목·본문·카테고리가 없으면 묻는다. 카테고리는 네이버 이름/categoryNo 로 받는다. 레거시 카테고리(변리사의 현장 수첩·IP 라운지 하위)는 사용자가 지정한 경우에만 쓰고, 출력에 신규 대응 카테고리를 함께 알린다. CAT-B-01/02 처럼 CAT ID 만 있으면 이름을 다시 확인한다.
 2. **JSON 작성**: 위 항목으로 `content.json` 을 만든다(`scripts/example_content.json` 참고).
 3. **태그가 없을 때**: `python3 scripts/publish_prep.py auto-tags` (입력 {category, target_keyword, keyword_positions}) 로 10개를 만들고 사용자에게 보여 준 뒤 tags 에 넣는다. 다이어리는 브랜드 태그 2개(특허그룹디딤, 디딤변리사)만 나온다.
@@ -47,7 +60,12 @@ description: 특허그룹 디딤 블로그 글(마크다운 초안)을 네이버
    - 본문에 '특허청'(현재 시점), admin@didimip.com 외 이메일, 결과 단정 표현 → 경고(코어의 `core_rules.py check`/`replace-names` 가 있으면 실행).
    - 다이어리인데 본문에 상담·문의·연락·무료·진단·시뮬레이션·admin@ → 삭제 권고.
 6. **출력**: 아래 "출력 형식" 그대로 내놓는다.
-7. **발행 후**: 사용자가 체크리스트 7개를 모두 마쳤다고 하면, 상태가 S3(발행예정)일 때만 "발행 완료(S3→S4)"를 진행한다. Notion "디딤 블로그 콘텐츠"에 사용자 확인 후 `상태 = S4 발행완료`, `발행일`, `발행 URL`(네이버 글 주소), `categoryNo`·`카테고리`를 기록한다(선택지 문자열은 코어 notion-storage.md 그대로). 커넥터가 없으면 이 값들을 표로 출력해 붙여넣기를 요청한다. 상태 전이 조건 검증은 didim-blog-ops 스킬이 맡는다.
+6-1. **Notion `## 발행 블록` 저장**(커넥터가 있고 사용자가 확인하면): `python3 scripts/publish_prep.py build -i content.json --format notion > block.md`(같은 블록·순서·문구, 블록 제목 ###·복사 대상은 ```text 코드 블록) → `python3 scripts/notion_page.py section --page-file page.txt --name "발행 블록" --content-file block.md` 결과를 notion-update-page(`update_content`)에 그대로 넘긴다. 다른 섹션은 건드리지 않는다. 블록을 다시 만들면 같은 명령으로 덮어쓴다.
+   - `CTA`·`면책 레벨`·`태그` 열이 비어 있었으면 `build` 결과의 `notion_values`(CTA 선택지 없으면 null → 비워 둠)로 채울지 묻는다. 사용자가 CTA·면책 레벨을 바꿨으면 그 값으로 열을 갱신한다. 이미 값이 있는 열은 사용자가 바꾸라고 할 때만 고친다.
+7. **발행 후**: 사용자가 체크리스트 7개를 모두 마쳤다고 하고 네이버 글 주소를 주면, 상태가 S3(발행예정)일 때만 "발행 완료(S3→S4)"를 진행한다(가능하면 didim-blog-ops `transition_check.py --to S4`로 조건 확인).
+   - `python3 scripts/notion_page.py publish-props --url <네이버 URL> --date <발행일 YYYY-MM-DD> [--build-file build.json --row-file row.json]` → `properties`(`상태` = `S4 발행완료`, `date:발행일:start`, `발행 URL`)와 `fill_if_empty`(비어 있던 CTA·면책 레벨·태그)를 보여 주고 **사용자 확인 후** notion-update-page(`update_properties`)로 쓴다. `발행예정일`은 그대로 둔다.
+   - `log_line`(`- YYYY-MM-DD HH:MM S3→S4 발행 URL …`)을 `notion_page.py section --name "검수 기록" --append`로 `## 검수 기록`에 덧붙인다.
+   - 커넥터가 없으면 이 값들을 표로 출력해 붙여넣기를 요청한다.
 
 ## 출력 형식 — 네이버 에디터에 그대로 붙여넣을 블록
 블록 순서 = 에디터에 붙여넣는 순서다. 각 블록은 4개 백틱 코드 블록(````text) 하나로, 안의 내용만 그대로 복사하면 되게 만든다. 코드 블록 밖에는 한 줄 안내만 둔다.
@@ -90,10 +108,13 @@ description: 특허그룹 디딤 블로그 글(마크다운 초안)을 네이버
 - CTA 를 본문과 CTA 블록에 두 번 넣지 않는다.
 - 상태가 S3 미만이면 "발행 완료" 처리를 하지 않는다(복사·확인만).
 - 네이버에 자동으로 올리거나 예약하지 않는다.
+- Notion '메모' 열에 쓰지 않는다(사람 전용). `상태`·`발행일`·`발행 URL`·열 값은 사용자 확인 후에만 쓰고, 페이지는 `## 발행 블록`·`## 검수 기록` 섹션만 고친다(`## 본문`은 writer·사람 몫).
 
 ## 스크립트
 `scripts/publish_prep.py` — publish-helpers.ts 전체 + 화면 로직(CTA 매칭·면책·체크리스트·태그 칩) + generateAutoTags 포팅. Python 3 표준 라이브러리, JSON 입출력, `--help` 지원. 원본 TS 를 node 로 실행한 결과와 12개 입력(+ CTA·체크리스트 상수)에서 결과가 완전히 같음을 확인했다.
-하위 명령: `build`, `strip-markdown`, `to-html`, `tables`, `tags`, `format-guide`, `enforce-email`, `image-guide`, `disclaimer`, `match-cta`(레거시·원본), `match-cta-new`(신규 구조), `resolve-category`, `auto-tags`, `line-guide`(스킬 추가).
+하위 명령: `build`(`--format json|text|notion`), `strip-markdown`, `to-html`, `tables`, `tags`, `format-guide`, `enforce-email`, `image-guide`, `disclaimer`, `match-cta`(레거시·원본), `match-cta-new`(신규 구조), `resolve-category`, `auto-tags`, `line-guide`(스킬 추가), `from-notion`(스킬 추가: Notion 페이지 → build 입력).
+`build` 입력에 `cta_none: true`(Notion CTA = 없음)를 주면 CTA 블록을 만들지 않는다. `build` JSON 결과의 `notion_values`는 CTA·면책 레벨·태그의 Notion 열 값이다. 원본 경로의 계산(CTA 매칭·면책·본문 변환)은 바뀌지 않는다(10개 입력 build 결과 비교로 확인).
+`scripts/notion_page.py` — didim-blog-core 정본의 사본. `section`(섹션 하나만 바꾸는 update_content 인자), `publish-props`(발행 후 S4 속성·검수 기록 줄), `to-content`(from-notion 과 같음).
 예: `python3 scripts/publish_prep.py strip-markdown --raw -i draft.md`
 
 ## 참조 파일
@@ -103,4 +124,4 @@ description: 특허그룹 디딤 블로그 글(마크다운 초안)을 네이버
 | references/publish-screen.md | 화면 카드·복사 항목·안내 문구, 체크리스트 7개, CTA 매칭 1~5순위, 상태 조건, 화면 코드 원문 |
 | references/upgrade-spec-s8.md | UPGRADE_SPEC §8 기획 원문과 구현 차이 |
 | references/image-alt-rules.md | ALT_TEXT_RULES, 이미지 마커 형식, 다이어리 이미지 규칙 |
-| (didim-blog-core) references/categories.md, cta-templates.md, disclaimers.md, notion-storage.md | 카테고리 정본·CTA·면책 원문, Notion DB 속성 |
+| (didim-blog-core) references/categories.md, cta-templates.md, disclaimers.md, notion-storage.md | 카테고리 정본·CTA·면책 원문, Notion DB 5개 열·선택지·값 변환표·글 페이지 5개 섹션 |

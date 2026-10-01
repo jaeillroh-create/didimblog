@@ -38,7 +38,7 @@ Notion 저장소는 _DECISIONS.md §6·§7: 콘텐츠 DB + 키워드 DB(키워�
 
 | 필드 | 필수 | 뜻 | 원본 대응 |
 |---|---|---|---|
-| now | 권장 | 기준 시각. 날짜만 주면 KST 00:00. 주차 = ISO 주차(KST) | 서버 `new Date()` |
+| now | 권장 | 기준 시각. 날짜만 주면 KST 00:00. 로테이션 기준 주 = 다음 발행 화요일(화 09:00 이전이면 오늘)이 속한 ISO 주(KST, _DECISIONS.md §8). 현황 통계는 오늘이 속한 ISO 주 | 서버 `new Date()` |
 | notion_rows[] | 선택 | Notion 콘텐츠 DB 행(속성 이름 그대로). history·rejected·recently_shown 으로 자동 분리 | contents + content_recommendations |
 | history[] | 필수(또는 notion_rows) | 발행 글. 카테고리는 `category_no`(정본) → `sub_category`/`category`(네이버 이름) → `category_id`(레거시 CAT-*) 순으로 판별 | contents(S4) |
 | history[].views / series / series_no | 선택 | 조회수(최근), 연재명·회차 → 지식재산 경영 연재 다음 회차 | contents.views_1m, series |

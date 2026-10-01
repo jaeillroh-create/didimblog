@@ -1,6 +1,6 @@
 ---
 name: didim-blog-infographic
-description: 디딤 블로그(특허그룹 디딤 네이버 블로그) 글에 넣을 썸네일과 본문 인포그래픽을 '인포그래픽 규칙 v2'대로 설계하고 SVG/PNG로 직접 그리는 스킬. 완성된 본문에서 시각화할 데이터를 찾아 썸네일(T) 1개와 본문 인포그래픽(A 비교, B 프로세스, C 숫자 카드, D 타임라인, E 체크리스트, F 퍼널, G 구조도, H 수평 막대) 0~3개를 설계 JSON으로 만들고, 숫자가 본문에 그대로 있는지 검사한 뒤, 블로그 이미지 팔레트로 1080×1080 / 1080×1350 이미지를 렌더링한다. 디딤 다이어리는 인포그래픽 대신 분위기 사진 프롬프트만 만든다. "인포그래픽 만들어줘", "썸네일 만들어줘", "이 글에 이미지 넣어줘", "블로그 이미지 설계", "도표로 그려줘", "비교 차트/체크리스트/타임라인 이미지", "네이버 썸네일", "이미지 마커 넣어줘", "ALT 텍스트 달아줘", "Phase 2.5" 같은 요청이나, didim-blog-writer로 초안을 끝낸 직후 이미지 단계가 필요할 때 적극적으로 사용한다.
+description: 디딤 블로그(특허그룹 디딤 네이버 블로그) 글에 넣을 썸네일과 본문 인포그래픽을 '인포그래픽 규칙 v2'대로 설계하고 SVG/PNG로 직접 그리는 스킬. 완성된 본문에서 시각화할 데이터를 찾아 썸네일(T) 1개와 본문 인포그래픽(A 비교, B 프로세스, C 숫자 카드, D 타임라인, E 체크리스트, F 퍼널, G 구조도, H 수평 막대) 0~3개를 설계 JSON으로 만들고, 숫자가 본문에 그대로 있는지 검사한 뒤, 블로그 이미지 팔레트로 1080×1080 / 1080×1350 이미지를 렌더링한다. 디딤 다이어리는 인포그래픽 대신 분위기 사진 프롬프트만 만든다. 설계 요약 표(유형·위치·헤드라인·ALT)는 Notion "디딤 블로그 콘텐츠" 글 페이지의 '## 인포그래픽' 섹션에 기록한다. "인포그래픽 만들어줘", "썸네일 만들어줘", "이 글에 이미지 넣어줘", "블로그 이미지 설계", "도표로 그려줘", "비교 차트/체크리스트/타임라인 이미지", "네이버 썸네일", "이미지 마커 넣어줘", "ALT 텍스트 달아줘", "Phase 2.5" 같은 요청이나, didim-blog-writer로 초안을 끝낸 직후 이미지 단계가 필요할 때 적극적으로 사용한다.
 ---
 
 # 디딤 블로그 인포그래픽 (규칙 v2)
@@ -154,7 +154,13 @@ python3 scripts/insert_markers.py --body body_ids.md --design design.json > body
 5. **검수 체크리스트** 결과
 6. (요청 시) 마커가 들어간 본문
 
-Notion "디딤 블로그 콘텐츠" DB가 연결돼 있으면 해당 글의 '메모'에 이미지 설계 요약(유형·위치·ALT)을 남길 수 있다. 이미지 파일 자체는 Notion에 올리지 않는다(네이버에 직접 올림).
+### Notion 기록 — 글 페이지 `## 인포그래픽` 섹션 (_DECISIONS.md 7절)
+Notion "디딤 블로그 콘텐츠"(data source `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed`)에 그 글의 페이지가 있으면, 위 1번 **설계 요약 표**를 페이지 본문 `## 인포그래픽` 섹션에 둔다. '메모' 열은 사람 전용이라 쓰지 않는다. 섹션 형식은 didim-blog-core `references/notion-storage.md` 3절.
+1. `python3 scripts/notion_page.py infographic-section --design design.json > infographic.md` → Notion 표(`<table>`): 번호 / 유형(T 썸네일, A 비교 …) / 위치(top, p:N) / 헤드라인 / ALT. 다이어리는 사진마다 `{"type":"사진","position":"p:N","scene":"<장면>","alt":"<ALT>"}` 배열로 같은 명령을 쓴다(헤드라인 칸 = 장면).
+2. 페이지를 notion-fetch 해 `page.txt`로 저장 → `python3 scripts/notion_page.py section --page-file page.txt --name 인포그래픽 --content-file infographic.md` 결과를 notion-update-page(`update_content`)에 그대로 넘긴다(사용자 확인 후). 다른 섹션(본문·발행 블록 등)은 건드리지 않는다. 다시 설계하면 같은 명령으로 덮어쓴다.
+3. writer 흐름 안에서 아직 페이지가 없으면 `infographic.md`를 writer에 넘긴다(writer가 페이지를 만들 때 `## 인포그래픽`에 넣는다).
+4. 커넥터가 없으면 설계 요약 표를 그대로 보여 주고 붙여넣기를 요청한다.
+이미지 파일 자체는 Notion에 올리지 않는다(네이버에 직접 올림). 마커 삽입 본문으로 `## 본문`을 바꿔야 하면 writer 흐름(또는 사용자 확인 후 `section --name 본문 --code markdown`)으로 한다.
 
 ## 금지·주의
 
@@ -177,4 +183,5 @@ Notion "디딤 블로그 콘텐츠" DB가 연결돼 있으면 해당 글의 '메
 | `scripts/render.py` | T·A~H SVG 렌더러 + PNG 변환 + preview.html |
 | `scripts/insert_markers.py` | 본문에 이미지 마커 삽입, 문단 ID 주입 |
 | `scripts/design_json.py` | 설계 JSON 읽기(잘린 JSON 3단계 복구) |
+| `scripts/notion_page.py` | Notion 기록 형식(didim-blog-core 정본의 사본): `infographic-section`(설계 요약 표), `section`(섹션 하나만 바꾸기) |
 | `assets/samples/` | 9개 유형 샘플 PNG/SVG와 입력(`input/*_designs.json`, `*_body.md`) |

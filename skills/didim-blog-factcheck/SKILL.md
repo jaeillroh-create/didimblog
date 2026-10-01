@@ -22,7 +22,7 @@ description: 특허그룹 디딤 네이버 블로그 초안의 팩트체크·교
 ## 입력
 | 항목 | 필수 | 없을 때 |
 |---|---|---|
-| 본문(마크다운) | 필수 | 사용자에게 요청. Notion "디딤 블로그 콘텐츠" DB 에 해당 글 페이지가 있으면 그 페이지 본문에서 읽는다(DB 에 본문 열은 없다) |
+| 본문(마크다운) | 필수 | 사용자에게 요청. Notion "디딤 블로그 콘텐츠" DB 에 해당 글 페이지가 있으면 그 페이지 본문의 `## 본문` 섹션에서 읽는다(DB 에 본문 열은 없다) |
 | 제목 | 권장 | 본문 첫 줄/사용자에게 확인 |
 | 카테고리명 | 권장 | 네이버 카테고리 이름 그대로(예: 지원사업·인증과 특허). 없으면 빈 문자열 |
 | 핵심 키워드 | 권장 | 빈 문자열 |
@@ -36,17 +36,21 @@ description: 특허그룹 디딤 네이버 블로그 초안의 팩트체크·교
 2. **프롬프트 렌더** — `render_prompt.py --template cross` 에 `{title, body(ID 주입본), legal_references, category_name, target_keyword}` 를 넣는다. 본문 키워드로 Known Facts 가 자동 선택되어 `{{legal_facts}}` 에 들어가고, 오늘 날짜·올해가 `{{current_date}}`·`{{current_year}}` 에 들어간다. 템플릿은 `references/prompts.md` §4 (main 원문 + 열린 PR #89 의 "기준 시점" 규칙 병합본).
 3. **독립 검토 패스 실행** — 가능하면 서브에이전트(Agent/Task 도구)를 **2개** 띄워 각각 렌더된 system·user 메시지만 주고 "JSON 객체 하나만 출력"하게 한다. 초안을 쓴 맥락·의도를 전달하지 않는다(자기 글 검증은 의미가 약하다는 원본 설계 이유). 서브에이전트가 없으면 Claude 가 초안 작성 관점을 내려놓고 프롬프트만 따르는 검증 패스를 1회 이상 별도로 수행한다. 웹 검색 도구가 있고 법령 개정이 의심되면 확인해도 되지만, 확인하지 못한 값은 일반화 표현으로 우회한다.
 4. **파싱** — 각 패스의 응답을 `parse_result.py --mode cross` 로 정규화한다(심각/주의/경미 → high/medium/low, problem→description, suggested_text→replacement_text, 점수로 verdict 추론: 80↑ pass, 60↑ fix_required). 파싱 실패 패스는 "응답 JSON 파싱 실패"로 표시하고 나머지로 진행한다.
-5. **병합** — `merge_issues.py` 에 `{"providers": [{provider, displayName, success, result}, ...]}` 를 넣는다. 같은 original_text(공백 정규화·앞 60자·소문자)끼리 묶고, 2개 이상 패스가 같은 곳을 지적하면 severity 를 한 단계 올린다(⬆). 각 그룹에 표시 라벨(숫자팩트·숫자일관→"숫자 오류", 숫자완화→"표현 완화", 법률팩트, 광고규정, 기관명, 그 외 원래 이름)과 `needsParagraphRewrite` 가 붙는다.
+5. **병합** — `merge_issues.py` 에 `{"providers": [{provider, displayName, success, result}, ...], "title": …}` 를 넣는다. 같은 original_text(공백 정규화·앞 60자·소문자)끼리 묶고, 2개 이상 패스가 같은 곳을 지적하면 severity 를 한 단계 올린다(⬆). 각 그룹에 표시 라벨(숫자팩트·숫자일관→"숫자 오류", 숫자완화→"표현 완화", 법률팩트, 광고규정, 기관명, 그 외 원래 이름)과 `needsParagraphRewrite` 가 붙는다.
 6. **사용자 검토** — 그룹을 심각→주의→경미 순 표로 보여 주고(출력 형식 참고) 그룹마다 반영/무시를 받는다. 사용자가 "전부 반영"이라고 하면 전부 반영한다. 원본도 자동 반영하지 않고 사람이 카드마다 고른다.
 7. **반영**
    - `needsParagraphRewrite == false`(숫자·법률팩트·기관명, 또는 경미하고 길이 변화 < 50%): `apply_fix.py fix` 로 original_text → replacement_text 교체. 결과 `mode` 가 exact 가 아니면 "근사 위치로 반영 — 확인 필요"를 알린다.
    - `true`(심각/주의, 또는 논리·단정·출처·광고규정): `apply_fix.py find-paragraph` 로 문단을 찾고, `references/prompts.md` §9 문단 재작성 규칙대로 Claude 가 그 문단만 다듬는다(수정 의미 유지, 1인칭·구어체 톤 유지, 길이 비슷하게). 다듬은 문단을 미리 보여 주고 승인되면 `apply_fix.py paragraph` 로 교체한다.
    - 매칭 실패(`matched: false`): `recovery` 텍스트(원문/수정안)를 사용자에게 주고 직접 고치게 한다. 본문을 추측으로 고치지 않는다.
    - 되돌리기 요청: `undo-fix` / `undo-paragraph`.
-8. **마무리** — 검증 결과는 원본에서도 저장하지 않는다(패널 상태로만 존재). 사용자가 원하면 Notion "디딤 블로그 콘텐츠" DB 해당 글 '메모'에 "교차검증 2026-10-01: 심각 0 · 반영 3 · 무시 1" 한 줄을 남긴다(커넥터 없으면 생략). 모든 그룹이 반영/무시되면 `apply_fix.py strip-ids` 로 문단 ID 를 지운 최종 본문을 낸다. 다음 단계는 didim-blog-writer 의 Phase 3, 또는 didim-blog-seo 점검이다.
+8. **판정** — 반영/무시가 끝나면 그룹별 상태를 `status`(`{groupKey: "applied"|"ignored"}`)로 넣어 `merge_issues.py` 를 다시 돌린다. 결과 `notion_record` 가 기록값이다:
+   - `교차검증` = **통과**(반영 후 남은 심각 이슈 0건) / **심각 이슈 남음**(표에서 '심각'(⬆ 포함)인 그룹 중 반영 안 된 것 — 대기·무시 포함 — 이 1건 이상) / **미실시**(성공한 검토 패스 없음). 주의·경미만 남은 것은 통과다.
+   - `교차검증일` = 판정한 날(KST, `--date` 로 지정 가능).
+   - 심각 그룹을 '무시'로 둘 때는 근거를 사용자에게 확인받고, 검수 기록에 그대로 남는다는 점을 알린다. 수정 후 다시 검증하면 새 결과로 판정한다.
+9. **기록(Notion, _DECISIONS.md §7)** — "디딤 블로그 콘텐츠"(`collection://463bc815-11ab-4290-9d86-22bd1aa9cfed`) 해당 글 행에 `notion_record.properties`(`교차검증`, `교차검증일`)를 쓰고, 페이지 본문 **`## 검수 기록`** 섹션 끝에 `notion_record.review_log_md`(검토 패스·점수, 반영/무시/대기, 남은 심각 이슈 원문, 반영 항목)를 붙인다(섹션이 없으면 본문 끝에 만든다. 다른 섹션은 건드리지 않는다). **`메모` 열은 쓰지 않는다**(사람이 쓰는 자유 기록 전용). 쓰기 전에 바꿀 값을 보여 주고 확인받는다. 커넥터가 없으면 같은 내용을 대화에 출력한다. 반영된 본문은 `apply_fix.py strip-ids` 로 문단 ID 를 지운 뒤 사용자에게 주고, 페이지 `## 본문` 갱신은 사용자 확인 후 한다. 다음 단계는 didim-blog-writer 의 Phase 3, 또는 didim-blog-seo 점검이다. didim-blog-ops 는 `교차검증=통과` 를 S1→S2 전이의 권장 조건으로 읽는다.
 
 ## QUICK 모드 (빠른 1차 팩트체크)
-`render_prompt.py --template fact-check-quick` → 검증 패스 1회 → `parse_result.py --mode factcheck --body-file 본문` (original_text 가 없으면 location 으로 본문 줄을 찾아 채운다) → 이슈 최대 5건 보고 → 원하면 7단계로 반영. 전체 5항목(CTA·독자 포함)은 `--template fact-check`.
+`render_prompt.py --template fact-check-quick` → 검증 패스 1회 → `parse_result.py --mode factcheck --body-file 본문` (original_text 가 없으면 location 으로 본문 줄을 찾아 채운다) → 이슈 최대 5건 보고 → 원하면 7단계로 반영. 전체 5항목(CTA·독자 포함)은 `--template fact-check`. QUICK 결과는 교차검증이 아니므로 `교차검증` 열을 '통과'로 바꾸지 않는다(원하면 `## 검수 기록` 에 "빠른 팩트체크 YYYY-MM-DD: n건" 한 줄만).
 
 ## 출력 형식
 ```
@@ -60,6 +64,8 @@ description: 특허그룹 디딤 네이버 블로그 초안의 팩트체크·교
 | 2 | 주의 | 광고규정 | … | … | 문단 재작성 | A |
 
 각 항목 아래 한 줄로 문제(problem)를 적는다. 반영 후에는 "n건 반영 · m건 무시 · 0건 대기"와 최종 본문(문단 ID 제거)을 낸다.
+
+**판정: {통과 | 심각 이슈 남음}** (남은 심각 {k}건) → Notion `교차검증`={…}, `교차검증일`={YYYY-MM-DD}, `## 검수 기록` 에 추가
 ```
 지적 사항이 0건이면 "모든 검토 패스가 사실/논리 측면에서 통과로 판정했습니다."라고 알리고 다음 단계로 넘어간다.
 
