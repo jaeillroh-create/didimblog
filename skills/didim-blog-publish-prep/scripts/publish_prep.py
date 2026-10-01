@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from typing import Any
@@ -1156,6 +1157,35 @@ def render_text(r: dict, fence: str = "````", heading: str = "##") -> str:
     return "\n".join(out)
 
 
+def render_notion(r: dict) -> str:
+    """[스킬] Notion 글 페이지 `## 발행 블록` 섹션 내용 (_DECISIONS.md 7절).
+
+    render_text 와 같은 블록·순서·문구. 복사 대상은 ```text 코드 블록(원문 그대로 보존), 블록 제목은 ###,
+    코드 블록 밖 안내문은 Notion 마크다운 이스케이프만 한다.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from notion_page import escape_md  # 같은 폴더의 notion_page.py (core 정본 사본)
+    text = render_text(r, fence="```")
+    out, in_code, broken = [], False, False
+    for line in text.split("\n"):
+        if line.startswith("```"):
+            if not in_code:
+                in_code = True
+            elif line == "```":
+                in_code = False
+            else:
+                broken = True  # 본문 속 ``` 줄 — Notion 코드 블록을 끊을 수 있다
+            out.append(line)
+        elif in_code:
+            out.append(line)
+        else:
+            out.append(escape_md("###" + line[2:] if line.startswith("## ") else line))
+    res = "\n".join(out).rstrip("\n")
+    if broken:
+        res = escape_md("⚠️ 본문에 ``` 로 시작하는 줄이 있어 Notion 코드 블록이 끊길 수 있습니다. 해당 줄을 정리한 뒤 다시 만드세요.") + "\n" + res
+    return res
+
+
 # ─────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────
@@ -1196,16 +1226,29 @@ def main(argv=None):
   auto-tags       {category 또는 category_id, target_keyword, keyword_positions[]}  (태그가 없을 때, generateAutoTags 포팅)
   resolve-category {category}   categoryNo/이름/CAT-* → 정본 행(구분·레거시 별칭·신규 대응·프롬프트 키)
   match-cta-new   {category, target_keyword, title, office_news}  신규 구조 CTA(_DECISIONS 2절)
+  from-notion     -i <notion-fetch 결과 텍스트> [--row <속성 JSON>]  → build 입력 JSON (스킬 추가, _DECISIONS 7절)
+                  제목·'## 본문' 섹션·태그·CTA(→cta_override_key, 없음→cta_none)·면책 레벨(→disclaimer_override)·
+                  카테고리/categoryNo/2차 분류·디딤 소식 종류(→office_news)·타깃 키워드·상태·발행예정일
+  build --format notion   Notion 페이지 '## 발행 블록' 섹션 내용(### 블록 제목 + ```text 코드 블록)
+  build 결과의 notion_values = {CTA, 면책 레벨, 태그} Notion 전용 열 값(선택지 없는 CTA 는 null)
 """,
     )
     p.add_argument("command", choices=["build", "strip-markdown", "to-html", "tables", "tags", "format-guide",
                                        "enforce-email", "image-guide", "disclaimer", "match-cta", "line-guide",
-                                       "auto-tags", "resolve-category", "match-cta-new"])
+                                       "auto-tags", "resolve-category", "match-cta-new", "from-notion"])
     p.add_argument("--input", "-i", help="입력 파일 경로 (생략/'-' 이면 표준입력)")
     p.add_argument("--raw", action="store_true", help="입력을 JSON 이 아닌 본문 텍스트로 취급")
-    p.add_argument("--format", choices=["json", "text"], default="json", help="build 출력 형식")
+    p.add_argument("--format", choices=["json", "text", "notion"], default="json", help="build 출력 형식")
+    p.add_argument("--row", help="from-notion: 콘텐츠 DB 행 속성 JSON 파일(없으면 fetch 결과의 <properties> 사용)")
     a = p.parse_args(argv)
 
+    if a.command == "from-notion":
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from notion_page import to_content
+        row = _load_json(a.row) if a.row else None
+        json.dump(to_content(_read_input(a.input), row), sys.stdout, ensure_ascii=False, indent=2)
+        sys.stdout.write("\n")
+        return
     if a.raw:
         data = {"body": _read_input(a.input), "text": None}
         data["text"] = data["body"]
@@ -1217,6 +1260,9 @@ def main(argv=None):
         r = build(data)
         if a.format == "text":
             sys.stdout.write(render_text(r))
+            return
+        if a.format == "notion":
+            sys.stdout.write(render_notion(r) + "\n")
             return
         result: Any = r
     elif cmd == "strip-markdown":
