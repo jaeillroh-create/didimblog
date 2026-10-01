@@ -505,6 +505,8 @@ export function getPromptKey(categoryId: string): PromptKey {
 | CAT-C-01/02/03 | 컨설팅 후기 / 디딤 일상 / 대표의 생각 | PROMPT_DIARY |
 | 그 외 | — | PROMPT_LOUNGE_GENERAL (폴백) |
 
+> **스킬 적용 (skills/_DECISIONS.md, 2026-10-01)**: 위 매핑은 원본 코드 기록이다. 스킬은 네이버 categoryNo를 정본으로 하고 신규 구조를 우선한다 — 지원사업·인증과 특허(25)·출원·심판 실무(27)·사례(26) → PROMPT_FIELD, 지식재산 경영(24) → PROMPT_LOUNGE_GENERAL, 디딤 소식(28) → PROMPT_LOUNGE_BITE, 디딤 다이어리(17) → PROMPT_DIARY. CAT-*는 레거시 별칭(`scripts/categories.py`). 신규 구조로 발행할 때는 렌더링한 프롬프트 속 자기 카테고리 이름을 발행 이름으로 치환한다(SKILL.md 2단계).
+
 ## 7. CTA 매칭
 
 ````ts

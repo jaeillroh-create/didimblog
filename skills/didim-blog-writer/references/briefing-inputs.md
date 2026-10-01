@@ -204,6 +204,8 @@ export async function generateBriefing(
 
 `VALID_SECONDARY_CATEGORIES`에 `CAT-A-04`가 없어서, 주제 기반 브리핑이 출원 실무(CAT-A-04)를 고르면 2차 분류가 빈 값으로 바뀐다(file-upload.ts 목록에는 있음 — 확인 필요).
 
+> **스킬 적용 (skills/_DECISIONS.md)**: 이 누락은 재현하지 않는다. 두 경로 모두 file-upload.ts 목록으로 검증한 뒤, 브리핑의 CAT-*를 신규 구조 categoryNo로 매핑한다 — CAT-A·A-01·A-02·A-03 → 25, A-04 → 27, CAT-B·B-01·B-02 → 24, B-03 → 28, C-01 → 26(사례, 사건 메모 필요), C-02 → 19, C-03 → 20, CAT-C → 17. 사용자가 카테고리를 지정하면 그 값을 쓴다(`parse-briefing --force-category`). 프롬프트 원문은 바꾸지 않는다.
+
 ## 4. 파일 처리 규칙 (file-upload.ts)
 
 ````ts

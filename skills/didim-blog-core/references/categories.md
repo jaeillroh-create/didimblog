@@ -93,7 +93,7 @@
 | CAT-CONSULT | 상담 안내 | 1차 | - | 고정 | 전환 | 직접 CTA | (해당 없음) | 0 |
 
 ※ 이 표는 백오피스 코드의 CAT-* 체계다. 스킬의 정본은 A절(네이버 categoryNo)이며 CAT-* 는 별칭으로만 쓴다.
-※ CAT-B-01/CAT-B-02 는 소스마다 이름이 뒤바뀌어 있다(3절). **ID 대신 이름(네이버 문자열)으로 판단**하고, ID가 필요하면 위 표(코드 런타임 기준: FIELD_CTA·sub-category-pool·getFieldCta)를 쓴다. 역할·퍼널은 이름 기준(seed.sql 의 같은 이름 행)으로 적었다.
+※ CAT-B-01/CAT-B-02 는 소스마다 이름이 뒤바뀌어 있다(B-3절). **ID 대신 이름(네이버 문자열)으로 판단**하고, CAT 별칭이 필요하면 위 표(코드 런타임 기준: FIELD_CTA·sub-category-pool·getFieldCta)를 쓴다. 역할·퍼널은 이름 기준(seed.sql 의 같은 이름 행)으로 적었다.
 
 - 프롤로그 영역(prologue_position): CAT-A=area1(영역 1), CAT-B=area2(영역 2), CAT-C=area3(영역 3), 나머지 null.
 - connected_services(seed.sql): CAT-A {절세컨설팅, 사후관리, 벤처인증, 우수기업인증}, CAT-A-01 {절세컨설팅}, CAT-A-02 {벤처인증, 우수기업인증}, CAT-A-03 {사후관리}, CAT-B {특허출원, AI특허, 기술보호}, 'AI와 IP' {AI특허}, '특허 전략 노트' {특허출원, 기술보호}.
@@ -130,7 +130,7 @@
 | migration 011 cta_templates | ✗ | 4건(절세/인증/연구소/IP라운지)만 |
 | seed_data/cta_templates.json | ✗ | |
 
-→ 스킬은 CAT-A-04 를 정식 2차 카테고리로 취급한다(네이버 실재 + 코드 런타임 사용).
+→ 네이버에는 categoryNo 23 '특허·상표 출원 실무'(레거시 '변리사의 현장 수첩' 하위)로 실재한다. 신규 구조에서는 '출원·심판 실무'(27)가 흡수한다.
 
 ### 3-2. CAT-B-01 / CAT-B-02 이름 뒤바뀜
 

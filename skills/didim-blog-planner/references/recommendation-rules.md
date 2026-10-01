@@ -456,4 +456,6 @@ function determineNeededCategory(stats: MonthlyStats, lastWeek: string): string 
 | CAT-B-02 | AI와 IP | 특허 전략 노트 |
 | CAT-A-04 | 특허·상표 출원 실무 (있음) | seed.sql·CATEGORY_HIERARCHY 에 없음, briefing.ts VALID_SECONDARY_CATEGORIES 에도 없음 |
 
-스킬은 **2차 분류 이름(네이버 문자열)을 정본**으로 넘기고, ID 는 sub-category-pool.ts 기준을 참고로만 붙인다.
+**결정 사항(skills/_DECISIONS.md §1):** CAT-* ID 는 내부 ID 로 쓰지 않는다. 정본 ID 는 네이버 categoryNo(25 지원사업·인증과 특허, 27 출원·심판 실무, 26 사례, 24 지식재산 경영, 28 디딤 소식, 17 디딤 다이어리; 레거시 9·10·11·12·23, 13·14·15·16, 18·19·20)이다. `scripts/recommend.py` 의 레거시 별칭표는 sub-category-pool.ts 정의(CAT-B-01=특허 전략 노트=14, CAT-B-02=AI와 IP=15)를 따른다.
+
+또한 이 파일의 월간 목표 2:1:1·`determineNeededCategory` 는 원본 기록이다. 결정 사항 §3 에 따라 스킬 기본 동작은 주 1편 4주 로테이션이다(SKILL.md).

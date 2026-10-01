@@ -1,4 +1,6 @@
-# 12주 발행 스케줄 (verbatim)
+# [폐기] 12주 발행 스케줄 (verbatim 기록)
+
+> **결정 사항(skills/_DECISIONS.md §3, 2026-10-01): 12주 스케줄(2026-03-31 종료)은 폐기했다.** 대체 = 주 1편 + 4주 로테이션(지원사업·인증과 특허 → 출원·심판 실무 → 지식재산 경영 → 사례). 아래는 원본 코드와 두 버전 차이의 기록일 뿐이며 `recommend.py plan` 기본 모드는 쓰지 않는다(`--legacy`/`--verify` 에서만 사용). 스케줄 항목의 seed_data `target`·`legal_basis` 는 같은 주제를 다시 쓸 때 참고 자료로만 쓴다.
 
 추천 엔진(`buildScheduleCard`)은 **schedule-data.ts** 를 읽는다. seed_data JSON 은 기획 원본이며 일부 문구가 다르다(아래 §4).
 

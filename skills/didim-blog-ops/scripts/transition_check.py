@@ -362,6 +362,15 @@ def status_timestamps(new_status, now, published_at_override=None):
     return ts
 
 
+def notion_update(to_status, now, published_at=None):
+    """Notion "디딤 블로그 콘텐츠" 에 쓸 값 (상태 선택지는 'S4 발행완료' 형식)."""
+    u = {"상태": STATUS_FULL[to_status]}
+    if to_status == "S4":
+        u["발행일"] = (published_at or iso(now))[:10]
+        u["발행 URL"] = "(네이버 글 URL 입력)"
+    return u
+
+
 def cmd_check(args):
     content = derive_review_fields(normalize_content(load_json(args.content)))
     if args.no_cta:
@@ -444,6 +453,7 @@ def cmd_check(args):
         "db_conditions_not_evaluated_by_code": db_unchecked,
         "needs_input": needs_input,
         "updates_on_transition": status_timestamps(to_status, now, args.published_at),
+        "notion_update": notion_update(to_status, now, args.published_at),
         "image_marker_count": image_markers,
         "seo_score_used": seo_score,
         "warnings": warnings,
@@ -503,7 +513,7 @@ def cmd_review(args):
             out.update({"ok": True, "toast": "검수 승인 완료", "unknown_check_ids": unknown,
                         "chain": steps, "content_after": latest,
                         "notion_memo_append": f"[검수 승인] 체크: {', '.join(checked)} ({iso(now)[:10]})",
-                        "notion_status_after": latest.get("status")})
+                        "notion_status_after": STATUS_FULL.get(latest.get("status"))})
     elif args.action == "revision":
         memo = (args.memo or "").strip()
         if not memo:

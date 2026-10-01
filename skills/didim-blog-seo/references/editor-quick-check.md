@@ -1,6 +1,6 @@
 # AI 에디터 간이 SEO 체크 원문
 
-원본: `src/app/(dashboard)/contents/ai-editor/[id]/ai-editor-client.tsx` — 로컬 함수 `calculateSeoScore(title, text, keyword)` (L540-614)와 `extractImageMarkers` (L485-538).
+원본: `src/app/(dashboard)/contents/ai-editor/[id]/ai-editor-client.tsx` — 로컬 함수 `calculateSeoScore(title, text, keyword)` (L541-614)와 `extractImageMarkers` (L485-538, 함수 본체 L501).
 스크립트: `scripts/seo_editor_check.py` (원본과 대조 일치).
 
 ## 용도 (코드에서 확인)

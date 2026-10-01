@@ -20,11 +20,15 @@
   --mode legacy : 레거시 항목(korean_prompt, english_prompt, type_name)을 그대로 쓴다(원본과 동일 출력).
 옵션:
   --inject-ids  : 본문에 문단 ID 를 먼저 주입(injectParagraphIds 포팅, 기존 ID 는 재번호)
-  --fix-top-double : (스킬 보정) T 타입이 p:N position 을 함께 가져도 한 번만 삽입. 원본은 두 번 삽입될 수 있음.
+v2 모드 보정 (legacy 모드는 원본과 똑같이 동작):
+  - T 타입이 p:N position 을 함께 가져도 한 번만 삽입 (원본은 두 번 삽입됨)
+  - 본문이 "<!-- p:1 -->\n# 제목" 으로 시작하면(문단 ID 주입 후) 제목 줄 다음에 썸네일을 넣음
+    (원본 정규식 /^#[^\n]*\n/ 은 문자열 맨 앞만 봐서 썸네일이 제목 위로 감)
 
 사용 예:
   python3 insert_markers.py --body body.md --design design.json > body_with_markers.md
   python3 insert_markers.py --body body.md --design design.json --mode legacy
+  python3 insert_markers.py --body body.md --inject-ids > body_ids.md    # 문단 ID 만 주입
 """
 import argparse
 import math
@@ -76,8 +80,9 @@ def marker_fields(info, mode):
     return desc, t, TYPE_NAMES.get(t, info.get("type_name", "")), ko, "(2) 파일: " + (info.get("file") or "-")
 
 
-def insert_markers(body, infographics, mode="v2", fix_top_double=False, log=None):
+def insert_markers(body, infographics, mode="v2", log=None):
     log = log or (lambda m: None)
+    v2 = mode != "legacy"
     result = body
     n_all = len(infographics)
     for idx in range(n_all - 1, -1, -1):
@@ -92,6 +97,8 @@ def insert_markers(body, infographics, mode="v2", fix_top_double=False, log=None
         # 0) T 타입 / top → 제목 줄 다음
         if t == "T" or position == "top":
             m = re.match(r"#[^\n]*\n", result)  # JS /^#[^\n]*\n/ (multiline 아님 → 문자열 맨 앞)
+            if not m and v2:
+                m = re.match(r"(?:<!-- p:\d+ -->\n)?#[^\n]*\n", result)
             if m:
                 at = m.end()
                 result = result[:at] + marker + "\n" + result[at:]
@@ -102,7 +109,7 @@ def insert_markers(body, infographics, mode="v2", fix_top_double=False, log=None
 
         # 1) p:N
         pm = re.search(r"p:(\d+)", position)
-        if pm and not (fix_top_double and inserted):
+        if pm and not (v2 and inserted):
             tag = f"<!-- p:{int(pm.group(1))} -->"
             pi = _js_index_of(result, tag)
             if pi != -1:
@@ -155,10 +162,9 @@ def insert_markers(body, infographics, mode="v2", fix_top_double=False, log=None
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--body", "-b", required=True, help="본문 파일")
-    ap.add_argument("--design", "-d", required=True, help="설계 JSON")
+    ap.add_argument("--design", "-d", help="설계 JSON (없으면 --inject-ids 로 문단 ID 만 넣어 출력)")
     ap.add_argument("--mode", choices=["v2", "legacy"], default="v2")
     ap.add_argument("--inject-ids", action="store_true", help="문단 ID 를 먼저 주입")
-    ap.add_argument("--fix-top-double", action="store_true", help="T 타입 이중 삽입 방지(스킬 보정)")
     ap.add_argument("--verbose", "-v", action="store_true", help="삽입 로그를 stderr 로")
     a = ap.parse_args()
     # 원본(JS) 문자열 인덱스는 UTF-16 기준이지만, 위치 계산은 모두 같은 문자열 안의 상대 위치라
@@ -166,9 +172,14 @@ def main():
     body = open(a.body, encoding="utf-8").read()
     if a.inject_ids:
         body = inject_paragraph_ids(body)
+    if not a.design:
+        if not a.inject_ids:
+            ap.error("--design 이 없으면 --inject-ids 를 함께 주세요")
+        sys.stdout.write(body)
+        return
     designs = load_designs(open(a.design, encoding="utf-8").read())
     log = (lambda m: sys.stderr.write(f"[insertMarker] {m}\n")) if a.verbose else None
-    sys.stdout.write(insert_markers(body, designs, a.mode, a.fix_top_double, log))
+    sys.stdout.write(insert_markers(body, designs, a.mode, log))
 
 
 if __name__ == "__main__":
