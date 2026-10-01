@@ -93,7 +93,7 @@
 | `## 브리핑` | planner→writer 입력: 주제·카테고리·타깃 키워드·타깃 독자·에피소드·참고 사항·근거(뉴스·공고·사례 메모 이름). 출처 사건번호는 쓰지 않는다 | planner (비어 있으면 writer 가 쓴 브리핑) | writer |
 | `## 본문` | 최종 원고 마크다운(writer `body_for_save`). **` ```markdown ` 코드 블록 하나에 원문 그대로** 넣는다 — Notion 마크다운 변환(빈 줄 삭제·`[ ] < > |` 이스케이프·이미지 마커 해석)을 피해 글자수·마커·CTA 를 그대로 보존하기 위해서다 | writer (사람이 고치면 코드 블록 안에서 고친다) | factcheck, seo, ops, publish-prep, health, infographic |
 | `## 인포그래픽` | 설계 요약 표(Notion `<table>`): 번호·유형·위치·헤드라인·ALT. 다이어리는 분위기 사진(장면·위치·ALT) | infographic | seo(이미지·ALT), publish-prep |
-| `## 발행 블록` | publish-prep `build --format notion` 출력 그대로(### 블록 제목 + ` ```text ` 코드 블록, 붙여넣기 순서) | publish-prep | 사람(복사·붙여넣기) |
+| `## 발행 블록` | publish-prep `build --format notion` 출력 그대로(### 블록 제목 + ` ```text ` 코드 블록, 붙여넣기 순서) | publish-prep | 사람(복사·붙여넣기) 또는 브라우저 에이전트(browser-publish.md) |
 | `## 검수 기록` | 한 줄씩 덧붙이는 로그(KST): 초안 작성 요약(품질 체크·경고·Phase 3 수정), 교차검증 요약, SEO 미충족 항목, 상태 전이 로그. 형식 `- YYYY-MM-DD HH:MM 내용` | writer, factcheck, seo, ops, publish-prep | ops, 사람 |
 
 읽기·쓰기 규칙 (`scripts/notion_page.py`):

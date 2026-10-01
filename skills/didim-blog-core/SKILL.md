@@ -76,7 +76,7 @@ description: 특허그룹 디딤 네이버 블로그(didimip)의 공통 기반 �
 - 다이어리·사무소 소식에 CTA·연락처·이메일·상담 유도 문구를 넣지 않는다.
 - 확인되지 않은 실적 수치(예: "절세 컨설팅 40건+")를 사실처럼 쓰지 않는다 — 코드에 예시로만 있다.
 - 백오피스 DB 에서 수정됐을 수 있는 CTA 문구는 확인 필요 사항이다. 사용자가 최신 문구를 주면 그것을 우선한다.
-- 디딤 소개(7)·상담 안내(22)는 고정 페이지라 글을 생성하지 않는다. 네이버 자동 발행은 하지 않는다.
+- 디딤 소개(7)·상담 안내(22)는 고정 페이지라 글을 생성하지 않는다. 네이버 발행은 사람이 붙여넣거나, 브라우저 에이전트가 발행 게이트(검수 승인·교차검증 통과 등)와 사람의 마지막 확인을 거쳐 직접 한다(didim-blog-publish-prep `references/browser-publish.md`). 에이전트는 비밀번호를 다루지 않는다.
 
 ## 스크립트
 `scripts/core_rules.py` (Python 3 표준 라이브러리, JSON 입출력, `--help`). 원본 TS 함수(replaceDeprecatedNames, getPromptKey, getFieldCta, validateGeneratedDraft, determineDisclaimerLevel)와 11개 입력에서 결과가 같음을 node 로 대조했다.
