@@ -37,6 +37,7 @@ from seo_editor_check import extract_image_markers, js_substring
 from seo_score import (
     SEO_RUBRICS,
     count_images,
+    count_images_legacy,
     count_keyword,
     count_sub_headings,
     has_cta,
@@ -147,11 +148,11 @@ def auto_judge(d):
     heads = re.findall(r"(?m)^#{2,3}" + JS_WS + r"+(.+)$", body)
     hk = [x for x in heads if kw and kw in x]
     put(7, None, f"키워드 그대로 포함한 소제목 {len(hk)}개 / 소제목 {len(heads)}개", "human", "'키워드 변형' 여부는 사람 확인 (skill-heuristic 관찰값)")
-    ic_calc = count_images(body)
-    ic_all = len(extract_image_markers(body))
+    ic_calc = count_images_legacy(body)
+    ic_all = count_images(body)
     ir = rb["imageCount"]
-    put(8, ir["min"] <= ic_all <= ir["max"], f"마커 {ic_all}개 (seo-calculator 정규식 기준 {ic_calc}개)", "seo-calculator",
-        f"루브릭 {rk}: {ir['min']}~{ir['max']}개. 개수는 박스형 마커까지 세는 ai-editor 추출 기준")
+    put(8, ir["min"] <= ic_all <= ir["max"], f"마커 {ic_all}개 (원본 정규식 기준 {ic_calc}개)", "seo-calculator",
+        f"루브릭 {rk}: {ir['min']}~{ir['max']}개. 박스형+한 줄형 마커 카운트(seo_score.py 기본과 동일)")
     put(9, None, "", "human", "첫 이미지가 카테고리 통일 브랜딩 썸네일인지 — 실제 이미지 확인 필요")
     put(10, None, "", "human", "네이버 에디터에서 ALT 입력 여부 확인")
     bl = js_len(re.sub(JS_WS, "", body))

@@ -1,7 +1,7 @@
 # didim-blog-ops — 콘텐츠 운영(상태 전이·대표 검수·SLA·발행 캘린더·12주 스케줄)
 
 ## 1. 기능 개요 (한 문단)
-디딤 블로그 글 한 편이 기획(S0)에서 성과측정(S5)까지 가는 운영 흐름을 관리한다. 허용된 상태 전이만 수행하고, 전이별 필수/권장 조건(본문 500자·태그 10개·CTA·대표 검수·SEO 70·교차검증·이미지·발행일·D+7)을 판정하며, 대표 검수(체크리스트 3개 이상 승인 → S2·S3 연쇄 자동 전이 / 수정 요청 / 재검수)를 기록한다. 발행일(화요일)로부터 SLA 마감일 5개(D-5·D-3·D-2·D-1·D-0)를 역산하고 지연을 알리며, 발행 캘린더·카테고리 발행 비율(목표 2:1:1)·이번 달 발행 현황·12주 스케줄 주차를 계산한다. 백오피스 DB 대신 Notion "디딤 블로그 콘텐츠" DB 또는 사용자 입력을 쓴다.
+디딤 블로그 글 한 편이 기획(S0)에서 성과측정(S5)까지 가는 운영 흐름을 관리한다. 허용된 상태 전이만 수행하고, 전이별 필수/권장 조건(본문 500자·태그 10개·CTA·대표 검수·SEO 70·교차검증·이미지·발행일·D+7)을 판정하며, 대표 검수(체크리스트 3개 이상 승인 → S2·S3 연쇄 자동 전이 / 수정 요청 / 재검수)를 기록한다. 발행일(화요일)로부터 SLA 마감일 5개(D-5·D-3·D-2·D-1·D-0)를 역산하고 지연을 알리며, 발행 캘린더·주 1편 4주 카테고리 로테이션(skills/_DECISIONS.md §3)·발행 비율·이번 달 발행 현황을 계산한다. 백오피스 DB 대신 Notion "디딤 블로그 콘텐츠" DB(`collection://463bc815-11ab-4290-9d86-22bd1aa9cfed`) 또는 사용자 입력을 쓴다.
 
 ## 2. 원본 코드 위치 (파일:함수/상수 목록)
 | 파일 | 함수/상수 |
@@ -33,13 +33,14 @@
 | src/components/calendar/monthly-calendar.tsx:21-58 | CATEGORY_COLORS, 시작 월, getScheduleForDay |
 | src/actions/recommendations.ts:496-557 | getMonthlyPublishProgress |
 | src/lib/recommendation-engine.ts:92-115 | getPrimaryCategoryId, calcMonthlyStats |
-| src/lib/constants/schedule-data.ts:12-25, 95-116 | SCHEDULE_DATA, DEFAULT_BLOG_START_DATE, getCurrentWeek, getMonthWeeks |
-| seed_data/schedule_12weeks.json | 12주 스케줄 |
+| src/lib/constants/schedule-data.ts:12-25, 95-116 | SCHEDULE_DATA, DEFAULT_BLOG_START_DATE, getCurrentWeek, getMonthWeeks (폐기, 기록용) |
+| seed_data/schedule_12weeks.json | 12주 스케줄 (폐기, 기록용) |
+| skills/_DECISIONS.md §1~§4, §6 | 카테고리 정본(categoryNo), 4주 로테이션, Notion DB 스키마 |
 | SPEC.md:480-490, 531-539, 446-450 | §5.1 전이 규칙, §5.4 SLA, §4.4 캘린더 |
 | docs/UPGRADE_SPEC.md:24-42 | §1.1 콘텐츠 상태 |
 
 ## 3. 입력
-- 콘텐츠 레코드(JSON, contents 컬럼명): status, body, tags, category_id, review_status, revision_count, publish_date, publish_due 외 *_due, *_done_at, published_at, quality_score_final, ai_generation_id.
+- 콘텐츠 레코드(JSON): contents 컬럼명 또는 Notion 한글 속성명(제목·상태·카테고리·categoryNo·레거시 2차 분류·발행일·메모, 본문·태그는 대화 입력). 원본 필드: status, body, tags, category_id, review_status, revision_count, publish_date, publish_due 외 *_due, *_done_at, published_at, quality_score_final, ai_generation_id.
 - 전이 목표 상태, 전이 규칙 목록(기본: 시드 7행), SEO 정규화 점수(0~100), 교차검증 수행 여부·심각 이슈 수, 이미지 마커 수(생략 시 본문에서 계산).
 - 검수: 체크한 항목 id 목록 / 수정 요청 메모.
 - 날짜: 발행일(YYYY-MM-DD), 기준 시각(now, ISO), 기존 콘텐츠 ID 목록.
@@ -71,7 +72,9 @@
 20. 캘린더 항목은 schedules 테이블이 비어 있으면 contents 의 publish_date 가 있는 글로 만들고, S4·S5=published, S1~S3=in_progress, S0=planned 로 표시한다 (calendar.ts:53-83). 하루 칸에는 첫 1건만 표시하며 시작 월은 2026년 1월이다 (monthly-calendar.tsx:43, 56-58).
 21. 비율 게이지: categoryId 가 정확히 CAT-A/CAT-B/CAT-C 인 항목 수를 세고, 첫 값(0이면 1)부터 GCD 로 나눠 "a:b:c" 로 표시, 목표 "2:1:1". 막대 폭 = 개수/전체 항목 수×100, 10% 이상만 "n건" 라벨 (ratio-gauge.tsx:16-27, 41-54, 84). 기간 필터는 없다.
 22. 이번 달 발행 현황: status='S4'·미삭제·published_at ≥ 이번 달 1일 글을 1차 카테고리(getPrimaryCategoryId)로 세어 현장수첩 /2, IP 라운지 /1, 다이어리 /1 (recommendations.ts:500-532; recommendation-engine.ts:92-115).
-23. 12주 스케줄은 seed_data/schedule_12weeks.json, 주차 = ceil((now − 2026-01-06)/7일), 4주 묶음 = [(ceil(w/4)−1)×4+1 … +3] 중 ≤12 (schedule-data.ts:95-116).
+23. (원본) 12주 스케줄은 seed_data/schedule_12weeks.json, 주차 = ceil((now − 2026-01-06)/7일), 4주 묶음 = [(ceil(w/4)−1)×4+1 … +3] 중 ≤12 (schedule-data.ts:95-116). 스킬은 이를 폐기하고 아래 24로 대체한다.
+24. (결정 사항) 주 1편 + 4주 로테이션: ISO 주차(KST) w 의 슬롯 = (w−1) mod 4 → 지원사업·인증과 특허(25) / 출원·심판 실무(27) / 지식재산 경영(24) / 사례(26, 사건 메모 없으면 27). 같은 카테고리 연속 2주면 경고. 디딤 소식(28)·디딤 다이어리(17)는 로테이션 밖. 비율 목표 1:1:1:1, 월 목표 = 그 달 화요일들의 슬롯 수 (_DECISIONS.md §3; scripts/calendar_ratio.py).
+25. (결정 사항) 레거시 카테고리는 통계에서 신규로 합산: 9·10·11·12→25, 23→27, 18→26, 13·14·15→24, 16→28, 19·20→17. CAT-* 별칭은 seed.sql 기준(CAT-B-01=AI와 IP(15), CAT-B-02=특허 전략 노트(14)).
 
 ## 5. 출력
 - 전이 판정 JSON(scripts/transition_check.py check): rule, direction, kind(blocked/blocked_required/confirm_recommended/needs_reason/ok), required_checks·recommended_checks(id·label·passed·detail), 칸반 DB 조건 경고, 미평가 조건 키, 입력 필요 항목, 전이 시 기록할 필드, 경고.
@@ -89,64 +92,45 @@
 - 스크립트 입력 JSON 오류 → Python 예외 메시지 출력, 사용자에게 필드명을 확인시킨다.
 
 ## 7. 데이터 저장 (백오피스 테이블 → 스킬에서의 대체)
-| 백오피스 | 스킬 대체 |
-|---|---|
-| contents (전체 컬럼) | Notion "디딤 블로그 콘텐츠" — 아래 표 |
-| state_transitions | 시드 7행을 스크립트에 내장, 사용자가 바꾼 규칙은 JSON 으로 입력(`--transitions`) |
-| state_transitions_log | Notion 페이지 "메모" 속성에 `── 일시 (상태) ──` 블록 누적(사유·강제 여부 포함) |
-| schedules | seed_data 12주 스케줄(스크립트 내장) + 콘텐츠 DB "발행예정일" |
-| series.total_planned | 콘텐츠 DB "시리즈 계획 편수" |
+Notion "디딤 블로그 콘텐츠" (https://app.notion.com/p/4f21a8b7e84d4c818de1c673ed9cbbcb, data source `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed`, 상위 "DIDIM 블로그 운영"). 속성·선택지는 _DECISIONS.md §4·§6 과 실제 스키마 그대로.
 
-| contents 컬럼 | Notion 속성 | 타입 |
+| 백오피스 | Notion 속성 (타입) | 비고 |
 |---|---|---|
-| id | 콘텐츠 ID | 텍스트 |
-| title | 제목 | 제목 |
-| category_id | 1차 카테고리 | 선택 |
-| secondary_category | 2차 분류 | 선택 |
-| target_keyword | 타겟 키워드 | 텍스트 |
-| target_audience | 타깃 고객군 | 선택(startup/sme/cto) |
-| status | 상태 | 선택(S0~S5 + 한글명) |
-| publish_date | 발행예정일 | 날짜 |
-| briefing_due / draft_due / review_due / image_due / publish_due | SLA D-5 주제선정 마감 / D-3 초안 마감 / D-2 검수 마감 / D-1 이미지 마감 / D-0 발행 마감 | 날짜 |
-| briefing_done_at / draft_done_at / review_done_at / image_done_at | 주제선정 / 초안 / 검토 / 이미지 완료일시 | 날짜(시간) |
-| published_at | 발행일시 | 날짜(시간) |
-| revision_count | 수정 요청 횟수 | 숫자 |
-| author_id / reviewer_id / designer_id | 작성자 / 검수자 / 디자이너 | 사람 |
-| views_1w / views_1m | 1주 조회수 / 1개월 조회수 | 숫자 |
-| avg_duration_sec | 평균 체류시간(초) | 숫자 |
-| search_rank | 검색 순위 | 숫자 |
-| cta_clicks | CTA 클릭 | 숫자 |
-| quality_score_1st / quality_score_final | 품질점수 1차 / 최종 | 숫자 |
-| quality_grade | 품질 등급 | 선택 |
-| notes | 메모 | 텍스트 |
-| created_at / updated_at | 생성일시 / 수정일시 | 자동 |
-| body | (페이지 본문) | 본문 |
-| is_deleted | 삭제됨 | 체크박스 |
-| tags | 태그 | 다중 선택 |
-| seo_keywords | SEO 키워드 | 텍스트 |
-| scheduled_at | 예약 발행 일시 | 날짜(시간) |
-| seo_score | SEO 점수 | 숫자 |
-| image_alt_texts | 이미지 ALT | 텍스트 |
-| health_status / health_checked_at | 건강 상태 / 건강 점검일 | 선택 / 날짜 |
-| series_id / series_order | 시리즈 / 시리즈 순번 | 선택 / 숫자 |
-| ai_generation_id / is_ai_generated / ai_edited_by / ai_edit_ratio | AI 생성 ID / AI 생성 여부 / AI 초안 편집자 / AI 수정 비율 | 텍스트 / 체크박스 / 사람 / 숫자 |
-| review_status / review_memo | 검수 상태 / 검수 메모 | 선택 / 텍스트 |
-| (notes 의 [네이버 URL]) | 네이버 URL | URL |
+| contents.title | 제목 (title) | |
+| contents.status | 상태 (select: S0 기획중 / S1 초안완료 / S2 검토완료 / S3 발행예정 / S4 발행완료 / S5 성과측정) | |
+| contents.category_id, secondary_category | 카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시), categoryNo (number), 레거시 2차 분류 (select) | CAT-* → categoryNo 별칭 |
+| contents.target_keyword | 타깃 키워드 (text) | |
+| contents.publish_date, scheduled_at, published_at | 발행일 (date) | S4 이후는 실제 발행일 |
+| contents.notes 의 [네이버 URL] | 발행 URL (url) | |
+| content_recommendations (010) | 추천 소스 (키워드 풀/뉴스/지원매치 리포트/로테이션/직접 입력), 추천 피드백 (대기/적합/부적합), 부적합 사유 | didim-blog-planner |
+| contents.views_1w/views_1m | 조회수(최근) (number) | didim-blog-performance |
+| (post_metrics 명세) top_keywords, comments | 유입 키워드 TOP3 (text), 댓글 수 (number), 성과 갱신일 (date) | |
+| contents.series_id, series_order | 시리즈 (text), 시리즈 회차 (number) | |
+| contents.health_checked_at | 마지막 업데이트일 (date) | didim-blog-health |
+| contents.notes, review_status, review_memo, revision_count, state_transitions_log | 메모 (text) | `[검수 승인]`·`[수정 요청]`·`[재검수 요청]`·`[전이 사유]`·`[역행 전이 사유]` 블록 |
+| leads.source_content_id | 상담 (relation ↔ 상담 DB 경유 글) | |
+| contents.body, tags | (DB 속성 아님) 페이지 본문 / 대화 입력 | |
+| *_due 5개, *_done_at 4개 | (저장 안 함) | 발행일에서 역산 / 상태로 추정 |
+| id, target_audience, author/reviewer/designer_id, avg_duration_sec, search_rank, cta_clicks, quality_*, seo_*, image_alt_texts, ai_*, is_deleted, health_status | (저장 안 함) | 측정 최소화(_DECISIONS.md §4). 필요 시 메모 |
+| state_transitions | 스크립트 내장 시드 7행 / `--transitions` JSON | |
+| schedules | (폐기) 4주 로테이션 계산 | |
 
-009_phase_pipeline.sql 은 ai_generations 만 변경하므로 contents 매핑에 추가 항목이 없다. 상세 필드 규칙은 skills/didim-blog-ops/references/notion-content-db.md.
+전체 컬럼별 표: skills/didim-blog-ops/references/notion-content-db.md §2.
 
 ## 8. 원본 코드와 달라진 점
 1. **정방향 판단 기준**: 원본 상세 패널은 `is_reversible=false` 행을 '다음 단계'로 고른다 (status-transition-panel.tsx:210-219). 시드의 S1→S2 행이 `is_reversible=true` (seed.sql:21)라서 원본 화면에서는 S1 에 '다음 단계' 버튼이 없고 S1→S2 가 '되돌리기' 목록에 나타나는 모순이 있다. 스킬은 상태 순서(S0<…<S5)로 방향을 판단하고, 시드 값과 다르면 경고를 출력한다. 실DB 행이 설정 화면에서 수정되었는지는 확인 필요.
 2. **조건 이원화 정리**: 원본은 칸반(DB conditions, 경고만)과 상세 패널(코드 상수 buildChecks, 필수 차단)이 다른 기준을 쓴다. CLAUDE.md 의 "상태 전이 규칙은 state_transitions 테이블에서 읽어올 것(하드코딩 금지)"과 달리 필수/권장 조건은 코드에 하드코딩되어 있다. 스킬은 허용 전이 = 규칙 데이터, 판정 = 상세 패널 기준(커밋 47cc218·abe96ec 최종 동작)으로 하고, DB 조건 결과는 참고 경고로 함께 보여준다.
-3. **SLA 재계산**: 원본은 발행일을 바꿔도(Phase 3 자동 마무리 포함) briefing_due 등 마감일을 다시 계산하지 않는다 (ai-editor-client.tsx:1046-1049). 스킬은 발행일 변경 시 마감일 5개를 함께 재계산하도록 안내한다.
+3. **SLA 재계산**: 원본은 발행일을 바꿔도(Phase 3 자동 마무리 포함) briefing_due 등 마감일을 다시 계산하지 않는다 (ai-editor-client.tsx:1046-1049). 스킬은 마감일을 저장하지 않고 항상 현재 발행일에서 역산하므로 어긋나지 않는다.
 4. **Phase 3 발행일 덮어쓰기**: 원본 주석은 "기존에 없으면 다음 화요일"이지만 코드는 항상 덮어쓰고, 브라우저(KST)에서 `toISOString().slice(0,10)` 을 써서 오전 9시 이전에는 월요일 날짜가 될 수 있다 (ai-editor-client.tsx:1026-1028). 스킬은 기존 발행일이 있으면 유지하고, 없을 때만 KST 날짜 기준 다음 화요일을 쓴다.
 5. **briefing_done_at 미기록**: 원본에 이 값을 쓰는 코드가 없어 D-5 단계가 마감 후 항상 기한 초과가 된다. 스킬은 주제선정/브리핑 완료 시 기록하도록 안내한다(계산 규칙은 동일).
-6. **네이버 URL·성과·사유 저장 위치**: 원본은 notes 문자열 접두어로 저장한다 (contents.ts:466-492). 스킬은 Notion "네이버 URL" 속성과 "디딤 블로그 성과" DB 행으로 분리하고, 메모 블록 형식은 유지한다.
+6. **네이버 URL·성과·사유 저장 위치**: 원본은 notes 문자열 접두어로 저장한다 (contents.ts:466-492). 스킬은 Notion "발행 URL" 속성과 콘텐츠 DB 의 성과 열(조회수(최근)·댓글 수·유입 키워드 TOP3·성과 갱신일)로 분리하고, 사유·이웃 추가 등은 메모 블록 형식을 유지한다. 별도 성과 DB 는 두지 않는다(_DECISIONS.md §4).
 7. **강제 전환 권한**: 원본은 admin 역할만 가능하다. 스킬 환경에는 역할이 없으므로 사용자가 명시적으로 "강제"를 요청할 때만 진행하고 사유를 기록한다.
-8. **비율 게이지 보조값**: 원본은 categoryId 가 정확히 CAT-A/B/C 인 것만 센다. 스킬은 원본 값과 함께 2차 카테고리 ID(CAT-A-01 등)를 1차로 묶은 `counts_by_primary_category`, 선택적 `--month` 필터를 추가로 제공한다.
+8. **카테고리·비율·스케줄 (결정 사항)**: 원본 게이지는 categoryId 가 정확히 CAT-A/B/C 인 것만 세고 목표 2:1:1, 월간 현황 목표 2/1/1, 12주 스케줄을 쓴다. 스킬은 _DECISIONS.md 에 따라 네이버 categoryNo 정본·레거시 합산으로 세고, 목표를 4주 로테이션 1:1:1:1(월 목표=화요일 슬롯 수)로 바꿨으며 12주 스케줄은 기록용으로만 남겼다. GCD 표기 알고리즘(첫 값 0이면 1부터)은 유지. 월간 현황은 원본(S4만)과 달리 S4·S5 를 발행으로 센다(Notion 에서 S5 로 넘어간 글도 이번 달 발행이므로). 로테이션 기준 (w−1) mod 4 의 시작점은 결정 문서에 명시가 없어 스킬이 정했다 — didim-blog-planner 와 같은 기준인지 확인 필요.
 9. **날짜 해석**: 'YYYY-MM-DD' 는 JS 와 같이 UTC 자정으로, 화면 판정(checkSla)은 KST 오늘 날짜 비교로 포팅했다. 서버 함수(알림·월간 현황)는 UTC 기준.
 10. **자동 발행 없음**: 시드의 S3→S4 "예약 시간 도래 (자동)"은 원본에도 구현이 없다. 스킬도 자동 전이를 하지 않고, 사용자가 네이버 발행을 확인한 뒤 S4 로 바꾼다.
+11. **Notion 최소 필드**: 마감일 5개·완료일시·검수 상태·수정 횟수를 저장하지 않는다(_DECISIONS.md §4). 마감일은 발행일에서 매번 역산하고, 완료 여부는 상태로 추정(S1↑ 주제선정·초안, S2↑ 검수, S3↑ 이미지, S4↑ 발행)하며, 검수 상태·수정 횟수는 메모의 기록 줄에서 복원한다. 상태 값은 'S4 발행완료' 형식으로 쓴다.
+12. **CTA 면제 확대**: 원본은 CAT-C(다이어리)만 면제. 스킬은 디딤 다이어리(17~20)와 디딤 소식의 사무소 소식(`--no-cta`, _DECISIONS.md §5)을 면제한다.
 
 ## 9. 다른 스킬과의 연결
-- 받는 입력: didim-blog-writer(초안 저장 → S1, 본문·태그), didim-blog-seo(SEO 점수 → S1→S2 권장 조건), didim-blog-factcheck(교차검증 수행·심각 이슈 수 → 권장 조건), didim-blog-infographic(이미지 마커), didim-blog-planner(주제·12주 이후 주차 주제), didim-blog-core(카테고리·CTA·명칭 규칙).
+- 받는 입력: didim-blog-planner(추천 소스·로테이션 카테고리 → 새 행), didim-blog-writer(초안 저장 → S1, 본문·태그), didim-blog-seo(SEO 점수 → S1→S2 권장 조건), didim-blog-factcheck(교차검증 수행·심각 이슈 수 → 권장 조건), didim-blog-infographic(이미지 마커), didim-blog-planner(주제·12주 이후 주차 주제), didim-blog-core(카테고리·CTA·명칭 규칙).
 - 넘기는 출력: didim-blog-publish-prep(S3 발행예정 글의 발행 준비), didim-blog-performance(S4→S5 1주차 성과 입력, 발행 글 목록), didim-blog-health(S4 발행 글·published_at → 건강 점검).

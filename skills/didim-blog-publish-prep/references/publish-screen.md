@@ -5,7 +5,7 @@
 ## 목차
 1. 화면 구성과 복사 항목 (원문 문구)
 2. 발행 전 체크리스트 7개 (원문)
-3. CTA 매칭 규칙 (1순위 키워드 → 5순위 범용)
+3. CTA 매칭 규칙 (1순위 키워드 → 5순위 범용) / 3-1. 신규 카테고리 구조 CTA
 4. 면책조항 선택
 5. 태그 칩 상태
 6. 상태(S0~S5) 조건
@@ -62,6 +62,21 @@ UPGRADE_SPEC §8.1 의 체크리스트 7개는 문구가 다르다 → upgrade-s
 4. **4순위**: category_id 가 CAT-A* → key 에 "출원" 포함(없으면 첫 템플릿), CAT-B* → "IP라운지" 포함.
 5. **5순위**: 목록의 첫 템플릿 (DB 있으면 IP라운지, 없으면 현장수첩_절세).
 - 사용자가 드롭다운에서 고른 key 가 있으면 그것이 우선. 최종 CTA 텍스트는 enforceEmail 적용.
+
+## 3-1. [스킬 규칙] 신규 카테고리 구조의 CTA (skills/_DECISIONS.md 2절 — 원본 코드에 없음)
+입력 category(네이버 이름/categoryNo)가 신규 구조면 위 3절 대신 아래를 쓴다. 문구는 모두 기존 원문이다(코어 cta-templates.md 0절).
+| categoryNo | CTA | 선택 규칙 | 면책·포맷 가이드에 넘기는 CAT 별칭 |
+|---|---|---|---|
+| 25 지원사업·인증과 특허 | 현장수첩_절세 / 현장수첩_인증 / 현장수첩_연구소 | 타깃 키워드 → 제목 순으로 3절 정규식 중 절세·인증·연구소 3개만 검사, 불일치 시 현장수첩_인증 | 절세 CAT-A-01 / 인증 CAT-A-02 / 연구소 CAT-A-03 / 불일치 CAT-A |
+| 27 출원·심판 실무 | 현장수첩_출원 | 고정 | CAT-A-04 |
+| 26 사례 | 3절 정규식 7개 전체 매칭 템플릿 | 타깃 키워드 → 제목, 불일치 시 현장수첩_출원 | CAT-A |
+| 24 지식재산 경영 | 이웃 추가 CTA(seed_data "IP라운지" = UPGRADE_SPEC NEIGHBOR) | 고정 | CAT-B |
+| 28 디딤 소식 | 가벼운 이웃 추가(━×18 + FIELD_CTA["CAT-B-03"] 문장 + 서명) / 사무소 소식(office_news=true)은 없음 | 고정 | CAT-B-03 |
+| 17·18~20 디딤 다이어리 | 없음(수동 선택도 무시) | - | CAT-C* |
+| 7 디딤 소개 / 22 상담 안내 | 없음(고정 페이지, 대상 아님) | - | CAT-INTRO / CAT-CONSULT |
+| 레거시 9·13 하위 | 3절 원본 로직(1차 별칭 CAT-A/CAT-B + 2차 별칭) | - | 해당 별칭 |
+- 수동 선택 드롭다운에 해당하는 `cta_override_key` 는 신규 구조에서 `이웃추가`, `디딤소식_이웃추가` 키도 받는다.
+- 계산: `python3 scripts/publish_prep.py match-cta-new` 또는 `build`(category 입력).
 
 ## 4. 면책조항 선택 (237-252행)
 자동 = determineDisclaimerLevel({categoryId: secondary_category‖category_id, body, isAiGenerated: content.is_ai_generated}). 드롭다운으로 바꾸면 getDisclaimerText(선택 레벨, is_ai_generated). 레벨·문구 원문은 didim-blog-core 의 references/disclaimers.md (이 스킬의 scripts 에도 동일 문구 내장).

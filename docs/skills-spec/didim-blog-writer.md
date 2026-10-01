@@ -1,5 +1,7 @@
 # didim-blog-writer — 블로그 초안 생성 (3-Phase 파이프라인 · 브리핑 입력 · 자동 마무리·검증)
 
+> skills/_DECISIONS.md(2026-10-01)를 반영함: 카테고리 정본 = 네이버 categoryNo, 신규 구조 우선, 저장소 = Notion "디딤 블로그 콘텐츠".
+
 ## 1. 기능 개요 (한 문단)
 주제·카테고리·핵심 키워드(또는 주제 한 줄/자료 파일로 만든 브리핑)를 받아 디딤 네이버 블로그 초안을 만든다. 백오피스 AI 에디터와 같은 순서로 Phase 1(구조 설계 JSON 아웃라인) → Phase 2(카테고리 톤 + 공통 글쓰기 규칙으로 본문 작성, 끊기면 이어쓰기) → Phase 2.5(인포그래픽 — didim-blog-infographic 위임) → 교차검증(didim-blog-factcheck 위임) → Phase 3(현장수첩·IP 라운지·IP 뉴스 한 입은 SEO 정량 수정 + 광고규정 검수, 다이어리는 에세이 편집) → 자동 마무리(짧은 결과 폴백, 이미지 마커 복원, 불확실성 표기·기관명 정리, 면책 문구, CTA·서명·태그 줄, 자동 태그 10개, 문단 ID 제거, 상태 S1, 발행예정일 다음 화요일) → 품질 검증을 수행한다. LLM 호출은 Claude가 원문 프롬프트를 직접 따르는 절차로, 결정적 로직은 Python 포팅 스크립트로 대체한다.
 
@@ -25,7 +27,9 @@
 | 입력 | 필수 | 출처(원본) | 스킬에서 |
 |---|---|---|---|
 | topic | ✓ | `ai_generations.topic` | 사용자 입력 또는 브리핑 |
-| category_id | ✓ | `ai_generations.category_id` (다이얼로그: 2차 우선 / 콘텐츠 폼: 1차만) | 사용자 입력(2차 우선) |
+| category_id | ✓ | `ai_generations.category_id` (다이얼로그: 2차 우선 / 콘텐츠 폼: 1차만) | 발행 카테고리 — 네이버 categoryNo 또는 이름(_DECISIONS.md 1절). 지정 없으면 신규 구조, 레거시 지정 시 그대로. CAT-*도 받음 |
+| 사건 메모 | 사례(26)만 필수 | (원본에 없음) | 사용자가 직접 준 익명화 사건 기록 |
+| news_kind | 디딤 소식(28)만 | (원본에 없음) | ip(IP 뉴스 한 입) / office(사무소 소식, CTA 없음) |
 | target_keyword | ✓(다이어리 선택) | `ai_generations.target_keyword` | 사용자 입력 |
 | additional_context | 선택 | `ai_generations.additional_context` (3-Phase에서는 미사용) | Phase 1·2에 덧붙임(8절) |
 | 브리핑 입력: 주제 한 줄 | 선택 | `generateBriefing({topic, categoryId?})` | `render --phase briefing` |
@@ -57,6 +61,14 @@
 22. **브리핑 → 초안 입력**: topic·keyword 복사, targetAudience 비움, 카테고리 = 1차 매칭 시 1차 + 2차, `additional_context` = `[에피소드]\n…` + `\n\n` + `[참고사항]\n…`(ai-draft-dialog.tsx:324-346). 제출 시 `categoryId: secondaryCategory || categoryId`(:450).
 23. **LEGACY(미사용) 규칙**: 변수 `topic, keyword, target_audience="", additional_context, subcategory="", cta_text/email_subject(PROMPT_FIELD일 때 getFieldCta(categoryId))`, max_tokens 3000, temperature 0.5, 제목 = 첫 비어있지 않은 줄(50자 컷), `[TAGS]` 또는 `#태그` 10개, `[ALT_TEXTS]`, `[IMAGE: …]` 단일 행 마커 추출(generation-runner.ts:183-275).
 
+24. **[결정 반영] 카테고리 해석**(skills/_DECISIONS.md 1·2절, `scripts/categories.py`): 정본 ID = 네이버 categoryNo. 25 지원사업·인증과 특허·27 출원·심판 실무·26 사례 → PROMPT_FIELD, 24 지식재산 경영 → PROMPT_LOUNGE_GENERAL, 28 디딤 소식 → PROMPT_LOUNGE_BITE, 17(18·19·20) 디딤 다이어리 → PROMPT_DIARY, 레거시 9~16·23 → 원래 매핑, 7·22 고정 페이지는 생성 거부. 원본 함수(면책·태그 접미사·validateDraft)에는 별칭 CAT-*를 넘긴다(25·27·26 → CAT-A, 24 → CAT-B, 28 → CAT-B-03, 17 → CAT-C). CAT-* 직접 입력은 원본 코드 동작 그대로.
+25. **[결정 반영] CTA**: 25 = 키워드 매칭(절세·세액공제·법인세·보상금 → 절세 시뮬레이션, 연구소·연구활동·사후관리 → 연구소 관리, 그 외 인증 진단), 27 = 출원 CTA(FIELD_CTA CAT-A-04), 26 = getFieldCta("CAT-A", 키워드), 24 = 이웃 추가 문구(USER_PROMPTS.PROMPT_LOUNGE_GENERAL 원문), 28 = FIELD_CTA CAT-B-03(사무소 소식은 없음), 다이어리 없음. 레거시 14 특허 전략 노트·15 AI와 IP는 이름 의미대로 각각 포트폴리오·AI CTA.
+26. **[결정 반영] 카테고리명 치환**: 프롬프트 원문은 보존하고, 신규 구조 발행 시 렌더링 결과에서 자기 카테고리 정체성 문구만 치환 — FIELD: `"변리사의 현장 수첩" 카테고리`, `변리사의 현장 수첩 — `; LOUNGE_GENERAL: `"IP 라운지" 카테고리`, `IP 라운지 — `; BITE: `"IP 라운지" 카테고리`, `IP 뉴스 한 입 — `(→ `디딤 소식(IP 뉴스 한 입) — `). `{{category_name}}`은 발행 이름. 레거시 지정 시 치환 없음.
+27. **[결정 반영] 사례(26)**: 사건 메모(`--context-file`) 없으면 `render`가 거부하고 메모를 요청한다.
+28. **[결정 반영] 다이어리 Phase 2.5 생략**: prompt_key가 PROMPT_DIARY(17·18·19·20)면 인포그래픽 단계를 건너뛴다(인포그래픽 v2 규칙과 일치, 카테고리 정본 기준 판정).
+29. **[결정 반영] 브리핑 매핑**: 브리핑 프롬프트 원문은 유지, 2차 유효 목록은 file-upload.ts 목록(CAT-A-04 포함)으로 통일, 결과 CAT-*를 신규 categoryNo로 매핑(A·A-01~03 → 25, A-04 → 27, B·B-01·B-02 → 24, B-03 → 28, C-01 → 26, C-02 → 19, C-03 → 20, C → 17). 사용자 지정 카테고리가 우선.
+30. **[결정 반영] 사무소 소식·다이어리 마무리**: CTA·서명·태그 줄·면책 없이 `cleanFinalText`만 적용, 검증 시 CTA·서명 검사 제외 + 다이어리 CTA 키워드 검사. 신규 구조에서는 기본 태그 "IP라운지"를 발행 카테고리명(공백 제거)으로 교체.
+
 ## 5. 출력
 - 제목(Phase 1 `title`), 최종 본문(`body_for_save`: 문단 ID 제거, 다이어리 외 면책·CTA·서명·태그 줄 포함), 에디터 태그 10개, 면책 레벨, CTA, 발행예정일(다음 화요일), 상태 S1.
 - 검증 결과: validateDraft 항목·점수·미통과 목록, validateGeneratedDraft 경고, 마무리 경고(폴백·마커 복원·짧은 본문).
@@ -79,26 +91,24 @@
 | LLM 설정·API 키 없음, 토큰 한도 | 설정 안내 | 해당 없음(Claude 직접 수행) |
 
 ## 7. 데이터 저장
-| 백오피스 테이블.컬럼 | 스킬에서의 대체 ("디딤 블로그 콘텐츠" Notion DB 필드 또는 사용자 입력) |
-|---|---|
-| contents.title | 제목 (title) |
-| contents.body | 본문 (rich text / 페이지 본문) |
-| contents.category_id | 카테고리 (select: 변리사의 현장 수첩 / IP 라운지 / 디딤 다이어리) + 2차 분류 (select) |
-| contents.target_keyword | 핵심 키워드 (text) |
-| contents.tags | 태그 (multi-select, 10개) |
-| contents.status | 상태 (select, 초안 저장 시 "S1") — 전이 규칙은 didim-blog-ops |
-| contents.draft_done_at | 초안 완료일 (date) |
-| contents.publish_date | 발행예정일 (date, 다음 화요일) |
-| contents.seo_score | SEO 점수 (number) — didim-blog-seo가 채움 |
-| contents.is_ai_generated | AI 생성 (checkbox ✓) |
-| contents.ai_generation_id | 없음 — 대신 아래 생성 기록 필드를 같은 페이지에 둔다 |
-| ai_generations.topic / additional_context | 주제 (text) / 참고 사항 (text) |
-| ai_generations.phase1_output | Phase 1 아웃라인 (text, JSON) |
-| ai_generations.phase2_output | 사용 안 함 (작업 폴더 파일로 대체) |
-| ai_generations.phase | 사용 안 함 (대화 내 진행 단계) |
-| ai_generations.llm_provider / llm_model / tokens_used / generation_time_ms | 사용 안 함 |
-| (신규) 면책 레벨 | 면책 레벨 (select: A/B/C/none) |
-Notion 커넥터가 없으면 저장 없이 사용자에게 결과를 전달한다. DB는 새로 만들지 않는다.
+저장 위치: Notion 비공개 페이지 "DIDIM 블로그 운영" 아래 **"디딤 블로그 콘텐츠"** DB — data source `collection://463bc815-11ab-4290-9d86-22bd1aa9cfed` (2026-10-01 fetch로 스키마 확인). 다른 워크스페이스면 이름으로 찾고, 없으면 DB를 만들지 않고 표로 출력해 붙여넣기를 요청한다.
+
+| 백오피스 테이블.컬럼 | Notion 열 (타입) | 스킬이 쓰는 값 |
+|---|---|---|
+| contents.title | 제목 (title) | Phase 1 제목 |
+| contents.status | 상태 (select: S0 기획 / S1 초안 / S2 검토 / S3 예약 / S4 발행 / S5 성과 측정) | 'S1'로 시작하는 기존 선택지. _DECISIONS.md 표기는 "S1 초안완료"이나 실제 DB 선택지는 "S1 초안" — 새 선택지를 만들지 않음 |
+| contents.category_id | 카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시) | 신규 이름, 레거시면 "레거시" |
+| (2차 분류) | 레거시 2차 분류 (select: 절세 시뮬레이션 … 대표의 생각) | 레거시 2차·다이어리 하위(18~20) 이름 |
+| (신규) | categoryNo (number) | 네이버 categoryNo |
+| contents.target_keyword | 타깃 키워드 (text) | 핵심 키워드 |
+| contents.publish_date | 발행일 (date) | 비워 둠(발행 후 기록). 발행예정일은 메모에 |
+| (신규) | 발행 URL (url) | 비워 둠 |
+| (추천 출처) | 추천 소스 (select: 키워드 풀 / 뉴스 / 지원매치 리포트 / 로테이션 / 직접 입력) | planner가 준 값, 없으면 직접 입력 |
+| (신규) | 시리즈 (text) / 시리즈 회차 (number) | 연재일 때 |
+| contents.updated_at | 마지막 업데이트일 (date) | 오늘 |
+| contents.tags, seo/면책/검증 | 메모 (text) | `발행예정일 · 면책 레벨 · 품질 점수 · 태그 · 수정 내역 요약` |
+| contents.body | 페이지 본문 | 최종 본문 마크다운 |
+| contents.draft_done_at, is_ai_generated, ai_generations.* | 없음 | 저장하지 않음 (Phase 1 아웃라인 등 중간 산출물은 작업 폴더) |
 
 ## 8. 원본 코드와 달라진 점
 1. **LLM 호출 → Claude 직접 수행**: Claude/OpenAI/Gemini 스트리밍 호출(`streamLLM`)과 LLM 설정·API 키·토큰 사용량 기록을 없앴다. Claude가 `render`로 조립한 system+user 원문을 따라 응답을 작성한다. max_tokens·temperature는 참고값으로만 남는다(스킬 환경에서 제어 불가). 이어쓰기는 "출력이 끊겼을 때" Claude가 판단해 수행한다.
@@ -115,14 +125,22 @@ Notion 커넥터가 없으면 저장 없이 사용자에게 결과를 전달한�
 12. **카테고리명 CAT-A-04**: seed.sql에 없어 원본 `getCategoryName`은 ""를 반환할 것으로 보이나(DB에 수동 추가 여부 확인 필요), 스킬은 prompts.ts 표기 "특허·상표 출원 실무"를 쓴다.
 13. **JS 호환**: 글자 수·위치는 JS와 같은 UTF-16 코드 유닛, `\s`·`\d`·`\w`는 JS 집합으로 계산한다(차이 없음을 확인).
 
+14. **[결정 사항 반영] 카테고리 구조 교체** (skills/_DECISIONS.md, 2026-10-01): 원본의 CAT-* 카테고리·getPromptKey 대신 네이버 categoryNo 정본 + 신규 구조(4절 24~30). 원본 getPromptKey·getFieldCta는 CAT-* 입력용으로 그대로 보존(43건 검증 유지).
+15. **[결정 사항 반영] 프롬프트 속 카테고리명 치환**: 원문 상수는 바꾸지 않고 렌더링 결과에서만 치환(4절 26).
+16. **[결정 사항 반영] 사례 메모 필수, 사무소 소식 CTA 없음, 다이어리 Phase 2.5 생략**(원본은 다이어리에도 인포그래픽 3개 설계·이름 문자열로 판정).
+17. **[결정 사항 반영] 브리핑의 CAT-A-04 누락 재현 폐기**: 원본 briefing.ts는 CAT-A-04를 2차 유효 목록에서 빠뜨려 빈 값으로 바꾸지만, 스킬은 재현하지 않고 신규 구조로 매핑한다(4절 29).
+18. **[결정 사항 반영] 저장소**: contents 테이블 → Notion "디딤 블로그 콘텐츠"(7절). AI 생성 여부·초안 완료일 등은 저장하지 않음.
+19. **레거시 14·15의 CTA**: 코드 CAT-B-01/02 뒤바뀜 대신 이름 의미대로 고정(특허 전략 노트 = 포트폴리오 CTA, AI와 IP = AI CTA).
+20. **25 지원사업·인증과 특허 CTA 기본값 = 인증 진단**: 결정 문서가 기본값을 정하지 않아 허브 성격(지원사업·인증)에 맞춰 정함 — 확인 필요.
+
 원본에 그대로 둔 코드 내부 모순(스킬도 원문 유지, 확인 필요)
 - `PHASE2_PROMPT`에 `{{visual_rules}}` 자리가 없음(주석·호출부는 전달).
 - `PHASE1_PROMPT` 주석의 `infographic_plan`·1500토큰 vs 실제 프롬프트·2000토큰. 이어쓰기 프롬프트도 존재하지 않는 `infographic_plan`을 참조.
 - `PHASE_MAX_TOKENS`(1500/4000/5000)는 선언만 되고 미사용.
 - 훅 패턴: COMMON_HOOK_RULES A~F vs PHASE1 hook_type A~E(E 의미 다름).
 - FIELD_CTA 주석의 CAT-B-01/02 명칭이 seed.sql과 반대.
-- briefing.ts 2차 유효 목록에 CAT-A-04 없음(file-upload.ts에는 있음) — 포팅본도 원본대로 재현하고 SKILL에서 사용자 확인.
-- 다이어리에도 Phase 2.5가 인포그래픽 3개를 설계(VISUAL_RULES_DIARY는 분위기 사진 1~2장)하며, 2차 분류명이 저장되면 다이어리 판정이 실패한다.
+- briefing.ts 2차 유효 목록에 CAT-A-04 없음(file-upload.ts에는 있음) — 스킬은 재현하지 않음(8절 17).
+- 다이어리에도 Phase 2.5가 인포그래픽 3개를 설계(VISUAL_RULES_DIARY는 분위기 사진 1~2장)하며, 2차 분류명이 저장되면 다이어리 판정이 실패한다 — 스킬은 Phase 2.5 생략(8절 16).
 - LEGACY 추출 코드의 `[TAGS]`/`[ALT_TEXTS]` vs USER_PROMPTS의 `태그:`/`[BODY_HASHTAGS]`/`[NAVER_TAGS]` 형식 불일치.
 - getPromptKey 폴백: UPGRADE_SPEC §5.3은 PROMPT_FIELD, 코드는 PROMPT_LOUNGE_GENERAL(코드를 따름).
 
@@ -130,10 +148,10 @@ Notion 커넥터가 없으면 저장 없이 사용자에게 결과를 전달한�
 | 방향 | 스킬 | 주고받는 것 |
 |---|---|---|
 | 기반 | didim-blog-core | 브랜드·카테고리·CTA·절대원칙·명칭 매핑·광고 규정·면책 정책 |
-| 받음 | didim-blog-planner | 추천 주제·주간 기획·뉴스 → topic/category/keyword/참고 사항 (브리핑 양식 공유) |
-| 넘김 → 받음 | didim-blog-infographic | Phase 2.5: 문단 ID 본문·카테고리명·키워드·다이어리 여부 → 이미지 마커 삽입 본문 |
+| 받음 | didim-blog-planner | 추천 주제·4주 로테이션·지원매치 리포트·뉴스 → topic/categoryNo/keyword/참고 사항/추천 소스 (브리핑 양식 공유) |
+| 넘김 → 받음 | didim-blog-infographic | Phase 2.5: 문단 ID 본문·발행 카테고리명·categoryNo·키워드 → 이미지 마커 삽입 본문 (다이어리는 넘기지 않음) |
 | 넘김 → 받음 | didim-blog-factcheck | Phase 2(+2.5) 직후: 문단 ID 본문 → 사용자가 고른 수정 반영 본문 |
 | 넘김 | didim-blog-seo | 최종 제목·본문·키워드·카테고리 → SEO 점수 |
 | 넘김 | didim-blog-publish-prep | 최종 본문·태그 → 네이버 붙여넣기용 텍스트·태그·ALT·체크리스트 |
-| 넘김 | didim-blog-ops | 상태 S1·초안 완료일·발행예정일 → 검수·상태 전이·캘린더 |
+| 넘김 | didim-blog-ops | Notion 상태 S1·발행예정일(메모) → 검수·상태 전이·캘린더 |
 | 참고 | didim-blog-health | 기존 글과 중복 회피·내부 링크([내부링크] 마커) 후보 |

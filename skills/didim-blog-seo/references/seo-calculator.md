@@ -1,7 +1,7 @@
 # SEO 자동 점수 (seo-calculator / seo-rubrics) 원문
 
 원본: `src/lib/seo-calculator.ts`(전체), `src/lib/constants/seo-rubrics.ts`(전체), 표시: `src/components/contents/seo-score-panel.tsx`.
-스크립트 포팅: `scripts/seo_score.py` (원본 TS 와 같은 입력 35건 대조 일치).
+스크립트 포팅: `scripts/seo_score.py` (`--legacy-image-count` 로 원본 TS 와 같은 입력 35건 대조 일치. 기본값은 이미지 카운트 버그를 고친 동작).
 
 ## 목차
 1. 요약 규칙
@@ -36,7 +36,7 @@
 - 본문 분량: 모든 공백 제거 후 길이
 - 키워드 빈도: 키워드 정규식 이스케이프 후 **대소문자 무시** 전체 출현 수. 키워드 없으면 0점·미통과("타겟 키워드를 설정하세요")
 - 소제목: 줄 맨 앞 `##` 또는 `###` + 공백 + 내용 (`#` 1개·4개는 제외)
-- 이미지: `/\[IMAGE:\s*.+?\]/g` — **`]` 가 같은 줄에 있어야** 센다. 여러 줄 박스형 마커(`[IMAGE: 설명 | 유형 |` 다음 줄에 `(1) 한국어…(2) English…]`)는 세지 않는다(확인 필요 — 원본 동작 그대로 포팅)
+- 이미지: 원본은 `/\[IMAGE:\s*.+?\]/g` — **`]` 가 같은 줄에 있어야** 센다. 여러 줄 박스형 마커(`[IMAGE: 설명 | 유형 |` 다음 줄에 `(1) 한국어…(2) English…]`, 그 뒤 `━━` 줄)는 세지 못하는 버그. **스킬(seo_score.py) 기본은 박스형+한 줄형을 모두 센다**(ai-editor `extractImageMarkers` 규칙, editor-quick-check.md). 원본 재현은 `--legacy-image-count`.
 - CTA 존재: `━{3,}` / `admin@didimip.com` / `이웃\s*추가` / `02-571-6613` / `Tel:\s*[\d-]+` / `재무제표` / `시뮬레이션을?\s*만들어` / `무료\s*진단` 중 하나라도
 - 태그: 개수 ≥ min(10) **그리고** 태그 문자열 합계 < 100자 → 만점, 아니면 개수로 부분 점수
 

@@ -35,6 +35,7 @@ import re
 import sys
 
 from _jscompat import JS_DOT, JS_WS, js_len, js_round
+from seo_editor_check import extract_image_markers
 
 # ── seo-rubrics.ts: SEO_RUBRICS ──
 SEO_RUBRICS = {
@@ -259,10 +260,21 @@ def count_sub_headings(body):
     return len(_SUBHEAD_RE.findall(body))
 
 
-def count_images(body):
+def count_images_legacy(body):
+    """원본 seo-calculator countImages 그대로 — `]` 가 같은 줄에 있어야 셈(박스형 다중 줄 마커 누락)."""
     if not body:
         return 0
     return len(_IMAGE_RE.findall(body))
+
+
+def count_images(body, legacy=False):
+    """스킬 기본: 박스형 다중 줄 + 한 줄형 마커 모두 센다(ai-editor extractImageMarkers 규칙).
+    legacy=True 면 원본 정규식 재현."""
+    if legacy:
+        return count_images_legacy(body)
+    if not body:
+        return 0
+    return len(extract_image_markers(body))
 
 
 def has_cta(body):
@@ -275,7 +287,7 @@ def _fmt(n):
     return f"{n:,}"
 
 
-def calculate_seo_score(content, category_id, rubric_key=None):
+def calculate_seo_score(content, category_id, rubric_key=None, legacy_image_count=False):
     rubric = SEO_RUBRICS[rubric_key or get_rubric_key(category_id)]
     status = content.get("status")
     # Notion 상태 값("S1 초안완료" 등)도 받는다 — 앞 두 글자(S0~S5)만 사용
@@ -377,7 +389,7 @@ def calculate_seo_score(content, category_id, rubric_key=None):
 
     if "imageCount" in active:
         r = rubric["imageCount"]
-        n = count_images(body)
+        n = count_images(body, legacy=legacy_image_count)
         score = calc_partial_score(n, r)
         passed = r["min"] <= n <= r["max"]
         items.append({
@@ -449,14 +461,20 @@ def main():
     ap = argparse.ArgumentParser(description="카테고리별 루브릭·상태별 범위로 SEO 점수를 계산한다 (seo-calculator.ts 포팅).")
     ap.add_argument("--input", help="입력 JSON 파일. 없으면 stdin")
     ap.add_argument("--body-file", help="본문을 별도 파일로 줄 때 (JSON 의 body 를 덮어씀)")
+    ap.add_argument(
+        "--legacy-image-count",
+        action="store_true",
+        help="원본 seo-calculator 의 이미지 정규식을 그대로 재현 (박스형 다중 줄 마커를 세지 않음). 기본은 올바른 카운트",
+    )
     args = ap.parse_args()
     data = json.load(open(args.input, encoding="utf-8")) if args.input else json.load(sys.stdin)
     if args.body_file:
         data["body"] = open(args.body_file, encoding="utf-8").read()
     data.setdefault("status", "S2")
     rk, info = resolve_category(pick_category_input(data), data.get("subtype"))
-    res = calculate_seo_score(data, None, rubric_key=rk)
+    res = calculate_seo_score(data, None, rubric_key=rk, legacy_image_count=args.legacy_image_count)
     out = decorate(res, rk)
+    out["imageCountMode"] = "legacy(원본 정규식)" if args.legacy_image_count else "박스형+한 줄형"
     out["categoryInfo"] = info
     print(json.dumps(out, ensure_ascii=False, indent=2))
 

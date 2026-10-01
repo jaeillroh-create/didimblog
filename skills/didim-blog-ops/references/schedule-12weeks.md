@@ -1,6 +1,7 @@
-# 12주 콘텐츠 스케줄 원문
+# 12주 콘텐츠 스케줄 원문 (폐기 — 기록용)
 
-> 3개 원본이 조금씩 다르다. **seed_data/schedule_12weeks.json 을 1순위**로 쓴다(CLAUDE.md: "12주 스케줄 데이터는 seed_data/schedule_12weeks.json 참조").
+> **skills/_DECISIONS.md §3 에 따라 폐기**(2026-03-31 종료). 대체: 주 1편 + 4주 로테이션(scripts/calendar_ratio.py rotation). 아래는 기록용이다.
+> 3개 원본이 조금씩 다르다. 원래는 **seed_data/schedule_12weeks.json 을 1순위**로 쓴다(CLAUDE.md: "12주 스케줄 데이터는 seed_data/schedule_12weeks.json 참조").
 > 블로그 시작일 DEFAULT_BLOG_START_DATE = "2026-01-06"(화). 주차 = ceil((오늘 - 시작일)/7일).
 
 ## 목차
