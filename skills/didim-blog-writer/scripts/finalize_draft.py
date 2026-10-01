@@ -9,7 +9,8 @@
      (Phase 3 결과 200자 미만 폴백, 이미지 마커 손실 복원, 마무리 저장값 계산)
 
 하위 명령 (출력 JSON)
-  finalize  --phase2-file p2.md --phase3-file p3.md --category-id CAT-A-01 --keyword "..." --title "..."
+  finalize  --phase2-file p2.md --phase3-file p3.md --category-id 25 --keyword "..." --title "..."
+            (--category-id 는 categoryNo / 네이버 카테고리 이름 / CAT-* 모두 가능. CAT-* 는 원본 코드 동작 그대로)
             [--outline-file outline.json] [--keep-edit-comments] [--today 2026-10-01]
   clean     --body-file body.md                       (cleanFinalText)
   disclaimer --body-file body.md --category-id CAT-B   [--not-ai]
@@ -102,7 +103,7 @@ def _norm_tag(t: str) -> str:
 
 
 def append_cta_and_signature(body, prompt_key, cta_text=None, email_subject=None,
-                             target_keyword=None, disclaimer_text=None) -> str:
+                             target_keyword=None, disclaimer_text=None, default_tags=None) -> str:
     if prompt_key == "PROMPT_DIARY":
         return clean_final_text(body)
     if not body or u16len(re.sub(WS, "", body)) < 50:
@@ -132,7 +133,7 @@ def append_cta_and_signature(body, prompt_key, cta_text=None, email_subject=None
         push(keyword)
     for t in llm_tags:
         push(t)
-    for t in DEFAULT_TAGS_BY_CATEGORY.get(prompt_key, []):
+    for t in (default_tags if default_tags is not None else DEFAULT_TAGS_BY_CATEGORY.get(prompt_key, [])):
         push(t)
     for t in BRAND_TAGS:
         push(t)
@@ -197,7 +198,7 @@ def _category_suffixes(category_id: str):
     return ["후기", "이야기"]
 
 
-def generate_auto_tags(prompt_key, target_keyword=None, phase1_outline=None, category_id=None):
+def generate_auto_tags(prompt_key, target_keyword=None, phase1_outline=None, category_id=None, default_tags=None):
     if prompt_key == "PROMPT_DIARY":
         return list(BRAND_TAGS)
     tags, seen = [], set()
@@ -229,7 +230,7 @@ def generate_auto_tags(prompt_key, target_keyword=None, phase1_outline=None, cat
                 push(cleaned)
             if len(tags) >= 8:
                 break
-    for d in DEFAULT_TAGS_BY_CATEGORY.get(prompt_key, []):
+    for d in (default_tags if default_tags is not None else DEFAULT_TAGS_BY_CATEGORY.get(prompt_key, [])):
         push(d)
         if len(tags) >= 8:
             break
@@ -282,10 +283,24 @@ def next_tuesday(today: dt.date) -> dt.date:
     return today + dt.timedelta(days=delta or 7)
 
 
+def resolve_for_finalize(category, news_kind="ip"):
+    """카테고리(categoryNo/이름/CAT-*) → 원본 함수에 넘길 값들. CAT-* 입력은 원본 동작 그대로."""
+    from categories import resolve, resolve_cta
+    cat = resolve(category, news_kind)
+    if cat["structure"] == "code":
+        return cat, get_prompt_key(category), category, None, (lambda kw: get_field_cta(category, kw))
+    defaults = None
+    if cat["structure"] == "new":
+        # 레거시 카테고리명 태그(IP라운지)를 실제 발행 카테고리명으로 교체
+        nm = re.sub(WS + "+", "", cat["name"])
+        defaults = [nm if t == "IP라운지" else t for t in DEFAULT_TAGS_BY_CATEGORY.get(cat["prompt_key"], [])]
+    return cat, cat["prompt_key"], cat["alias"], defaults, (lambda kw: resolve_cta(cat, kw))
+
+
 def finalize(phase2_body, phase3_body, category_id, keyword, title, outline=None,
-             keep_edit_comments=False, today=None):
+             keep_edit_comments=False, today=None, news_kind="ip"):
     warnings = []
-    prompt_key = get_prompt_key(category_id)
+    cat, prompt_key, alias, default_tags, cta_fn = resolve_for_finalize(category_id, news_kind)
     clean_body = strip_paragraph_ids(phase2_body)
     body = phase3_body
     if u16len(re.sub(WS, "", body)) < 200:
@@ -297,16 +312,23 @@ def finalize(phase2_body, phase3_body, category_id, keyword, title, outline=None
     edit_notes = []
     if not keep_edit_comments:
         body, edit_notes = extract_edit_comments(body)
-    disclaimer = determine_disclaimer_level(category_id, body, True)
-    cta = get_field_cta(category_id, keyword)
-    final_body = append_cta_and_signature(body, prompt_key, cta["cta"], cta["emailSubject"], keyword,
-                                          disclaimer["text"])
-    tags = generate_auto_tags(prompt_key, keyword, outline, category_id)
+    if cat["no_cta"]:
+        # 다이어리·사무소 소식: CTA·서명·태그 줄 없음, 면책 없음 (정리만)
+        disclaimer = {"level": "none", "text": ""}
+        cta = None
+        final_body = append_cta_and_signature(body, "PROMPT_DIARY")
+    else:
+        disclaimer = determine_disclaimer_level(alias, body, True)
+        cta = cta_fn(keyword)
+        final_body = append_cta_and_signature(body, prompt_key, cta["cta"], cta["emailSubject"], keyword,
+                                              disclaimer["text"], default_tags)
+    tags = generate_auto_tags(prompt_key, keyword, outline, alias, default_tags)
     body_for_save = strip_paragraph_ids(final_body)
     if u16len(re.sub(WS, "", body_for_save)) < 200:
         warnings.append(f"본문이 너무 짧습니다 ({u16len(re.sub(WS, '', body_for_save))}자). 저장을 중단합니다.")
     return {
         "prompt_key": prompt_key,
+        "category": {k: cat.get(k) for k in ("category_no", "name", "structure", "alias", "no_cta")},
         "title": title,
         "final_body": final_body,
         "body_for_save": body_for_save,
@@ -316,7 +338,7 @@ def finalize(phase2_body, phase3_body, category_id, keyword, title, outline=None
         "edit_notes": edit_notes,
         "markers_restored": restored,
         "publish_date": next_tuesday(today or dt.date.today()).isoformat(),
-        "status_after_save": "S1",
+        "status_after_save": "S1",  # Notion 상태 열에서는 'S1'로 시작하는 기존 옵션을 선택
         "warnings": warnings,
     }
 
@@ -337,6 +359,7 @@ def main():
     s.add_argument("--title", default="")
     s.add_argument("--outline-file")
     s.add_argument("--keep-edit-comments", action="store_true")
+    s.add_argument("--news-kind", choices=["ip", "office"], default="ip", help="디딤 소식(28): office=사무소 소식(CTA 없음)")
     s.add_argument("--today", help="YYYY-MM-DD (발행예정일 계산 기준, 기본 오늘)")
     s = sub.add_parser("clean"); s.add_argument("--body-file", required=True)
     s = sub.add_parser("disclaimer")
@@ -352,14 +375,16 @@ def main():
         outline = json.loads(_read(a.outline_file)) if a.outline_file else None
         today = dt.date.fromisoformat(a.today) if a.today else None
         out = finalize(_read(a.phase2_file), _read(a.phase3_file), a.category_id, a.keyword, a.title,
-                       outline, a.keep_edit_comments, today)
+                       outline, a.keep_edit_comments, today, a.news_kind)
     elif a.cmd == "clean":
         out = {"body": clean_final_text(_read(a.body_file))}
     elif a.cmd == "disclaimer":
-        out = determine_disclaimer_level(a.category_id, _read(a.body_file), not a.not_ai)
+        cat, _, alias, _, _ = resolve_for_finalize(a.category_id)
+        out = determine_disclaimer_level("CAT-C" if cat["no_cta"] else alias, _read(a.body_file), not a.not_ai)
     elif a.cmd == "tags":
         outline = json.loads(_read(a.outline_file)) if a.outline_file else None
-        out = {"tags": generate_auto_tags(get_prompt_key(a.category_id), a.keyword, outline, a.category_id)}
+        _, pk, alias, defaults, _ = resolve_for_finalize(a.category_id)
+        out = {"tags": generate_auto_tags(pk, a.keyword, outline, alias, defaults)}
     else:
         body, notes = extract_edit_comments(_read(a.body_file))
         out = {"body": body, "edit_notes": notes}

@@ -36,6 +36,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from design_json import load_designs  # noqa: E402
+from categories import resolve as resolve_cat  # noqa: E402
 
 # ── 블로그 이미지 팔레트 (v2 "블로그 이미지 팔레트" 표) ──
 BLOG_IMAGE_PALETTE = {
@@ -59,28 +60,21 @@ TYPE_NAMES = {
 
 
 def resolve_category(name):
-    """카테고리명 → 팔레트 키. 다이어리는 'diary'."""
-    n = (name or "").replace(" ", "")
-    if not n:
+    """카테고리명(신규·레거시)·categoryNo → 팔레트 키 field/lounge/news, 다이어리는 'diary'.
+    매핑은 categories.py (skills/_DECISIONS.md). 모르는 이름이면 field + 경고."""
+    r = resolve_cat(name)
+    if r is None:
+        if (name or "").strip():
+            sys.stderr.write(f"[render] 알 수 없는 카테고리 '{name}' — 현장 수첩 팔레트로 그립니다\n")
         return "field"
-    if n in BLOG_IMAGE_PALETTE:
-        return n
-    if "다이어리" in n or n == "diary":
-        return "diary"
-    if "뉴스" in n or "한입" in n:
-        return "news"
-    if "현장" in n or "수첩" in n:
-        return "field"
-    if "라운지" in n or "전략" in n or "AI" in n or "실무" in n or "출원" in n:
-        return "lounge"
-    return "field"
+    return r["group"]
 
 
 # ── 글자 폭 추정 (Noto Sans KR 기준 근사, 보수적으로 넉넉하게) ──
 def char_em(ch):
     o = ord(ch)
     if ch == " ":
-        return 0.28
+        return 0.33  # Noto Sans KR 0.25em, CJK 대체 폰트는 0.5em 까지 — 중간값
     if ch.isdigit():
         return 0.58
     if "A" <= ch <= "Z":
@@ -155,7 +149,8 @@ def balance(s, lines, maxw, size, bold=False):
     for _ in range(14):
         mid = (lo + hi) / 2
         cand = wrap_idx(s, mid, size, bold)
-        clean = all((b >= len(s) or s[b] in " \n") for _, b in cand[:-1])
+        clean = all((b >= len(s) or s[b] in " \n") for _, b in cand[:-1]) and \
+            all(s[a:a + 1] not in "·,.)" for a, _ in cand[1:])
         if len(cand) <= n and clean:
             best, hi = cand, mid
         else:
@@ -393,7 +388,7 @@ def render_T(d, pal):
     sub_h = block_h(1, sub_sz, 1.3) + 36 if sub else 0
     longest = max(sum(char_em(c) for c in ml) * 1.05 for ml in main_lines) or 1
     lh = 1.2
-    size = min(0.84 * W / longest, (area_bot - area_top - sub_h) / (len(main_lines) * lh), 210)
+    size = min(0.82 * W / longest, (area_bot - area_top - sub_h) / (len(main_lines) * lh), 210)
     size = int(max(size, 56))
     if longest * size > 0.92 * W:
         svg.warnings.append("썸네일 한 줄이 너무 길어 폭을 넘을 수 있음")
@@ -405,7 +400,7 @@ def render_T(d, pal):
         y += svg.text(W / 2, y, ml, [(0, len(ml))], size, on, weight=900, anchor="middle", lh=lh,
                       emphasis=d.get("emphasis"), emph_fill=accent)
     if sub:
-        ssz, slines, _ = fit(sub, 0.84 * W, sub_sz, 32, 1)
+        ssz, slines, _ = fit(sub, 0.82 * W, sub_sz, 32, 1)
         svg.text(W / 2, y + 36, sub, slines, ssz, on, weight=500, anchor="middle", op=0.92)
     bsz = int(min(max(size * 0.2, 34), 52))
     svg.line(W / 2 - 90, brand_y + 4, W / 2 + 90, brand_y + 4, on, 2, op=0.7)
@@ -480,34 +475,42 @@ def render_B(d, pal):
     x, y, w, h = body_frame(svg, d, pal)
     text, gray, main = BLOG_IMAGE_PALETTE["body"]["text"], BLOG_IMAGE_PALETTE["support_gray"], pal["main"]
     n = max(len(steps), 1)
-    gap = 64
-    bh = min((h - (n - 1) * gap) / n, 230)
-    total = n * bh + (n - 1) * gap
+    tx_off = 118
+    tw = w - tx_off - 44
+    # 내용에 맞춰 상자 높이를 정하고, 넘치면 간격 → 글자 크기 순으로 줄인다
+    for gap, t_size, d_size in ((64, 46, 34), (48, 42, 32), (40, 38, 30), (34, 34, 28)):
+        laid = []
+        for title, desc in steps:
+            tsz, tl, _ = fit(title, tw, t_size, 30, 1, bold=True)
+            if desc:
+                dsz, dl, dov = fit(desc, tw, d_size, MIN_FONT, 2)
+            else:
+                dsz, dl, dov = 0, [], False
+            ch = block_h(len(tl), tsz, 1.2) + (8 + block_h(len(dl), dsz, 1.3) if desc else 0)
+            laid.append((title, desc, tsz, tl, dsz, dl, ch, dov))
+        bh = min(max(l[6] for l in laid) + 52, 230)
+        total = n * bh + (n - 1) * gap
+        if total <= h:
+            break
+    if total > h:
+        svg.warnings.append("B 유형 단계가 많거나 설명이 길어 영역을 넘침 — 단계 수나 설명을 줄이세요")
+    if any(l[7] for l in laid):
+        svg.warnings.append("단계 설명이 2줄을 넘음 — 설명을 줄이세요")
     cy = y + (h - total) / 2
-    for i, (title, desc) in enumerate(steps):
-        em = is_emph(title, d) or (desc and is_emph(desc, d))
+    for i, (title, desc, tsz, tl, dsz, dl, ch, _) in enumerate(laid):
+        em = is_emph(title, d) or bool(desc and is_emph(desc, d))
         svg.rect(x, cy, w, bh, fill=main if em else gray, r=24, op=0.10 if em else 0.09,
                  stroke=main if em else None, sw=3)
         svg.circle(x + 66, cy + bh / 2, 20, fill=main if em else gray)
-        tx = x + 118
-        tw = w - 118 - 44
-        tsz, tl, _ = fit(title, tw, 46, 34, 2 if not desc else 1, bold=True)
+        gy = cy + (bh - ch) / 2
+        gy += svg.text(x + tx_off, gy, title, tl, tsz, main if em else text, weight=800, lh=1.2)
         if desc:
-            dsz, dl, ov = fit(desc, tw, 32, MIN_FONT, 2)
-            if ov or block_h(len(tl), tsz, 1.2) + 10 + block_h(len(dl), dsz, 1.3) > bh - 24:
-                svg.warnings.append(f"단계 설명이 길어 상자를 넘칠 수 있음: '{desc}'")
-            gh = block_h(len(tl), tsz, 1.2) + 10 + block_h(len(dl), dsz, 1.3)
-        else:
-            gh = block_h(len(tl), tsz, 1.2)
-        gy = cy + (bh - gh) / 2
-        gy += svg.text(tx, gy, title, tl, tsz, main if em else text, weight=800, lh=1.2)
-        if desc:
-            svg.text(tx, gy + 10, desc, dl, dsz, text, weight=400, op=0.75,
+            svg.text(x + tx_off, gy + 8, desc, dl, dsz, text, weight=400, op=0.75,
                      emphasis=d.get("emphasis"), emph_fill=main)
         if i < n - 1:
             ay = cy + bh + gap / 2
-            svg.path(f"M{x + w / 2 - 22:.1f},{ay - 12:.1f} L{x + w / 2 + 22:.1f},{ay - 12:.1f} "
-                     f"L{x + w / 2:.1f},{ay + 14:.1f} Z", fill=gray)
+            svg.path(f"M{x + w / 2 - 20:.1f},{ay - 11:.1f} L{x + w / 2 + 20:.1f},{ay - 11:.1f} "
+                     f"L{x + w / 2:.1f},{ay + 12:.1f} Z", fill=gray)
         cy += bh + gap
     return svg
 
@@ -531,17 +534,16 @@ def render_C(d, pal):
         r, c = divmod(i, cols)
         cx0, cy0 = x + c * (cw + g), oy + r * (chh + g)
         em = is_emph(value, d) or is_emph(label, d)
-        svg.rect(cx0, cy0, cw, chh, fill=main if em else gray, r=24, op=0.10 if em else 0.08,
-                 stroke=main if em else None, sw=3)
+        svg.rect(cx0, cy0, cw, chh, fill=main if em else gray, r=24, op=1 if em else 0.08)
         vsz, vl, ov = fit_pref(value, cw - 64, 92 if cols == 1 else 72, 48, 40, 2, bold=True)
         if ov:
             svg.warnings.append(f"수치가 길어 줄어듦: '{value}'")
-        lsz, ll, _ = fit(label, cw - 64, 36, 30, 2)
+        lsz, ll, _ = fit(label, cw - 64, 38, 30, 2)
         gh = block_h(len(vl), vsz, 1.15) + 14 + block_h(len(ll), lsz, 1.3)
         gy = cy0 + (chh - gh) / 2
-        gy += svg.text(cx0 + cw / 2, gy, value, vl, vsz, main if em else text, weight=900,
-                       anchor="middle", lh=1.15, emphasis=d.get("emphasis"), emph_fill=main)
-        svg.text(cx0 + cw / 2, gy + 14, label, ll, lsz, text, weight=500, anchor="middle", op=0.75)
+        vc = "#FFFFFF" if em else text
+        gy += svg.text(cx0 + cw / 2, gy, value, vl, vsz, vc, weight=900, anchor="middle", lh=1.15)
+        svg.text(cx0 + cw / 2, gy + 14, label, ll, lsz, vc, weight=500, anchor="middle", op=0.9 if em else 0.75)
     return svg
 
 
@@ -561,8 +563,8 @@ def render_D(d, pal):
     centers = []
     blocks = []
     for i, (when, what) in enumerate(pairs):
-        wsz, wl, _ = fit(when, tw, 42, 32, 1, bold=True)
-        ssz, sl, ov = fit(what, tw, 36, 30, 2)
+        wsz, wl, _ = fit(when, tw, 46, 32, 1, bold=True)
+        ssz, sl, ov = fit(what, tw, 40, 30, 2)
         if ov:
             svg.warnings.append(f"타임라인 내용이 길어 줄어듦: '{what}'")
         gh = block_h(len(wl), wsz, 1.2) + 8 + block_h(len(sl), ssz, 1.3)
@@ -592,7 +594,7 @@ def render_E(d, pal):
     x, y, w, h = body_frame(svg, d, pal)
     text, gray, main = BLOG_IMAGE_PALETTE["body"]["text"], BLOG_IMAGE_PALETTE["support_gray"], pal["main"]
     n = max(len(items), 1)
-    rh = min(h / n, 150)
+    rh = min(h / n, 175)
     oy = y + (h - rh * n) / 2
     for i, it in enumerate(items):
         ry = oy + i * rh
@@ -602,7 +604,7 @@ def render_E(d, pal):
         svg.circle(x + 30, cy, 26, fill=main if em else gray, op=1 if em else 0.18)
         svg.path(f"M{x + 17:.1f},{cy + 1:.1f} L{x + 27:.1f},{cy + 11:.1f} L{x + 44:.1f},{cy - 10:.1f}",
                  stroke="#FFFFFF" if em else text, sw=5)
-        isz, il, ov = fit(it, w - 96, 40, 30, 2, bold=em)
+        isz, il, ov = fit(it, w - 96, 44, 30, 2, bold=em)
         if ov:
             svg.warnings.append(f"체크 항목이 길어 줄어듦: '{it}'")
         ih = block_h(len(il), isz, 1.25)
@@ -674,9 +676,9 @@ def render_G(d, pal):
             continue
         g = 28
         nw = min(300, (w - (k - 1) * g) / k)
-        ox = x + (w - (k * nw + (k - 1) * g)) / 2
         for j, (name, rel) in enumerate(row):
-            nx = ox + j * (nw + g)
+            ncx = x + w * (j + 0.5) / k  # 폭 전체에 고르게 분산
+            nx = min(max(ncx - nw / 2, x), x + w - nw)
             anchors.append((ri, nx, row_y[ri], nw, name, rel))
     # 연결선 먼저
     for ri, nx, ny, nw, name, rel in anchors:
@@ -689,8 +691,12 @@ def render_G(d, pal):
             continue
         sx, sy = ccx, (ccy - chh / 2) if ri == 0 else (ccy + chh / 2)
         ex, ey = nx + nw / 2, (ny + nh) if ri == 0 else ny
-        lx, ly = sx + (ex - sx) * 0.55, sy + (ey - sy) * 0.55
-        rsz, rl, ov = fit(rel, 190, 30, MIN_FONT, 2)
+        k_row = len(rows[ri])
+        # 같은 줄 라벨끼리 겹치지 않게: 3개면 가운데 라벨을 중심 쪽으로 올려 엇갈리게 배치
+        t_ = 0.6 if k_row <= 2 else (0.38 if abs(ex - sx) < 1 else 0.7)
+        lx, ly = sx + (ex - sx) * t_, sy + (ey - sy) * t_
+        lab_w = 240 if k_row <= 2 else 190
+        rsz, rl, ov = fit_pref(rel, lab_w, 30, MIN_FONT, MIN_FONT, 2)
         if ov:
             svg.warnings.append(f"관계 라벨이 길어 넘침: '{rel}'")
         rw = max(text_w(rel[a:b], rsz) for a, b in rl) + 28
@@ -702,8 +708,10 @@ def render_G(d, pal):
     # 주변 주체 상자
     for ri, nx, ny, nw, name, rel in anchors:
         em = is_emph(name, d)
-        svg.rect(nx, ny, nw, nh, fill="#FFFFFF", r=20, stroke=main if em else gray, sw=3)
-        nsz, nl, ov = fit(name, nw - 36, 38, 30, 2, bold=True)
+        svg.rect(nx, ny, nw, nh, fill="#FFFFFF", r=20)
+        svg.rect(nx, ny, nw, nh, fill=main if em else gray, r=20, op=0.10 if em else 0.04,
+                 stroke=main if em else gray, sw=4 if em else 3)
+        nsz, nl, ov = fit_pref(name, nw - 36, 38, 30, 30, 2, bold=True)
         if ov:
             svg.warnings.append(f"주체 이름이 길어 넘침: '{name}'")
         bh_ = block_h(len(nl), nsz, 1.22)
@@ -733,10 +741,10 @@ def render_H(d, pal):
     x, y, w, h = body_frame(svg, d, pal, caption=" · ".join(rest) if rest else None)
     text, gray, main = BLOG_IMAGE_PALETTE["body"]["text"], BLOG_IMAGE_PALETTE["support_gray"], pal["main"]
     n = max(len(parsed), 1)
-    rh = min(h / n, 170)
+    rh = min(h / n, 210)
     oy = y + (h - rh * n) / 2
     mx = max([p[0] for _, _, p in parsed if p] or [1]) or 1
-    vsz = 38
+    vsz = 42
     vw = max([text_w(v, vsz, True) for _, v, _ in parsed] or [0])
     barmax = max(200, w - vw - 28)
     if vw + 28 > w - 200:
@@ -744,8 +752,8 @@ def render_H(d, pal):
     for i, (lab, val, p) in enumerate(parsed):
         ry = oy + i * rh
         em = is_emph(val, d) or is_emph(lab, d)
-        lsz, ll, _ = fit(lab, w, 36, 30, 1, bold=True)
-        bar_h = 46
+        lsz, ll, _ = fit(lab, w, 40, 30, 1, bold=True)
+        bar_h = 56
         gh = block_h(1, lsz, 1.25) + 12 + bar_h
         gy = ry + (rh - gh) / 2
         svg.text(x, gy, lab, ll, lsz, main if em else text, weight=700, lh=1.25)
@@ -884,7 +892,8 @@ def write_preview(path, outputs):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--input", "-i", required=True, help="설계 JSON 파일 경로 (- 는 stdin)")
-    ap.add_argument("--category", "-c", default="", help="카테고리명 (예: '변리사의 현장 수첩', 'IP 라운지', 'IP 뉴스 한 입')")
+    ap.add_argument("--category", "-c", default="",
+                    help="카테고리명 또는 categoryNo (신규: 지원사업·인증과 특허/출원·심판 실무/사례/지식재산 경영/디딤 소식, 레거시 이름도 가능)")
     ap.add_argument("--out", "-o", default="infographics_out", help="출력 폴더")
     ap.add_argument("--prefix", default="", help="파일명 접두사")
     ap.add_argument("--png", choices=["auto", "off", "force"], default="auto", help="PNG 변환 (기본 auto)")
@@ -896,7 +905,8 @@ def main():
     outputs, png_items = [], []
     for i, d in enumerate(designs, 1):
         t = (d.get("type") or "").strip().upper()[:1]
-        cat = resolve_category(d.get("category") or args.category)
+        cat_name = d.get("category") or args.category
+        cat = resolve_category(cat_name)
         if cat == "diary":
             raise SystemExit("디딤 다이어리는 인포그래픽을 만들지 않습니다(v2). 분위기 사진 프롬프트만 작성하세요.")
         if t not in RENDERERS:
@@ -909,7 +919,8 @@ def main():
         pp = os.path.join(args.out, base + ".png")
         png_items.append((sp, pp, svg.w, svg.h))
         outputs.append({"index": i, "type": t, "position": d.get("position", ""), "alt": d.get("alt", ""),
-                        "category": pal["name"], "svg": sp, "png": None, "width": svg.w, "height": svg.h,
+                        "category": (resolve_cat(cat_name) or {}).get("name", cat_name),
+                        "palette": pal["name"], "svg": sp, "png": None, "width": svg.w, "height": svg.h,
                         "warnings": svg.warnings})
     engine = to_png(png_items, args.png)
     if engine:

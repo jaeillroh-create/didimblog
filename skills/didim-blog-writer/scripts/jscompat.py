@@ -137,3 +137,15 @@ def from_units(units) -> str:
 def u16_slice(s: str, start=None, end=None) -> str:
     """JS s.slice(start, end) — 음수 인덱스 포함, UTF-16 단위."""
     return from_units(to_units(s)[slice(start, end)])
+
+
+if __name__ == "__main__":
+    import argparse
+    import json
+    import sys
+
+    ap = argparse.ArgumentParser(description="JS 호환 헬퍼 모듈 (다른 스크립트가 import). 단독 실행 시 UTF-16 길이를 JSON 으로 출력")
+    ap.add_argument("--text", default="", help="길이를 잴 문자열")
+    a = ap.parse_args()
+    json.dump({"js_length": u16len(a.text), "py_length": len(a.text)}, sys.stdout, ensure_ascii=False)
+    sys.stdout.write("\n")

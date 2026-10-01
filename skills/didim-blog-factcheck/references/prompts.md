@@ -25,8 +25,8 @@
 | `{{category_name}}` | Phase 1 outline 의 카테고리명(한국어). 없으면 빈 문자열 | L1258 |
 | `{{target_keyword}}` | SEO 핵심 키워드. 없으면 빈 문자열 | L1259 |
 | `{{phase2_output}}` | 검증할 본문 전체(Phase 2 결과, 문단 ID `<!-- p:N -->` 가 주입된 상태) | L1260 |
-| `{{current_date}}` | (스킬 적용본만) 오늘 날짜 `YYYY-MM-DD`. 스킬은 한국 시간(Asia/Seoul) 기준 | PR 2627f20 (원본은 `toISOString().slice(0,10)` = UTC) |
-| `{{current_year}}` | (스킬 적용본만) 올해 연도 4자리 | PR 2627f20 |
+| `{{current_date}}` | (스킬 적용본만) 오늘 날짜 `YYYY-MM-DD`. 스킬은 한국 시간(Asia/Seoul) 기준 | PR #89 커밋 2627f20 (원본은 `toISOString().slice(0,10)` = UTC) |
+| `{{current_year}}` | (스킬 적용본만) 올해 연도 4자리 | PR #89 커밋 2627f20 |
 
 치환은 `split(placeholder).join(value)` 로 **모든 출현**을 바꾼다. 순서: legal_references → legal_facts → category_name → target_keyword → (PR: current_year → current_date) → phase2_output.
 
@@ -158,7 +158,7 @@ original_text 는 본문 자동 교체에 사용됩니다. 따라서 본문에�
 
 ## 3. 열린 PR의 "기준 시점" 변경 (main 미반영)
 
-출처: 브랜치 `origin/claude/validate-numeric-fields-BlLho`, 커밋 `2627f20` "feat(cross-validation): 숫자 필드 올해 기준 검증 규칙 추가".
+출처: PR #89 "Add current date/year context to cross-validation prompts"(open, 미병합) — 브랜치 `origin/claude/validate-numeric-fields-BlLho`, 커밋 `2627f20` "feat(cross-validation): 숫자 필드 올해 기준 검증 규칙 추가".
 이 PR 은 숫자 4단계 트랙(main `a53ac08`) **이전** main(`3f6f888`)에서 갈라져, `2. 숫자 정확성` 부분 문맥이 현재 main 과 다르다(그대로는 충돌). 아래는 PR diff 원문.
 
 ```diff

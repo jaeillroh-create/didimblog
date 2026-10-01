@@ -5,7 +5,8 @@
 - validate_generated_draft           ← src/lib/constants/prompts.ts (validateGeneratedDraft)
 
 사용법
-  python3 draft_checks.py --title "제목" --body-file body.md --category-id CAT-A-01 [--prompt-key PROMPT_FIELD]
+  python3 draft_checks.py --title "제목" --body-file body.md --category-id 25 [--prompt-key PROMPT_FIELD]
+  (--category-id: categoryNo / 네이버 카테고리 이름 / CAT-*. CAT-* 는 원본 그대로)
   echo '{"title":"...","body":"...","category_id":"CAT-A-01"}' | python3 draft_checks.py --stdin
 
 출력(JSON)
@@ -204,6 +205,7 @@ def main():
     ap.add_argument("--body-file", default=None, help="본문 파일 경로 (UTF-8)")
     ap.add_argument("--category-id", default=None, help="카테고리 ID (예: CAT-A-01). 원본 에디터 재현은 \"\"")
     ap.add_argument("--prompt-key", default=None, help="PROMPT_FIELD|PROMPT_LOUNGE_GENERAL|PROMPT_LOUNGE_BITE|PROMPT_DIARY (생략 시 category-id 로 결정)")
+    ap.add_argument("--news-kind", choices=["ip", "office"], default="ip", help="디딤 소식(28): office=사무소 소식(CTA 금지)")
     ap.add_argument("--stdin", action="store_true", help="표준입력 JSON {title, body, category_id, prompt_key}")
     a = ap.parse_args()
 
@@ -213,6 +215,7 @@ def main():
         body = data.get("body", "")
         category_id = data.get("category_id", "") or ""
         prompt_key = data.get("prompt_key")
+        news_kind = data.get("news_kind", "ip")
     else:
         if a.title is None or a.body_file is None:
             ap.error("--title 과 --body-file 이 필요합니다 (또는 --stdin)")
@@ -221,15 +224,28 @@ def main():
             body = f.read()
         category_id = a.category_id or ""
         prompt_key = a.prompt_key
+        news_kind = a.news_kind
+    validator_cid = category_id  # "" 이면 원본 에디터 동작(categoryId "") 재현
+    no_cta = False
+    if category_id and not category_id.upper().startswith("CAT-"):
+        from categories import resolve
+        cat = resolve(category_id, news_kind)
+        no_cta = cat["no_cta"]
+        validator_cid = "CAT-C" if no_cta else cat["alias"]  # CTA·서명 검사 제외 판정은 CAT-C 접두어로 전달
+        prompt_key = prompt_key or cat["prompt_key"]
     if not prompt_key:
         prompt_key = get_prompt_key(category_id) if category_id else None
 
-    checks = validate_draft(title, body, category_id)
+    checks = validate_draft(title, body, validator_cid)
+    warnings = validate_generated_draft(body, prompt_key) if prompt_key else []
+    if no_cta and prompt_key != "PROMPT_DIARY":
+        # 사무소 소식 등 CTA 금지 카테고리 — 다이어리 CTA 키워드 검사도 적용 (스킬 확장)
+        warnings += [w for w in validate_generated_draft(body, "PROMPT_DIARY") if w["type"] == "cta_keyword"]
     out = {
         "draft_checks": checks,
         "score": calc_draft_score(checks),
         "prompt_key": prompt_key,
-        "generated_draft_warnings": validate_generated_draft(body, prompt_key) if prompt_key else [],
+        "generated_draft_warnings": warnings,
     }
     json.dump(out, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")

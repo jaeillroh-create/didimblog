@@ -10,10 +10,12 @@
   src/actions/news-search.ts              (비뉴스 제외 패턴, 폴백 관련성)
 
 하위 명령:
-  plan             발행 이력 등 JSON → 이번 주 추천 카드 + 카테고리 균형 + 표
+  plan             발행 이력 등 JSON → 이번 주 추천 표 (기본: 결정 사항 반영 — 네이버 categoryNo·신규 구조·
+                   주 1편 4주 로테이션 / --legacy·--verify: 원본 대시보드 경로 그대로)
+  grant-check      [결정 사항] 지원매치 공고 중 특허·인증이 요건/가점인 것만 추리기
   reject-keywords  부적합 처리한 추천(제목·키워드) → rejection_keywords 추출
   news-check       웹 검색으로 모은 기사 목록 → 규칙 기반 1차 필터(비뉴스 제외·관련성 점수)
-  week             블로그 시작일 기준 현재 주차·4주 묶음 계산
+  week             ISO 주차(KST)·4주 로테이션 위치 (+ 폐기된 12주 스케줄 주차 참고값)
 
 난수: 원본은 Math.random 을 쓴다. 재현성을 위해 mulberry32 PRNG 를 쓰며 --seed 로 고정 가능.
 (검증 시 JS 쪽 Math.random 도 같은 mulberry32 로 바꿔 같은 결과가 나오는지 확인했다.)
@@ -590,7 +592,12 @@ def get_sub_category_meta(sub_id):
 
 def pick_sub_category_keyword(parent_id, filters, exclude_keywords, exclude_sub_ids, rng):
     """recommendations.ts:1236"""
-    all_subs = [s for s in get_sub_categories_for(parent_id) if len(s["keywords"]) > 0]
+    return pick_from_subs(get_sub_categories_for(parent_id), filters, exclude_keywords, exclude_sub_ids, rng)
+
+
+def pick_from_subs(subs, filters, exclude_keywords, exclude_sub_ids, rng):
+    """pickSubCategoryKeyword 본체 — 2차 분류 목록을 인자로 받도록 일반화(결정 사항: 신규 카테고리별 주제 축 묶음)."""
+    all_subs = [s for s in subs if len(s["keywords"]) > 0]
     if not all_subs:
         return None
     fresh = [s for s in all_subs if s["id"] not in exclude_sub_ids]
@@ -625,9 +632,9 @@ def build_sub_category_keyword_card(parent_id, filters, exclude_keywords, exclud
     }
 
 
-def build_diary_topic_card(filters, exclude_titles, rng):
+def build_diary_topic_card(filters, exclude_titles, rng, pool_src=None):
     """recommendations.ts:1301"""
-    usable = [t for t in DIARY_TOPIC_POOL
+    usable = [t for t in (DIARY_TOPIC_POOL if pool_src is None else pool_src)
               if t["title"] not in exclude_titles and not is_hard_blocked(t["title"], filters)
               and not any(is_hard_blocked(k, filters) for k in t["keywords"])]
     preferred = [t for t in usable
@@ -907,11 +914,13 @@ def display_names(rec):
 # ─────────────────────────────────────────────────────────────
 
 SOURCE_LABEL = {"keyword_pool": "키워드 풀", "news_api": "뉴스", "schedule": "스케줄",
-                "manual": "수동", "performance": "성과(후속편)"}
+                "manual": "수동", "performance": "성과(후속편)", "grant": "지원매치 공고(신규)",
+                "series": "연재", "diary_topic_pool": "다이어리 주제 풀"}
 PRIORITY_ORDER = {"URGENT": 0, "PRIMARY": 1, "SECONDARY": 2}
 
 
-def run_plan(data, seed=None, verify_mode=False):
+def run_plan_legacy(data, seed=None, verify_mode=False):
+    """원본 대시보드 경로 그대로(CAT-* 카테고리·2:1:1·12주 스케줄). --verify / --legacy 전용."""
     now = parse_dt(data.get("now")) or datetime.now(KST)
     if seed is None:
         seed = data.get("seed")
@@ -1048,7 +1057,7 @@ def run_plan(data, seed=None, verify_mode=False):
     return result
 
 
-def to_markdown(result):
+def to_markdown_legacy(result):
     lines = []
     prog = " · ".join(f"{p['categoryName']} {p['published']}/{p['target']}" for p in result["monthly_progress"])
     lines.append(f"**월간 발행 현황**: {prog}  ")
@@ -1109,6 +1118,468 @@ def run_news_check(data):
 
 
 # ─────────────────────────────────────────────────────────────
+# [결정 사항 반영] 네이버 categoryNo 정본 + 신규 구조 + 주 1편 4주 로테이션
+# 근거: skills/_DECISIONS.md §1~§3 (2026-10-01). 원본 코드에 없는 부분.
+# ─────────────────────────────────────────────────────────────
+
+NAVER_CATEGORIES = {
+    25: {"name": "지원사업·인증과 특허", "group": "new", "prompt_key": "PROMPT_FIELD",
+         "cta": "인증 진단·연구소 진단·절세 시뮬레이션 중 키워드 매칭"},
+    27: {"name": "출원·심판 실무", "group": "new", "prompt_key": "PROMPT_FIELD", "cta": "출원 CTA"},
+    26: {"name": "사례", "group": "new", "prompt_key": "PROMPT_FIELD", "cta": "주제 키워드로 매칭"},
+    24: {"name": "지식재산 경영", "group": "new", "prompt_key": "PROMPT_LOUNGE_GENERAL", "cta": "이웃 추가 CTA"},
+    28: {"name": "디딤 소식", "group": "new", "prompt_key": "PROMPT_LOUNGE_BITE",
+         "cta": "가벼운 이웃 추가 CTA (사무소 소식은 CTA 없음)"},
+    17: {"name": "디딤 다이어리", "group": "keep", "prompt_key": "PROMPT_DIARY", "cta": "없음 (CTA 금지)"},
+    18: {"name": "컨설팅 후기", "group": "keep", "parent": 17},
+    19: {"name": "디딤 일상", "group": "keep", "parent": 17},
+    20: {"name": "대표의 생각", "group": "keep", "parent": 17},
+    7: {"name": "디딤 소개", "group": "fixed"},
+    22: {"name": "상담 안내", "group": "fixed"},
+    9: {"name": "변리사의 현장 수첩", "group": "legacy"},
+    10: {"name": "절세 시뮬레이션", "group": "legacy", "parent": 9},
+    11: {"name": "인증 가이드", "group": "legacy", "parent": 9},
+    12: {"name": "연구소 운영 실무", "group": "legacy", "parent": 9},
+    23: {"name": "특허·상표 출원 실무", "group": "legacy", "parent": 9},
+    13: {"name": "IP 라운지", "group": "legacy"},
+    14: {"name": "특허 전략 노트", "group": "legacy", "parent": 13},
+    15: {"name": "AI와 IP", "group": "legacy", "parent": 13},
+    16: {"name": "IP 뉴스 한 입", "group": "legacy", "parent": 13},
+}
+# 레거시 → 신규 합산 ('흡수' 열). 9·13 은 2차 분류 없이 1차만 알 때의 추정값.
+LEGACY_TO_NEW = {10: 25, 11: 25, 12: 25, 23: 27, 18: 26, 14: 24, 15: 24, 16: 28, 19: 17, 20: 17, 9: 25, 13: 24}
+ESTIMATED_MAP = {9, 13}
+NAME_TO_NO = {v["name"]: k for k, v in NAVER_CATEGORIES.items()}
+NAME_TO_NO.update({"현장 수첩": 9, "연구소 운영": 12})
+# 레거시 CAT-* 별칭 (CAT-B-01/02 는 sub-category-pool.ts 정의를 따름 — 코드 모순, spec 8절)
+CAT_ID_TO_NO = {"CAT-A": 9, "CAT-A-01": 10, "CAT-A-02": 11, "CAT-A-03": 12, "CAT-A-04": 23,
+                "CAT-B": 13, "CAT-B-01": 14, "CAT-B-02": 15, "CAT-B-03": 16,
+                "CAT-C": 17, "CAT-C-01": 18, "CAT-C-02": 19, "CAT-C-03": 20,
+                "CAT-INTRO": 7, "CAT-CONSULT": 22}
+ROTATION = [25, 27, 24, 26]  # 1주차 → 4주차
+ROTATION_FALLBACK = {26: 27}  # 사례: 사건 메모 없으면 출원·심판 실무
+# 신규 카테고리별 주제 축 = 흡수한 레거시 2차 분류의 키워드 풀
+NEW_TOPIC_SUBS = {25: ["CAT-A-01", "CAT-A-02", "CAT-A-03"], 27: ["CAT-A-04"],
+                  24: ["CAT-B-01", "CAT-B-02"], 28: ["CAT-B-03"]}
+# 다이어리 주제 풀 중 '컨설팅 후기'(CAT-C-01) 주제는 사례(26)로 흡수 → 사건 메모 없이 자동 추천하지 않음
+DIARY_POOL_NEW = [t for t in DIARY_TOPIC_POOL if t["subCategoryId"] != "CAT-C-01"]
+DIARY_SUB_TO_NO = {"CAT-C-01": 18, "CAT-C-02": 19, "CAT-C-03": 20}
+
+GRANT_IP_TERMS = ["특허", "실용신안", "디자인권", "상표", "지식재산", "직무발명", "기업부설연구소",
+                  "연구전담부서", "벤처기업", "벤처인증", "벤처확인", "이노비즈", "메인비즈", "기술평가", "우선심사"]
+_GRANT_IP_RE = re.compile(r"(?<![A-Za-z])IP(?![A-Za-z])")
+
+
+def cat_name(no):
+    return NAVER_CATEGORIES.get(no, {}).get("name", str(no))
+
+
+def classify_category(h):
+    """이력 1건 → (원래 categoryNo, 통계용 신규 categoryNo, 매핑 근거)."""
+    raw = h.get("category_no") or h.get("categoryNo")
+    if raw is not None:
+        try:
+            raw = int(raw)
+        except (TypeError, ValueError):
+            raw = None
+    if raw is None:
+        sub = (h.get("sub_category") or h.get("subCategory") or "").replace(" ", " ").strip()
+        cat = (h.get("category") or "").replace(" ", " ").strip()
+        if sub in NAME_TO_NO:
+            raw = NAME_TO_NO[sub]
+        elif cat in NAME_TO_NO:
+            raw = NAME_TO_NO[cat]
+        else:
+            cid = h.get("sub_category_id") or h.get("category_id")
+            if cid in CAT_ID_TO_NO:
+                raw = CAT_ID_TO_NO[cid]
+    if raw is None or raw not in NAVER_CATEGORIES:
+        return raw, None, "unknown"
+    if raw in LEGACY_TO_NEW:
+        return raw, LEGACY_TO_NEW[raw], ("legacy_estimated" if raw in ESTIMATED_MAP else "legacy")
+    parent = NAVER_CATEGORIES[raw].get("parent")
+    return raw, (parent or raw), "direct"
+
+
+def iso_week_kst(dt):
+    y, w, _ = dt.astimezone(KST).isocalendar()
+    return y, w
+
+
+def rotation_slot(now, offset=0):
+    """ISO 주차(KST) 기준 4주 로테이션 위치 0~3 (0=1주차)."""
+    _, w = iso_week_kst(now)
+    return (w - 1 + offset) % 4
+
+
+def resolve_rotation(now, last_new_no, has_case_memos, offset=0):
+    """이번 주 메인 카테고리. 사례→출원 대체, 직전 글과 같으면 다음 로테이션으로(연속 2주 방지)."""
+    slot = rotation_slot(now, offset)
+    notes = []
+    for step in range(4):
+        idx = (slot + step) % 4
+        cat = ROTATION[idx]
+        if cat == 26 and not has_case_memos:
+            notes.append("4주차 사례는 사건 메모가 없어 출원·심판 실무로 대체")
+            cat = ROTATION_FALLBACK[26]
+        if last_new_no is not None and cat == last_new_no:
+            notes.append(f"{cat_name(cat)}는 직전 발행 글과 같은 카테고리 → 다음 로테이션으로 넘김(연속 2주 방지)")
+            continue
+        return {"slot": slot + 1, "used_slot": idx + 1, "categoryNo": cat, "notes": notes}
+    return {"slot": slot + 1, "used_slot": slot + 1, "categoryNo": ROTATION[slot], "notes": notes}
+
+
+def filter_grants(items, now):
+    """[결정 §3] 지원매치 공고 중 특허·인증이 요건/가점인 것만 주제 후보로. 판정은 원문 텍스트 포함 여부."""
+    picked, excluded = [], []
+    today = now.astimezone(KST).date()
+    for g in items or []:
+        elig = g.get("eligibility") or ""
+        bonus = g.get("bonus") or ""
+        hit_e = [t for t in GRANT_IP_TERMS if t in elig] + (["IP"] if _GRANT_IP_RE.search(elig) else [])
+        hit_b = [t for t in GRANT_IP_TERMS if t in bonus] + (["IP"] if _GRANT_IP_RE.search(bonus) else [])
+        if not hit_e and not hit_b:
+            excluded.append({"title": g.get("title"), "why": "자격·가점에 특허·인증 요건 없음"})
+            continue
+        dl = parse_dt(g.get("deadline"))
+        days_left = (dl.astimezone(KST).date() - today).days if dl else None
+        if days_left is not None and days_left < 0:
+            excluded.append({"title": g.get("title"), "why": "마감 지남"})
+            continue
+        role = "요건" if hit_e else "가점"
+        terms = hit_e or hit_b
+        picked.append({**g, "role": role, "matched_terms": terms, "days_left": days_left,
+                       "priority": "URGENT" if days_left is not None and days_left <= 7 else "PRIMARY"})
+    picked.sort(key=lambda x: (x["days_left"] if x["days_left"] is not None else 9999))
+    return picked, excluded
+
+
+def _new_card(cat_no, title, keywords, source, reason, topic_axis=None, **extra):
+    c = {"categoryNo": cat_no, "category": cat_name(cat_no), "topicAxis": topic_axis, "title": title,
+         "keywords": [k for k in (keywords or []) if k], "source": source, "reason": reason,
+         "promptKey": NAVER_CATEGORIES.get(NAVER_CATEGORIES.get(cat_no, {}).get("parent", cat_no), {}).get("prompt_key"),
+         "ctaHint": NAVER_CATEGORIES.get(NAVER_CATEGORIES.get(cat_no, {}).get("parent", cat_no), {}).get("cta")}
+    c.update(extra)
+    return c
+
+
+def build_new_keyword_card(cat_no, filters, used_keywords, used_subs, rng):
+    subs = [get_sub_category_meta(i) for i in NEW_TOPIC_SUBS.get(cat_no, [])]
+    picked = pick_from_subs(subs, filters, used_keywords, used_subs, rng)
+    if not picked:
+        return None
+    sub, kw = picked["sub"], picked["keyword"]
+    return _new_card(cat_no, generate_title_suggestion(kw, rng), [kw], "keyword_pool",
+                     f"{cat_name(cat_no)} — 주제 축 '{sub['name']}' · '{kw}' 키워드", topic_axis=sub["name"],
+                     legacySubId=sub["id"], titleIsTemplate=True)
+
+
+def run_plan(data, seed=None, verify_mode=False):
+    """[결정 사항 반영] 신규 구조 + 주 1편 4주 로테이션. verify_mode 는 원본 경로(run_plan_legacy)."""
+    if verify_mode or data.get("legacy_mode"):
+        return run_plan_legacy(data, seed, verify_mode)
+    if data.get("notion_rows"):
+        conv = notion_rows_to_input(data["notion_rows"])
+        data = dict(data)
+        for k in ("history", "rejected", "recently_shown"):
+            data[k] = list(data.get(k) or []) + conv[k]
+    now = parse_dt(data.get("now")) or datetime.now(KST)
+    if seed is None:
+        seed = data.get("seed")
+    if seed is None:
+        seed = int(time.time() * 1000) & 0xFFFFFFFF
+    rng = Mulberry32(int(seed))
+
+    # 1) 이력 분류 (categoryNo 정본, 레거시는 신규로 합산)
+    history = []
+    unknown = []
+    for h in data.get("history", []) or []:
+        item = dict(h)
+        raw, new, how = classify_category(item)
+        item.update({"category_no": raw, "new_category_no": new, "mapping": how})
+        if new is None:
+            unknown.append(item.get("title"))
+        history.append(item)
+    dated = sorted([(parse_dt(h.get("date")), h) for h in history if parse_dt(h.get("date"))],
+                   key=lambda x: x[0], reverse=True)
+    last = dated[0][1] if dated else None
+    last_new = last.get("new_category_no") if last else None
+
+    # 2) 현황: 이번 ISO 주 / 최근 4주 / 이번 달 (신규 카테고리 합산)
+    cur_iso = iso_week_kst(now)
+    week_start = (now.astimezone(KST) - timedelta(days=now.astimezone(KST).weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    four_weeks_start = week_start - timedelta(weeks=3)
+    month_start = now.astimezone(KST).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    counts = {"this_week": {}, "last_4_weeks": {}, "this_month": {}}
+    this_week_posts = []
+    for dt, h in dated:
+        n = h.get("new_category_no")
+        if n is None:
+            continue
+        if iso_week_kst(dt) == cur_iso:
+            counts["this_week"][n] = counts["this_week"].get(n, 0) + 1
+            this_week_posts.append(h.get("title"))
+        if dt >= four_weeks_start:
+            counts["last_4_weeks"][n] = counts["last_4_weeks"].get(n, 0) + 1
+        if dt >= month_start:
+            counts["this_month"][n] = counts["this_month"].get(n, 0) + 1
+    status = {k: [{"categoryNo": n, "category": cat_name(n), "count": c} for n, c in sorted(v.items())]
+              for k, v in counts.items()}
+
+    # 3) 이번 주 메인 (로테이션)
+    case_memos = data.get("case_memos") or []
+    rot = resolve_rotation(now, last_new, bool(case_memos), int(data.get("rotation_offset", 0)))
+    main_no = rot["categoryNo"]
+    warnings = list(rot["notes"])
+    if this_week_posts:
+        warnings.append(f"이번 주(ISO {cur_iso[1]}주) 이미 {len(this_week_posts)}편 발행 — 주 1편 기본 충족. "
+                        "추가 발행은 디딤 소식·디딤 다이어리 권장.")
+    if len(dated) >= 2 and dated[0][1].get("new_category_no") and \
+            dated[0][1].get("new_category_no") == dated[1][1].get("new_category_no"):
+        warnings.append(f"최근 2건이 연속으로 {cat_name(dated[0][1]['new_category_no'])}입니다.")
+    if unknown:
+        warnings.append(f"카테고리를 알 수 없는 이력 {len(unknown)}건(통계 제외): " + " / ".join(map(str, unknown[:5])))
+    est = [h.get("title") for h in history if h.get("mapping") == "legacy_estimated"]
+    if est:
+        warnings.append(f"2차 분류 없이 레거시 1차만 있는 이력 {len(est)}건은 추정 매핑(현장 수첩→25, IP 라운지→24).")
+
+    # 4) 필터 (원본 hard/soft + 이력 커버리지)
+    filters = load_reco_filters(data, now, data.get("exclude"))
+    used_keywords, used_titles = set(), set()
+    used_subs = set(data.get("avoid_topic_axes") or [])
+    # 로테이션 다양화: 같은 신규 카테고리의 직전 글 주제 축(레거시 2차)을 우선 회피
+    if data.get("rotate_from_history", True):
+        for _, h in dated:
+            if h.get("new_category_no") == main_no and h.get("category_no") in NAVER_CATEGORIES:
+                for sid, no in CAT_ID_TO_NO.items():
+                    if no == h["category_no"] and sid.count("-") == 2:
+                        used_subs.add(sid)
+                break
+
+    cards = []
+
+    def add(card):
+        if not card or card["title"] in used_titles:
+            return False
+        cards.append(card)
+        used_titles.add(card["title"])
+        for k in card.get("keywords") or []:
+            used_keywords.add(k.lower())
+            filters.avoid.add(k.lower())
+        filters.avoid.add(card["title"].lower())
+        if card.get("legacySubId"):
+            used_subs.add(card["legacySubId"])
+        return True
+
+    # 5-a) 지원매치 공고 (1주차=25 메인일 때 우선 소스, 그 외 주는 보조)
+    grants, grants_excluded = filter_grants(data.get("grant_items"), now)
+    grant_cards = []
+    for g in grants[:2]:
+        term = g["matched_terms"][0]
+        dl = f", 마감 D-{g['days_left']}" if g["days_left"] is not None else ""
+        grant_cards.append(_new_card(
+            25, f"(가제) 지원사업 {g['role']}이 되는 {term} — '{g.get('title', '')[:30]}' 대비 포인트",
+            [term, "지원사업 가점" if g["role"] == "가점" else "지원사업 신청 요건"], "grant",
+            f"지원매치 공고{dl} — 자격/가점에 '{', '.join(g['matched_terms'])}' 포함", topic_axis="지원사업 공고",
+            grantUrl=g.get("url"), grantPriority=g["priority"], titleIsTemplate=True))
+
+    # 5-b) 메인 카테고리 후보 2건
+    if main_no == 25:
+        for gc in grant_cards:
+            if len(cards) < 2:
+                add(gc)
+    if main_no == 26:
+        for m in case_memos[:2]:
+            add(_new_card(26, m.get("title") or f"(가제) {str(m.get('summary', ''))[:30]}",
+                          _as_list(m.get("keywords")), "manual", "사용자 사건 메모 기반(익명화 확인 필요)",
+                          topic_axis="사건 메모", titleIsTemplate=not m.get("title")))
+    if main_no == 24:
+        series = [h for _, h in dated if h.get("new_category_no") == 24 and h.get("series")]
+        if series:
+            s0 = series[0]
+            nxt = int(s0.get("series_no") or 0) + 1
+            add(_new_card(24, f"{s0['series']} {nxt}편 (가제)", _as_list(s0.get("keyword")), "series",
+                          f"연재 '{s0['series']}' 직전 {nxt - 1}편 발행 → 다음 회차", topic_axis="연재"))
+    tries = 0
+    while len(cards) < 2 and main_no in NEW_TOPIC_SUBS and tries < 4:
+        tries += 1
+        if not add(build_new_keyword_card(main_no, filters, used_keywords, used_subs, rng)):
+            break
+    for c in cards:
+        c["role"] = "main"
+
+    # 5-c) 대안: 나머지 로테이션 카테고리 1건씩
+    for alt in ROTATION:
+        if alt == main_no:
+            continue
+        if alt == 26:
+            if case_memos and main_no != 26:
+                m = case_memos[0]
+                add(_new_card(26, m.get("title") or f"(가제) {str(m.get('summary', ''))[:30]}",
+                              _as_list(m.get("keywords")), "manual", "사용자 사건 메모 기반", topic_axis="사건 메모"))
+                cards[-1]["role"] = "alt"
+            continue
+        if alt == 25 and grant_cards and main_no != 25:
+            if add(grant_cards[0]):
+                cards[-1]["role"] = "alt"
+                continue
+        if add(build_new_keyword_card(alt, filters, used_keywords, used_subs, rng)):
+            cards[-1]["role"] = "alt"
+
+    # 5-d) 로테이션 외: 디딤 소식(뉴스) · 디딤 다이어리
+    news = build_news_card(filters, data.get("news_items"), now, rng)
+    if news:
+        nc = _new_card(28, news["title"], news["keywords"], "news_api", news["reason"], topic_axis="IP 뉴스 한 입",
+                       newsUrl=news.get("newsUrl"))
+        if add(nc):
+            cards[-1]["role"] = "extra"
+    diary = build_diary_topic_card(filters, used_titles, rng, DIARY_POOL_NEW)
+    if diary:
+        dno = DIARY_SUB_TO_NO[diary["subCategoryId"]]
+        dc = _new_card(dno, diary["title"], diary["keywords"], "diary_topic_pool", "로테이션 외 — 여유 있을 때 추가 발행",
+                       topic_axis=cat_name(dno))
+        if add(dc):
+            cards[-1]["role"] = "extra"
+    for m in data.get("manual_topics") or []:
+        raw, new, _ = classify_category(m)
+        no = new or raw or main_no
+        if add(_new_card(no, m.get("title", ""), _as_list(m.get("keywords")), "manual",
+                         m.get("reason", "사용자 지정 주제"), topic_axis=m.get("sub_category"))):
+            cards[-1]["role"] = "manual"
+
+    # 6) 우선순위
+    for c in cards:
+        if c["source"] == "news_api" or (c["source"] == "grant" and c.get("grantPriority") == "URGENT"):
+            c["priority"] = "URGENT"
+        elif c.get("role") in ("main", "manual"):
+            c["priority"] = "PRIMARY"
+        else:
+            c["priority"] = "SECONDARY"
+    order = {"URGENT": 0, "PRIMARY": 1, "SECONDARY": 2}
+    role_order = {"main": 0, "manual": 1, "alt": 2, "extra": 3}
+    cards.sort(key=lambda c: (order[c["priority"]], role_order.get(c.get("role"), 9)))
+    for c in cards:
+        if c.get("role") == "main":
+            c["main"] = True
+            break
+
+    return {
+        "now": now.isoformat(), "seed": int(seed),
+        "iso_week": {"year": cur_iso[0], "week": cur_iso[1]},
+        "rotation": {"slot": rot["slot"], "used_slot": rot["used_slot"], "sequence": [cat_name(n) for n in ROTATION],
+                     "main_categoryNo": main_no, "main_category": cat_name(main_no)},
+        "last_published": ({"date": last.get("date"), "title": last.get("title"), "category_no": last.get("category_no"),
+                            "new_category_no": last_new} if last else None),
+        "status": status,
+        "warnings": warnings,
+        "filters": {"rejected": sorted(filters.rejected), "blacklist": sorted(filters.blacklist),
+                    "covered_count": len(filters.covered_texts)},
+        "grants": {"picked": grants, "excluded": grants_excluded},
+        "table": cards,
+        "notion_rows_to_create": [card_to_notion_row(c) for c in cards],
+        "news_search_plan": {
+            "urgent_keywords_pick3": shuffle(URGENT_NEWS_KEYWORDS, rng)[:3],
+            "fixed_keywords": FIXED_KEYWORDS,
+            "topic_axis_news_keywords": {s["name"]: s["newsKeywords"] for s in SUB_CATEGORY_POOL if s.get("newsKeywords")},
+        },
+    }
+
+
+def to_markdown(result):
+    if "rotation" not in result:
+        return to_markdown_legacy(result)
+    r = result["rotation"]
+    lines = [f"**이번 주(ISO {result['iso_week']['year']}-W{result['iso_week']['week']:02d})**: 로테이션 {r['slot']}주차 → "
+             f"메인 **{r['main_category']} ({r['main_categoryNo']})**  "]
+    lw = ", ".join(f"{s['category']} {s['count']}" for s in result["status"]["last_4_weeks"]) or "없음"
+    lines.append(f"**최근 4주 발행**: {lw}  ")
+    for w in result.get("warnings", []):
+        lines.append(f"> 주의: {w}")
+    lines += ["", "| # | 우선순위 | 카테고리(No) | 주제 축 | 제목안 | 타깃 키워드 | 근거 소스 |", "|---|---|---|---|---|---|---|"]
+    for i, c in enumerate(result.get("table", []), 1):
+        mark = " (메인)" if c.get("main") else ""
+        title = c["title"] + (" *(가제)*" if c.get("titleIsTemplate") and "(가제)" not in c["title"] else "")
+        url = c.get("newsUrl") or c.get("grantUrl")
+        src = SOURCE_LABEL.get(c["source"], c["source"]) + (f" [{url}]" if url else "")
+        lines.append(f"| {i} | {c['priority']}{mark} | {c['category']} ({c['categoryNo']}) | {c.get('topicAxis') or '-'} | "
+                     f"{title} | {', '.join(c['keywords']) or '-'} | {src} — {c['reason']} |")
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────
+# [결정 사항 반영] Notion "디딤 블로그 콘텐츠" 행 → plan 입력 (_DECISIONS.md §4·§6)
+# data source: collection://463bc815-11ab-4290-9d86-22bd1aa9cfed
+# ─────────────────────────────────────────────────────────────
+
+NOTION_CONTENT_DS = "collection://463bc815-11ab-4290-9d86-22bd1aa9cfed"
+NOTION_LEADS_DS = "collection://e1272822-7efd-4850-b8c8-cfce02db7d00"
+NOTION_PUBLISHED_STATES = {"S4 발행완료", "S5 성과측정"}
+# 카드 source → Notion '추천 소스' 선택지
+NOTION_SOURCE = {"keyword_pool": "키워드 풀", "diary_topic_pool": "키워드 풀", "news_api": "뉴스",
+                 "grant": "지원매치 리포트", "series": "로테이션", "manual": "직접 입력", "performance": "직접 입력"}
+NOTION_CATEGORY_OPTIONS = ["지원사업·인증과 특허", "출원·심판 실무", "사례", "지식재산 경영", "디딤 소식", "디딤 다이어리", "레거시"]
+
+
+def _nget(row, name):
+    for k in (name, f"date:{name}:start"):
+        if row.get(k) not in (None, ""):
+            return row[k]
+    return None
+
+
+def notion_rows_to_input(rows):
+    """콘텐츠 DB 행 목록 → {history, rejected, recently_shown}. 날짜가 없는 추천 행은 createdTime 사용."""
+    history, rejected, shown = [], [], []
+    for r in rows or []:
+        title = _nget(r, "제목") or ""
+        cat = _nget(r, "카테고리")
+        legacy_sub = _nget(r, "레거시 2차 분류")
+        no = _nget(r, "categoryNo")
+        kw = _nget(r, "타깃 키워드")
+        base = {"title": title, "keyword": kw}
+        if no is not None:
+            base["category_no"] = int(float(no))
+        elif cat == "레거시" or (cat == "디딤 다이어리" and legacy_sub):
+            base["sub_category"] = legacy_sub
+        else:
+            base["category"] = cat
+        state = _nget(r, "상태")
+        fb = _nget(r, "추천 피드백")
+        created = r.get("createdTime")
+        if state in NOTION_PUBLISHED_STATES:
+            h = dict(base, date=_nget(r, "발행일"), url=_nget(r, "발행 URL"),
+                     views=_nget(r, "조회수(최근)"), series=_nget(r, "시리즈"), series_no=_nget(r, "시리즈 회차"))
+            history.append({k: v for k, v in h.items() if v is not None})
+        if fb == "부적합":
+            rej = {"date": created, "title": title, "keywords": _as_list(kw), "reason": _nget(r, "부적합 사유")}
+            memo = _nget(r, "메모") or ""
+            m = re.search(r"부적합 키워드\s*:\s*(.+)", memo)
+            if m:
+                rej["rejection_keywords"] = [x.strip() for x in m.group(1).split(",") if x.strip()]
+            rejected.append(rej)
+        elif fb in ("대기", "적합"):
+            shown.append({"date": created, "title": title, "keywords": _as_list(kw)})
+    return {"history": history, "rejected": rejected, "recently_shown": shown}
+
+
+def card_to_notion_row(card):
+    """추천 카드 → 콘텐츠 DB 새 행 속성(추천 피드백=대기). 다이어리 2차는 '레거시 2차 분류' 선택지에 기록."""
+    no = card["categoryNo"]
+    parent = NAVER_CATEGORIES.get(no, {}).get("parent")
+    cat = cat_name(parent or no)
+    row = {"제목": card["title"], "카테고리": cat if cat in NOTION_CATEGORY_OPTIONS else "레거시",
+           "categoryNo": no, "타깃 키워드": ", ".join(card.get("keywords") or []),
+           "추천 소스": NOTION_SOURCE.get(card.get("source"), "직접 입력"), "추천 피드백": "대기"}
+    if parent == 17:
+        row["레거시 2차 분류"] = cat_name(no)
+    url = card.get("newsUrl") or card.get("grantUrl")
+    if url:
+        row["메모"] = f"근거: {url}"
+    return row
+
+
+# ─────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────
 
@@ -1143,13 +1614,16 @@ def main(argv=None):
     sp.add_argument("input", help="입력 JSON 경로 또는 '-'(stdin)")
     sp.add_argument("--seed", type=int, default=None, help="난수 시드(재현용)")
     sp.add_argument("--format", choices=["json", "md"], default="json")
-    sp.add_argument("--verify", action="store_true", help="원본 비교용: 카테고리 카드까지만 출력")
+    sp.add_argument("--verify", action="store_true", help="원본 비교용: 원본 경로 카테고리 카드까지만 출력")
+    sp.add_argument("--legacy", action="store_true", help="원본 대시보드 경로(CAT-*·2:1:1·12주 스케줄)로 출력")
     sr = sub.add_parser("reject-keywords", help="부적합 처리 시 rejection_keywords 추출")
     sr.add_argument("--title", required=True)
     sr.add_argument("--keywords", nargs="*", default=[])
     sn = sub.add_parser("news-check", help="검색 기사 규칙 필터")
     sn.add_argument("input", help="{now, articles:[{title,description,link,pubDate,keyword}], existing_links?}")
-    sw = sub.add_parser("week", help="주차 계산")
+    sg = sub.add_parser("grant-check", help="[결정 사항] 지원매치 공고 중 특허·인증 요건/가점 공고만 추리기")
+    sg.add_argument("input", help="{now, grant_items:[{title,deadline,url,eligibility,bonus}]}")
+    sw = sub.add_parser("week", help="주차 계산 (ISO 주차·4주 로테이션 + 레거시 12주 주차)")
     sw.add_argument("--now", default=None)
     sw.add_argument("--start", default=DEFAULT_BLOG_START_DATE)
     a = p.parse_args(argv)
@@ -1158,6 +1632,8 @@ def main(argv=None):
         data = _load(a.input)
         if isinstance(data, list):
             data = {"history": data}
+        if a.legacy:
+            data["legacy_mode"] = True
         res = run_plan(data, a.seed, a.verify)
         if a.format == "md" and not a.verify:
             print(to_markdown(res))
@@ -1170,8 +1646,16 @@ def main(argv=None):
     elif a.cmd == "week":
         now = parse_dt(a.now) or datetime.now(KST)
         w = get_current_week(now, a.start)
-        _dump({"now": now.isoformat(), "blog_start_date": a.start, "current_week": w,
-               "month_weeks": get_month_weeks(w), "schedule_in_range": w <= 12})
+        y, iw = iso_week_kst(now)
+        slot = rotation_slot(now)
+        _dump({"now": now.isoformat(), "iso_year": y, "iso_week": iw, "rotation_slot": slot + 1,
+               "rotation_category": cat_name(ROTATION[slot]), "rotation_categoryNo": ROTATION[slot],
+               "legacy_12week": {"blog_start_date": a.start, "current_week": w, "month_weeks": get_month_weeks(w),
+                                 "schedule_in_range": w <= 12, "note": "12주 스케줄은 폐기(결정 사항 §3) — 참고용"}})
+    elif a.cmd == "grant-check":
+        d = _load(a.input)
+        picked, excluded = filter_grants(d.get("grant_items"), parse_dt(d.get("now")) or datetime.now(KST))
+        _dump({"picked": picked, "excluded": excluded})
 
 
 if __name__ == "__main__":

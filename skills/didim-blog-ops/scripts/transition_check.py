@@ -8,6 +8,11 @@
   - src/components/contents/review-panel.tsx : 검수 체크리스트(최소 3개) + 승인 후 연쇄 전이
   - src/app/(dashboard)/contents/[id]/content-detail-client.tsx : countImageMarkers()
   - supabase/seed.sql : state_transitions 시드 7행
+  - skills/_DECISIONS.md : 카테고리 정본(네이버 categoryNo), Notion 속성명(§4)
+
+콘텐츠 JSON 은 contents 컬럼명 또는 Notion "디딤 블로그 콘텐츠" 한글 속성명(제목·상태·카테고리·categoryNo·
+발행일·메모·본문·태그 …) 모두 받는다. Notion 에 검수 상태 속성이 없으면 메모의 [검수 승인]/[수정 요청]/
+[재검수 요청] 기록으로 복원한다.
 
 표준 라이브러리만 사용. 입력·출력은 JSON.
 
@@ -23,6 +28,107 @@ import math
 import re
 import sys
 from datetime import datetime, timezone, timedelta
+
+# ── 카테고리 정본 (skills/_DECISIONS.md §1·§2: 네이버 categoryNo = 정본 ID) ──
+CATEGORY_TABLE = {
+    25: {"name": "지원사업·인증과 특허", "parent": None, "group": "new", "role": "전환형"},
+    27: {"name": "출원·심판 실무", "parent": None, "group": "new", "role": "전환형"},
+    26: {"name": "사례", "parent": None, "group": "new", "role": "전환형"},
+    24: {"name": "지식재산 경영", "parent": None, "group": "new", "role": "브랜딩"},
+    28: {"name": "디딤 소식", "parent": None, "group": "new", "role": "트래픽"},
+    17: {"name": "디딤 다이어리", "parent": None, "group": "keep", "role": "신뢰"},
+    18: {"name": "컨설팅 후기", "parent": 17, "group": "keep", "role": "신뢰"},
+    19: {"name": "디딤 일상", "parent": 17, "group": "keep", "role": "신뢰"},
+    20: {"name": "대표의 생각", "parent": 17, "group": "keep", "role": "신뢰"},
+    7: {"name": "디딤 소개", "parent": None, "group": "fixed", "role": "고정"},
+    22: {"name": "상담 안내", "parent": None, "group": "fixed", "role": "고정"},
+    9: {"name": "변리사의 현장 수첩", "parent": None, "group": "legacy", "role": "전환형"},
+    10: {"name": "절세 시뮬레이션", "parent": 9, "group": "legacy", "role": "전환형"},
+    11: {"name": "인증 가이드", "parent": 9, "group": "legacy", "role": "전환형"},
+    12: {"name": "연구소 운영 실무", "parent": 9, "group": "legacy", "role": "전환형"},
+    23: {"name": "특허·상표 출원 실무", "parent": 9, "group": "legacy", "role": "전환형"},
+    13: {"name": "IP 라운지", "parent": None, "group": "legacy", "role": "트래픽"},
+    14: {"name": "특허 전략 노트", "parent": 13, "group": "legacy", "role": "트래픽"},
+    15: {"name": "AI와 IP", "parent": 13, "group": "legacy", "role": "트래픽"},
+    16: {"name": "IP 뉴스 한 입", "parent": 13, "group": "legacy", "role": "트래픽"},
+}
+# 통계·추천 합산용 신규 카테고리 (DECISIONS §2 '레거시에서 흡수' 열)
+STAT_CATEGORY = {9: 25, 10: 25, 11: 25, 12: 25, 23: 27, 18: 26, 13: 24, 14: 24, 15: 24, 16: 28, 19: 17, 20: 17}
+# 레거시 별칭(백오피스 CAT-*, supabase/seed.sql 기준) → categoryNo
+LEGACY_ALIAS = {"CAT-A": 9, "CAT-A-01": 10, "CAT-A-02": 11, "CAT-A-03": 12, "CAT-A-04": 23,
+                "CAT-B": 13, "CAT-B-01": 15, "CAT-B-02": 14, "CAT-B-03": 16,
+                "CAT-C": 17, "CAT-C-01": 18, "CAT-C-02": 19, "CAT-C-03": 20,
+                "CAT-INTRO": 7, "CAT-CONSULT": 22}
+NAME_ALIAS = {"현장 수첩": 9, "현장수첩": 9, "연구소 운영": 12, "IP라운지": 13, "디딤다이어리": 17}
+CONVERSION_STATS = {25, 27, 26}  # 전환형 3개 (DECISIONS: 업데이트 주기 60일)
+
+
+def resolve_category(value):
+    """categoryNo(정수/문자열)·이름·CAT-* 별칭 → 카테고리 정보 dict (모르면 None)."""
+    if value is None or value == "":
+        return None
+    no = None
+    if isinstance(value, int) or (isinstance(value, str) and value.strip().isdigit()):
+        no = int(value)
+    elif isinstance(value, str):
+        v = value.strip()
+        if v.upper().startswith("CAT-"):
+            no = LEGACY_ALIAS.get(v.upper())
+        else:
+            no = next((k for k, c in CATEGORY_TABLE.items() if c["name"] == v), None) or NAME_ALIAS.get(v)
+    if no is None or no not in CATEGORY_TABLE:
+        return None
+    c = CATEGORY_TABLE[no]
+    top = c["parent"] or no
+    stat = STAT_CATEGORY.get(no, no if c["group"] in ("new", "keep") else None)
+    return {"no": no, "name": c["name"], "top": top, "top_name": CATEGORY_TABLE[top]["name"],
+            "stat": stat, "stat_name": CATEGORY_TABLE[stat]["name"] if stat else None,
+            "group": c["group"], "is_diary": top == 17, "is_fixed": c["group"] == "fixed",
+            "is_sub": c["parent"] is not None}
+
+
+def content_category(c):
+    for key in ("category_no", "categoryNo", "category_id", "category_name", "category", "카테고리"):
+        r = resolve_category(c.get(key))
+        if r:
+            return r
+    return None
+
+
+# ── Notion "디딤 블로그 콘텐츠" 속성(DECISIONS §4) → 내부 키 ──
+NOTION_KEYS = {
+    "콘텐츠 ID": "id", "제목": "title", "상태": "status", "카테고리": "category_name",
+    "categoryNo": "category_no", "타깃 키워드": "target_keyword", "발행일": "publish_date",
+    "발행 URL": "naver_url", "추천 소스": "rec_source", "추천 피드백": "rec_feedback",
+    "부적합 사유": "rec_reject_reason", "조회수(최근)": "views_recent", "유입 키워드 TOP3": "top_keywords",
+    "댓글 수": "comments", "성과 갱신일": "metrics_updated_at", "시리즈": "series_name",
+    "시리즈 회차": "series_order", "마지막 업데이트일": "last_updated_at", "메모": "notes",
+    "본문": "body", "태그": "tags", "삭제됨": "is_deleted",
+}
+STATUS_NAMES = {"기획중": "S0", "초안완료": "S1", "검토완료": "S2", "발행예정": "S3", "발행완료": "S4", "성과측정": "S5"}
+
+
+def normalize_content(c):
+    """Notion 한글 속성명 행도 받아 contents 컬럼명으로 맞춘다(원래 키가 있으면 유지)."""
+    out = dict(c)
+    for k, v in c.items():
+        if k in NOTION_KEYS and NOTION_KEYS[k] not in c:
+            out[NOTION_KEYS[k]] = v
+    st = out.get("status")
+    if isinstance(st, str):
+        s = st.strip()
+        if len(s) >= 2 and s[0] in "Ss" and s[1].isdigit():
+            out["status"] = "S" + s[1]
+        elif s in STATUS_NAMES:
+            out["status"] = STATUS_NAMES[s]
+    if isinstance(out.get("tags"), str):
+        out["tags"] = [t.strip() for t in out["tags"].replace("#", ",").split(",") if t.strip()]
+    if out.get("status") in ("S4", "S5") and not out.get("published_at") and out.get("publish_date"):
+        out["published_at"] = out["publish_date"]  # Notion 은 발행일만 기록
+    if out.get("views_1m") is None and out.get("views_recent") is not None:
+        out["views_1m"] = out["views_recent"]
+    return out
+
 
 STATUS_ORDER = ["S0", "S1", "S2", "S3", "S4", "S5"]
 
@@ -132,6 +238,31 @@ def load_json(path):
         return json.load(f)
 
 
+def cta_exempt(content):
+    """원본: category_id.startsWith("CAT-C") (다이어리). 스킬: 디딤 다이어리(17~20) 또는
+    디딤 소식의 '사무소 소식'(DECISIONS §5, content.no_cta=true) 이면 CTA 면제."""
+    if content.get("no_cta"):
+        return True
+    if (content.get("category_id") or "").startswith("CAT-C"):
+        return True
+    cat = content_category(content)
+    return bool(cat and cat["is_diary"])
+
+
+def derive_review_fields(content):
+    """Notion 에는 검수 상태 속성이 없으므로 메모의 기록에서 복원한다(스킬 보완)."""
+    c = dict(content)
+    notes = c.get("notes") or ""
+    if not c.get("review_status"):
+        marks = [(notes.rfind("[검수 승인]"), "approved"), (notes.rfind("[수정 요청]"), "revision_requested"),
+                 (notes.rfind("[재검수 요청]"), "pending")]
+        pos, st = max(marks)
+        c["review_status"] = st if pos >= 0 else "pending"
+    if c.get("revision_count") is None:
+        c["revision_count"] = notes.count("[수정 요청]")
+    return c
+
+
 # ── buildChecks (status-transition-panel.tsx 65~204행) ──
 
 def build_checks(content, seo_score, cv_run, cv_critical, image_markers, now):
@@ -139,7 +270,7 @@ def build_checks(content, seo_score, cv_run, cv_critical, image_markers, now):
     body = content.get("body") or ""
     body_char_count = js_len(re.sub(r"\s", "", body))
     tag_count = len(content.get("tags") or [])
-    is_diary = (content.get("category_id") or "").startswith("CAT-C")
+    is_diary = cta_exempt(content)
 
     if status == "S1":
         review_status = content.get("review_status")
@@ -224,7 +355,9 @@ def status_timestamps(new_status, now, published_at_override=None):
 
 
 def cmd_check(args):
-    content = load_json(args.content)
+    content = derive_review_fields(normalize_content(load_json(args.content)))
+    if args.no_cta:
+        content["no_cta"] = True
     transitions = load_json(args.transitions) if args.transitions else SEED_TRANSITIONS
     transitions = [t for t in transitions if t.get("entity_type", "content") == "content"]
     now = now_from_arg(args.now)
@@ -321,7 +454,7 @@ def chain_after_approve(content, now):
         body_len = js_len(re.sub(r"\s", "", body))
         tag_count = len(latest.get("tags") or [])
         has_cta = ("━━" in body) or ("admin@didimip" in body)
-        is_diary = (latest.get("category_id") or "").startswith("CAT-C")
+        is_diary = cta_exempt(latest)
         if body_len >= 500 and tag_count >= 10 and (is_diary or has_cta):
             latest.update(status_timestamps("S2", now))
             steps.append({"to": "S2", "toast": "→ 검토완료(S2) 자동 전이"})
@@ -339,7 +472,7 @@ def chain_after_approve(content, now):
 
 
 def cmd_review(args):
-    content = load_json(args.content)
+    content = derive_review_fields(normalize_content(load_json(args.content)))
     now = now_from_arg(args.now)
     out = {"action": args.action}
     if args.action == "approve":
@@ -360,7 +493,9 @@ def cmd_review(args):
             })
             latest, steps = chain_after_approve(updated, now)
             out.update({"ok": True, "toast": "검수 승인 완료", "unknown_check_ids": unknown,
-                        "chain": steps, "content_after": latest})
+                        "chain": steps, "content_after": latest,
+                        "notion_memo_append": f"[검수 승인] 체크: {', '.join(checked)} ({iso(now)[:10]})",
+                        "notion_status_after": latest.get("status")})
     elif args.action == "revision":
         memo = (args.memo or "").strip()
         if not memo:
@@ -374,12 +509,14 @@ def cmd_review(args):
                 "revision_count": (content.get("revision_count") or 0) + 1,
                 "updated_at": iso(now),
             })
-            out.update({"ok": True, "toast": "수정 요청이 등록되었습니다.", "content_after": updated})
+            out.update({"ok": True, "toast": "수정 요청이 등록되었습니다.", "content_after": updated,
+                        "notion_memo_append": f"[수정 요청] {memo} ({updated['revision_count']}회차, {iso(now)[:10]})"})
     elif args.action == "reset":
         updated = dict(content)
         updated.update({"review_status": "pending", "review_memo": None, "updated_at": iso(now)})
         out.update({"ok": True, "toast": "검수 상태가 초기화되었습니다. 다시 검수를 요청하세요.",
-                    "content_after": updated})
+                    "content_after": updated,
+                    "notion_memo_append": f"[재검수 요청] ({iso(now)[:10]})"})
     if content.get("status") != "S1":
         out["note"] = "원본 UI 의 검수 패널은 status=S1 일 때만 표시됩니다."
     print(json.dumps(out, ensure_ascii=False, indent=2))
@@ -412,6 +549,7 @@ def main():
     c.add_argument("--cross-validation-critical", type=int, default=0, help="교차검증 심각 이슈 수")
     c.add_argument("--image-markers", type=int, help="이미지 마커 수(생략 시 본문에서 계산)")
     c.add_argument("--published-at", help="S4 전이 시 발행일시 override (ISO)")
+    c.add_argument("--no-cta", action="store_true", help="CTA 면제 글(디딤 소식의 사무소 소식 등)")
     c.add_argument("--now", help="기준 시각 ISO (기본: 현재 UTC)")
     c.set_defaults(func=cmd_check)
 

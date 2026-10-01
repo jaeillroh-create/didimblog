@@ -18,7 +18,8 @@
 입력(JSON, stdin 또는 --input):
 {
   "title": "...", "body": "...", "target_keyword": "...", "tags": [...],     // tags 생략 가능
-  "category_id": "CAT-A", "secondary_category": "CAT-A-01",
+  "category": "출원·심판 실무" | "category_no": 27 | "category_id": "CAT-A", "secondary_category": "CAT-A-01",
+  "subtype": "사무소 소식",                                                // 디딤 소식 한정
   "scheduled_at": "2026-10-06T09:00",                                     // 선택: 예약 발행 시각
   "manual": {"4": true, "9": false}                                        // 선택: 사람 판정 덮어쓰기
 }
@@ -38,8 +39,9 @@ from seo_score import (
     count_images,
     count_keyword,
     count_sub_headings,
-    get_rubric_key,
     has_cta,
+    pick_category_input,
+    resolve_category,
 )
 
 # ── seed_data/seo_checklist.json items (원문) ──
@@ -116,7 +118,7 @@ def auto_judge(d):
     body = d.get("body") or ""
     kw = d.get("target_keyword") or ""
     tags = d.get("tags")
-    rk = get_rubric_key(d.get("secondary_category") or d.get("category_id"))
+    rk, _info = resolve_category(pick_category_input(d), d.get("subtype"))
     rb = SEO_RUBRICS[rk]
     res = {}
 
@@ -171,7 +173,7 @@ def auto_judge(d):
     if rb["ctaRequired"]:
         put(16, c, "있음" if c else "없음", "seo-calculator", "구분선(━━━)·admin@didimip.com·이웃 추가 등 패턴")
     else:
-        put(16, not c, "있음 (부적절)" if c else "없음 (적절)", "seo-calculator", "디딤 다이어리: CTA 없어야 통과")
+        put(16, not c, "있음 (부적절)" if c else "없음 (적절)", "seo-calculator", "디딤 다이어리·사무소 소식: CTA 없어야 통과")
     put(17, None, "", "human", "네이버 맞춤법 검사기 통과 여부")
     sa = d.get("scheduled_at")
     if sa:

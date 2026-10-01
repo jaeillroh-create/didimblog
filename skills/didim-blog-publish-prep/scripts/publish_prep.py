@@ -735,21 +735,227 @@ def generate_auto_tags(prompt_key: str, target_keyword: str | None = None,
         push(b)
     return tags[:10]
 
+
+DIARY_CTA_KEYWORDS = ["상담", "문의", "연락", "무료", "진단", "시뮬레이션", "admin@"]  # prompts.ts:1767
+
+
+def publish_warnings(body: str, stripped: str, is_diary: bool, has_cta_block: bool,
+                     image_markers: list, blocks: list, chips: list) -> list[str]:
+    """[스킬 추가] 붙여넣기 전 확인할 점. 원본 화면에는 없는 점검이다."""
+    w = []
+    no_img = re.sub("━━ 📷 이미지 " + D + "+ ━━[\\s\\S]*?" + IMG_BLOCK_END_14, "", body)
+    if has_cta_block and (re.search(MS + "━{3,}" + S + "*" + ME, no_img)
+                          or "admin@didimip" in no_img or "02-571-6613" in no_img):
+        w.append("본문에 이미 구분선(━━) 또는 admin@didimip 가 있습니다. CTA 블록과 중복되지 않게 하나만 쓰세요.")
+    if re.search(MS + r"\|" + DOT + r"+\|" + ME, stripped):
+        w.append("복사용 본문에 마크다운 표 줄(| … |)이 남아 있습니다. 표 데이터 블록을 에디터 표에 붙여넣고 본문의 표 줄은 지우세요.")
+    if re.search(MS + "`", stripped):
+        w.append("코드 블록 잔재(` 로 시작하는 줄)가 남아 있습니다. 붙여넣은 뒤 지우세요.")
+    if blocks and not image_markers:
+        w.append(f"여러 줄 이미지 블록 {len(blocks)}개는 이미지 가이드에 잡히지 않습니다. '━━ 📷 이미지 N ━━' 블록 자리에 이미지를 넣으세요.")
+    dropped = [c["tag"] for c in chips if c["state"] != "ok"]
+    if dropped:
+        w.append("100자 제한으로 빠진 태그: " + ", ".join(dropped))
+    if "특허청" in body:
+        w.append("본문에 '특허청'이 있습니다. 현재 시점이면 '지식재산처'로 고치세요(과거 맥락·법령명 제외).")
+    bad_emails = [e for e in EMAIL_RE.findall(body) if e != DIDIM_EMAIL]
+    if bad_emails:
+        w.append("admin@didimip.com 이 아닌 이메일: " + ", ".join(bad_emails))
+    if is_diary:
+        found = [k for k in DIARY_CTA_KEYWORDS if k in body]
+        if found:
+            w.append("디딤 다이어리 본문에 CTA 관련 표현: " + ", ".join(found) + " — 삭제를 권합니다.")
+    return w
+
+
+# ─────────────────────────────────────────────────────────────
+# 카테고리 정본 = 네이버 categoryNo (skills/_DECISIONS.md 1·2절, 2026-10-01 확정)
+# CAT-* 는 코드(레거시) 별칭으로만 쓴다. legacy_alias 는 원본 함수(면책·포맷 가이드·
+# 태그 접미사 등)에 넘길 때 쓰는 CAT-* 값이다.
+# ─────────────────────────────────────────────────────────────
+NAVER_CATEGORIES = [
+    # categoryNo, 이름(네이버 문자열), 상위 categoryNo, 구분, 레거시 별칭(CAT-*), 신규 대응 categoryNo, 프롬프트 키, 역할, 퍼널
+    {"no": 25, "name": "지원사업·인증과 특허", "parent": None, "kind": "new", "alias": "CAT-A", "maps_to": 25,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "유입+전환"},
+    {"no": 27, "name": "출원·심판 실무", "parent": None, "kind": "new", "alias": "CAT-A-04", "maps_to": 27,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "전환"},
+    {"no": 26, "name": "사례", "parent": None, "kind": "new", "alias": "CAT-A", "maps_to": 26,
+     "prompt_key": "PROMPT_FIELD", "role": "신뢰+전환", "funnel": "신뢰+전환"},
+    {"no": 24, "name": "지식재산 경영", "parent": None, "kind": "new", "alias": "CAT-B", "maps_to": 24,
+     "prompt_key": "PROMPT_LOUNGE_GENERAL", "role": "트래픽/브랜딩형", "funnel": "유입"},
+    {"no": 28, "name": "디딤 소식", "parent": None, "kind": "new", "alias": "CAT-B-03", "maps_to": 28,
+     "prompt_key": "PROMPT_LOUNGE_BITE", "role": "트래픽", "funnel": "유입"},
+    {"no": 17, "name": "디딤 다이어리", "parent": None, "kind": "diary", "alias": "CAT-C", "maps_to": 17,
+     "prompt_key": "PROMPT_DIARY", "role": "신뢰형", "funnel": "신뢰"},
+    {"no": 18, "name": "컨설팅 후기", "parent": 17, "kind": "diary", "alias": "CAT-C-01", "maps_to": 17,
+     "prompt_key": "PROMPT_DIARY", "role": "신뢰형", "funnel": "신뢰"},
+    {"no": 19, "name": "디딤 일상", "parent": 17, "kind": "diary", "alias": "CAT-C-02", "maps_to": 17,
+     "prompt_key": "PROMPT_DIARY", "role": "신뢰형", "funnel": "신뢰"},
+    {"no": 20, "name": "대표의 생각", "parent": 17, "kind": "diary", "alias": "CAT-C-03", "maps_to": 17,
+     "prompt_key": "PROMPT_DIARY", "role": "신뢰형", "funnel": "신뢰"},
+    {"no": 7, "name": "디딤 소개", "parent": None, "kind": "fixed", "alias": "CAT-INTRO", "maps_to": 7,
+     "prompt_key": None, "role": "고정", "funnel": "복합"},
+    {"no": 22, "name": "상담 안내", "parent": None, "kind": "fixed", "alias": "CAT-CONSULT", "maps_to": 22,
+     "prompt_key": None, "role": "고정", "funnel": "전환"},
+    {"no": 9, "name": "변리사의 현장 수첩", "parent": None, "kind": "legacy", "alias": "CAT-A", "maps_to": 25,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "유입"},
+    {"no": 10, "name": "절세 시뮬레이션", "parent": 9, "kind": "legacy", "alias": "CAT-A-01", "maps_to": 25,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "전환"},
+    {"no": 11, "name": "인증 가이드", "parent": 9, "kind": "legacy", "alias": "CAT-A-02", "maps_to": 25,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "전환"},
+    {"no": 12, "name": "연구소 운영 실무", "parent": 9, "kind": "legacy", "alias": "CAT-A-03", "maps_to": 25,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "전환"},
+    {"no": 23, "name": "특허·상표 출원 실무", "parent": 9, "kind": "legacy", "alias": "CAT-A-04", "maps_to": 27,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "전환"},
+    {"no": 13, "name": "IP 라운지", "parent": None, "kind": "legacy", "alias": "CAT-B", "maps_to": 24,
+     "prompt_key": "PROMPT_LOUNGE_GENERAL", "role": "트래픽/브랜딩형", "funnel": "유입"},
+    {"no": 14, "name": "특허 전략 노트", "parent": 13, "kind": "legacy", "alias": "CAT-B-01", "maps_to": 24,
+     "prompt_key": "PROMPT_LOUNGE_GENERAL", "role": "트래픽/브랜딩형", "funnel": "신뢰"},
+    {"no": 15, "name": "AI와 IP", "parent": 13, "kind": "legacy", "alias": "CAT-B-02", "maps_to": 24,
+     "prompt_key": "PROMPT_LOUNGE_GENERAL", "role": "트래픽/브랜딩형", "funnel": "유입"},
+    {"no": 16, "name": "IP 뉴스 한 입", "parent": 13, "kind": "legacy", "alias": "CAT-B-03", "maps_to": 28,
+     "prompt_key": "PROMPT_LOUNGE_BITE", "role": "트래픽/브랜딩형", "funnel": "유입"},
+]
+# 코드 CAT-* → categoryNo (CAT-B-01/02 는 코드 런타임 기준 이름: B-01=특허 전략 노트, B-02=AI와 IP.
+# DB 시드(seed.sql)는 반대이므로 CAT-B-01/02 단독 입력은 이름 확인이 필요하다.)
+LEGACY_ID_TO_NO = {
+    "CAT-INTRO": 7, "CAT-A": 9, "CAT-A-01": 10, "CAT-A-02": 11, "CAT-A-03": 12, "CAT-A-04": 23,
+    "CAT-B": 13, "CAT-B-01": 14, "CAT-B-02": 15, "CAT-B-03": 16,
+    "CAT-C": 17, "CAT-C-01": 18, "CAT-C-02": 19, "CAT-C-03": 20, "CAT-CONSULT": 22,
+}
+AMBIGUOUS_LEGACY_IDS = {"CAT-B-01", "CAT-B-02"}
+
+
+def resolve_category(value) -> dict | None:
+    """categoryNo(정수/숫자 문자열) · 네이버 이름 · CAT-* 별칭 → 정본 행(dict)."""
+    if value is None or value == "":
+        return None
+    row = None
+    s = str(value).strip()
+    if s.isdigit():
+        row = next((c for c in NAVER_CATEGORIES if c["no"] == int(s)), None)
+    elif s in LEGACY_ID_TO_NO:
+        row = next((c for c in NAVER_CATEGORIES if c["no"] == LEGACY_ID_TO_NO[s]), None)
+        if row is not None:
+            row = {**row, "warning": "CAT-B-01/02 는 소스마다 이름이 뒤바뀌어 있음 — 이름으로 확인 필요"} \
+                if s in AMBIGUOUS_LEGACY_IDS else dict(row)
+    else:
+        row = next((c for c in NAVER_CATEGORIES if c["name"] == s), None)
+        if row is None:
+            norm = re.sub(r"\s+", "", s)
+            row = next((c for c in NAVER_CATEGORIES if re.sub(r"\s+", "", c["name"]) == norm), None)
+    if row is None:
+        return None
+    row = dict(row)
+    row["cta_allowed"] = row["kind"] not in ("diary", "fixed")
+    parent = next((c for c in NAVER_CATEGORIES if c["no"] == row["parent"]), None) if row["parent"] else None
+    row["parent_name"] = parent["name"] if parent else None
+    target = next(c for c in NAVER_CATEGORIES if c["no"] == row["maps_to"])
+    row["maps_to_name"] = target["name"]
+    return row
+
+
+# ─────────────────────────────────────────────────────────────
+# 신규 구조 CTA (skills/_DECISIONS.md 2절) — 원본 코드에 없는 스킬 규칙.
+# 문구는 모두 기존 원문(FALLBACK_CTA = migration 011, seed_data/cta_templates.json
+# "IP라운지" = UPGRADE_SPEC §5.2 NEIGHBOR, prompts.ts FIELD_CTA["CAT-B-03"])을 그대로 쓴다.
+# ─────────────────────────────────────────────────────────────
+NEIGHBOR_CTA = {
+    "key": "이웃추가",
+    "categoryName": "지식재산 경영 · 이웃 추가",
+    "text": "━━━━━━━━━━━━━━━━━━\n이런 IP 이야기가 도움이 되셨다면 디딤 블로그를 이웃 추가해주세요.\n"
+            "매주 화요일, 중소기업 대표님께 실질적인 IP 정보를 전해드립니다.\n\n"
+            "IP 관련 상담이 필요하시면: admin@didimip.com\n\n특허그룹 디딤 | 기업을 아는 변리사",
+    "note": "원문: seed_data/cta_templates.json 'IP라운지' (= UPGRADE_SPEC §5.2 NEIGHBOR). '매주 화요일'은 현재 발행 요일과 맞는지 확인",
+    "conversionMethod": "이웃 추가 유도 + 이메일 안내 → 장기 관계 유지",
+    "emailSubjectTag": None,
+}
+BITE_CTA = {
+    "key": "디딤소식_이웃추가",
+    "categoryName": "디딤 소식 · 가벼운 이웃 추가",
+    "text": "━━━━━━━━━━━━━━━━━━\nIP 이슈에 대해 더 알고 싶으시면 이웃 추가 해주세요.\n\n특허그룹 디딤 | 기업을 아는 변리사",
+    "note": "문장 원문: prompts.ts FIELD_CTA['CAT-B-03'] + 구분선·서명(appendCtaAndSignature 모양). 포맷 가이드 '이웃 추가 유도 (2줄 이내)'",
+    "conversionMethod": "이웃 추가",
+    "emailSubjectTag": None,
+}
+_KEYS_25 = ["현장수첩_절세", "현장수첩_인증", "현장수첩_연구소"]
+_DISCLAIMER_ALIAS_25 = {"현장수첩_절세": "CAT-A-01", "현장수첩_인증": "CAT-A-02", "현장수첩_연구소": "CAT-A-03"}
+
+
+def cta_for_new_category(no: int, target_keyword: str | None, title: str | None = None,
+                         office_news: bool = False, cta_templates: list[dict] | None = None) -> dict:
+    """신규 구조 categoryNo 별 CTA. 반환: {template|None, matched_by, disclaimer_alias}."""
+    pool: dict[str, dict] = {}
+    for t in list(cta_templates or []) + FALLBACK_CTA:
+        pool.setdefault(t["key"], t)
+    texts = [(target_keyword or "").lower(), (title or "").lower()]
+    if no in (17, 18, 19, 20):
+        return {"template": None, "matched_by": "디딤 다이어리 — CTA 금지(절대원칙)", "disclaimer_alias": "CAT-C"}
+    if no in (7, 22):
+        return {"template": None, "matched_by": "고정 페이지 — 자동 생성 대상 아님", "disclaimer_alias": "CAT-INTRO"}
+    if no == 25:
+        for label, txt in zip(("타깃 키워드", "제목"), texts):
+            if not txt:
+                continue
+            for pattern, key in CTA_KEYWORD_MAP:
+                if key in _KEYS_25 and pattern.search(txt):
+                    return {"template": pool[key], "matched_by": f"25 키워드 매칭({label}) → {key}",
+                            "disclaimer_alias": _DISCLAIMER_ALIAS_25[key]}
+        return {"template": pool["현장수첩_인증"], "matched_by": "25 기본값(키워드 불일치) → 현장수첩_인증",
+                "disclaimer_alias": "CAT-A"}
+    if no == 27:
+        return {"template": pool["현장수첩_출원"], "matched_by": "27 출원 CTA", "disclaimer_alias": "CAT-A-04"}
+    if no == 26:
+        for label, txt in zip(("타깃 키워드", "제목"), texts):
+            if not txt:
+                continue
+            for pattern, key in CTA_KEYWORD_MAP:
+                if pattern.search(txt) and key in pool:
+                    return {"template": pool[key], "matched_by": f"26 주제 키워드 매칭({label}) → {key}",
+                            "disclaimer_alias": "CAT-A"}
+        return {"template": pool["현장수첩_출원"], "matched_by": "26 기본값 → 현장수첩_출원", "disclaimer_alias": "CAT-A"}
+    if no == 24:
+        return {"template": NEIGHBOR_CTA, "matched_by": "24 이웃 추가 CTA", "disclaimer_alias": "CAT-B"}
+    if no == 28:
+        if office_news:
+            return {"template": None, "matched_by": "28 사무소 소식 — CTA 없음", "disclaimer_alias": "CAT-B-03"}
+        return {"template": BITE_CTA, "matched_by": "28 가벼운 이웃 추가 CTA", "disclaimer_alias": "CAT-B-03"}
+    raise ValueError(f"신규 구조 categoryNo 가 아님: {no}")
+
 # ─────────────────────────────────────────────────────────────
 # build — 발행 준비 화면 전체 재현
 # ─────────────────────────────────────────────────────────────
 STATUS_LABELS = {"S0": "기획중", "S1": "초안완료", "S2": "검토완료", "S3": "발행예정", "S4": "발행완료", "S5": "성과측정"}
 
 
+def _route(content: dict):
+    """입력 카테고리 → (mode, 정본 행, category_id 별칭, secondary 별칭).
+
+    mode: new(신규 구조, _DECISIONS 2절) / legacy(레거시·다이어리 — 원본 로직에 CAT 별칭 전달)
+          / fixed(디딤 소개·상담 안내) / code(CAT-* 만 주어진 경우 — 원본과 완전히 동일)
+    """
+    cat_in = content.get("category_no")
+    if cat_in in (None, ""):
+        cat_in = content.get("category")
+    row = resolve_category(cat_in) if cat_in not in (None, "") else None
+    if row is None:
+        return "code", None, content.get("category_id") or "", content.get("secondary_category") or ""
+    if row["kind"] == "new":
+        return "new", row, "", ""
+    if row["kind"] == "fixed":
+        return "fixed", row, row["alias"], ""
+    if row["parent"]:
+        parent = resolve_category(row["parent"])
+        return "legacy", row, parent["alias"], row["alias"]
+    return "legacy", row, row["alias"], ""
+
+
 def build(content: dict) -> dict:
     title = content.get("title") or ""
     body = content.get("body") or ""
     tags = content.get("tags") or []
-    category_id = content.get("category_id") or ""
-    secondary = content.get("secondary_category") or ""
-    effective = secondary or category_id or ""
-    is_ai = content.get("is_ai_generated", True)
-    is_ai = bool(is_ai)
+    mode, row, category_id, secondary = _route(content)
+    is_ai = bool(content.get("is_ai_generated", True))
     status = content.get("status")
 
     categories = content.get("categories") or DEFAULT_CATEGORIES
@@ -758,31 +964,57 @@ def build(content: dict) -> dict:
     else:
         db_templates = []
 
-    # Disclaimer
-    auto = determine_disclaimer_level(effective, body, is_ai)
-    level = content.get("disclaimer_override") or auto["level"]
-    disclaimer_text = get_disclaimer_text(level, is_ai)
-
-    # CTA
-    is_diary = category_id == "CAT-C" or category_id.startswith("CAT-C-")
-    auto_cta = match_cta_for_content(
-        {"category_id": category_id or None, "secondary_category": secondary or None,
-         "target_keyword": content.get("target_keyword")},
-        categories, db_templates)
     options: dict[str, dict] = {}
     for t in db_templates:
         options[t["key"]] = t
     for t in FALLBACK_CTA:
         options.setdefault(t["key"], t)
+    if mode == "new":
+        options.setdefault(NEIGHBOR_CTA["key"], NEIGHBOR_CTA)
+        options.setdefault(BITE_CTA["key"], BITE_CTA)
+
+    # CTA + 면책·포맷 가이드용 유효 카테고리(CAT 별칭)
+    is_diary = category_id == "CAT-C" or category_id.startswith("CAT-C-")
+    cta_none_reason = None
+    if mode == "new":
+        v2 = cta_for_new_category(row["no"], content.get("target_keyword"), title,
+                                  bool(content.get("office_news")), db_templates)
+        auto_cta = {**v2["template"], "_matched_by": v2["matched_by"]} if v2["template"] else None
+        effective = v2["disclaimer_alias"]
+        if auto_cta is None:
+            cta_none_reason = v2["matched_by"]
+    elif mode == "fixed":
+        auto_cta = None
+        effective = category_id
+        cta_none_reason = "고정 페이지(디딤 소개·상담 안내) — 자동 생성·발행 준비 대상 아님"
+    else:
+        auto_cta = match_cta_for_content(
+            {"category_id": category_id or None, "secondary_category": secondary or None,
+             "target_keyword": content.get("target_keyword")},
+            categories, db_templates)
+        effective = secondary or category_id or ""
+        if is_diary:
+            cta_none_reason = "디딤 다이어리 — CTA 금지(절대원칙)"
+
+    auto = determine_disclaimer_level(effective, body, is_ai)
+    level = content.get("disclaimer_override") or auto["level"]
+    disclaimer_text = get_disclaimer_text(level, is_ai)
+
     override = content.get("cta_override_key")
-    matched = (options.get(override) or auto_cta) if override else auto_cta
+    if cta_none_reason and (is_diary or mode == "fixed" or (row and row["kind"] == "diary")):
+        matched = None  # 다이어리·고정 페이지는 수동 선택도 무시
+    else:
+        matched = (options.get(override) or auto_cta) if override else auto_cta
     cta_text = enforce_email(matched.get("text")) if matched and matched.get("text") else None
+    no_cta = matched is None and cta_none_reason is not None
 
     stripped = strip_markdown(body)
     tags_text = format_tags_for_naver(tags) if tags else ""
     markers = generate_image_guide(body)
 
     preview_mode = status is not None and status not in ("S3", "S4", "S5")
+    blocks = image_blocks(body)
+    chips = tag_states(tags)
     return {
         "preview_mode": preview_mode,
         "status": status,
@@ -798,7 +1030,16 @@ def build(content: dict) -> dict:
             "text": disclaimer_text,
             "show": level != "none" and bool(disclaimer_text),
         },
-        "cta": None if is_diary else {
+        "category": {
+            "mode": mode,
+            "category_no": row["no"] if row else None,
+            "name": row["name"] if row else next((c["name"] for c in categories if c.get("id") == category_id), None),
+            "kind": row["kind"] if row else "code",
+            "maps_to": row["maps_to_name"] if row else None,
+            "legacy_alias": effective,
+            "prompt_key": row["prompt_key"] if row else get_prompt_key(effective),
+        },
+        "cta": None if no_cta else {
             "key": matched.get("key") if matched else None,
             "category_name": matched.get("categoryName") if matched else None,
             "matched_by": (matched or {}).get("_matched_by", "수동 선택" if override else None),
@@ -806,14 +1047,16 @@ def build(content: dict) -> dict:
             "note": matched.get("note") if matched else None,
             "options": [t["key"] for t in options.values()],
         },
-        "diary_notice": "디딤 다이어리는 CTA를 넣지 않습니다. 상업적 CTA가 진정성을 훼손할 수 있습니다." if is_diary else None,
-        "tags": {"text": tags_text, "length": js_len(tags_text), "count": len(tags), "chips": tag_states(tags)},
+        "cta_none_reason": cta_none_reason if no_cta else None,
+        "diary_notice": "디딤 다이어리는 CTA를 넣지 않습니다. 상업적 CTA가 진정성을 훼손할 수 있습니다." if (
+            is_diary or (row and row["kind"] == "diary")) else None,
+        "tags": {"text": tags_text, "length": js_len(tags_text), "count": len(tags), "chips": chips},
         "image_guide": markers,
         "alt_texts": [m["description"] for m in markers],
         "format_guide": generate_format_guide(effective),
         "checklist": PUBLISH_CHECKLIST,
         "info": {
-            "category_name": next((c["name"] for c in categories if c.get("id") == category_id), "-"),
+            "category_name": (row["name"] if row else next((c["name"] for c in categories if c.get("id") == category_id), "-")),
             "target_keyword": content.get("target_keyword") or "-",
             "publish_date": content.get("publish_date") or "-",
             "raw_body_length": js_len(body),
@@ -821,7 +1064,12 @@ def build(content: dict) -> dict:
         # ── 스킬 추가 정보 (원본 화면에 없음) ──
         "extra": {
             "body_has_cta": ("━━" in body) or ("admin@didimip" in body),  # review-panel.tsx:104 식
-            "image_blocks": [{k: v for k, v in b.items() if k != "block"} for b in image_blocks(body)],
+            "image_blocks": [{k: v for k, v in b.items() if k != "block"} for b in blocks],
+            "warnings": ([f"레거시 카테고리 '{row['name']}' — 사용자가 지정한 경우에만 사용. 신규 구조 대응: {row['maps_to_name']}"]
+                         if row and row["kind"] == "legacy" else [])
+                        + ([row["warning"]] if row and row.get("warning") else [])
+                        + publish_warnings(body, stripped, is_diary or bool(row and row["kind"] == "diary"),
+                                           bool(cta_text), markers, blocks, chips),
             "line_format_guide": line_format_guide(body),
         },
     }
@@ -834,10 +1082,13 @@ def render_text(r: dict) -> str:
     if r["preview_mode"]:
         out.append(f"⚠️ 미리보기 모드 — 현재 상태가 {r['status_label']}이므로 본문/CTA/태그 확인 및 복사만 가능합니다. "
                    "발행 완료 처리는 S3(발행예정) 이상에서 활성화됩니다.\n")
+    if r["extra"]["warnings"]:
+        out.append("⚠️ 확인 필요\n" + "\n".join(f"- {x}" for x in r["extra"]["warnings"]) + "\n")
+    c0 = r["category"]
+    if c0["category_no"] is not None:
+        out.append(f"카테고리: {c0['name']} (categoryNo {c0['category_no']}, {c0['kind']}) · 프롬프트 키 {c0['prompt_key']}\n")
     out.append(f"## [1] 제목 → 네이버 '제목' 칸 ({r['title']['length']}자)\n{F}text\n{r['title']['text'] or '제목 없음'}\n{F}\n")
     out.append(f"## [2] 본문 → 본문 영역에 붙여넣기 ({r['body']['length']:,}자)\n{F}text\n{r['body']['text'] or '본문이 없습니다'}\n{F}\n")
-    if r["extra"]["body_has_cta"] and r["cta"]:
-        out.append("> 참고: 본문에 이미 구분선(━━) 또는 admin@didimip 가 들어 있습니다. 아래 CTA 를 붙이기 전에 중복 여부를 확인하세요.\n")
     if r["tables_tsv"]:
         out.append(f"## [2-1] 표 데이터 ({len(r['tables_tsv'])}개) → 네이버 에디터에서 표 삽입 후 붙여넣기\n{F}text\n" + "\n\n".join(r["tables_tsv"]) + f"\n{F}\n")
     d = r["disclaimer"]
@@ -852,7 +1103,7 @@ def render_text(r: dict) -> str:
         if c.get("note"):
             out.append(f"참고: {c['note']}\n")
     else:
-        out.append(f"## [4] CTA 없음\n{r['diary_notice']}\n")
+        out.append(f"## [4] CTA 없음 — {r['cta_none_reason']}\n" + (f"{r['diary_notice']}\n" if r["diary_notice"] else ""))
     t = r["tags"]
     if t["count"]:
         excluded = [c["tag"] for c in t["chips"] if c["state"] != "ok"]
@@ -898,7 +1149,9 @@ def main(argv=None):
         description="디딤 블로그 네이버 발행 준비 (publish-helpers.ts 포팅). 입력은 JSON(또는 --raw 텍스트), 출력은 JSON.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""하위 명령 입력 JSON 키:
-  build           {title, body, tags[], category_id, secondary_category, target_keyword,
+  build           {title, body, tags[], category(네이버 이름) 또는 category_no(categoryNo),
+                   office_news(디딤 소식 중 사무소 소식이면 true),
+                   [레거시 호환] category_id, secondary_category (CAT-*), target_keyword,
                    is_ai_generated(기본 true), status, publish_date,
                    cta_override_key, disclaimer_override(A|B|C|none),
                    use_db_cta_templates(기본 true), cta_templates[], categories[]}
@@ -912,12 +1165,14 @@ def main(argv=None):
   disclaimer      {category_id, body, is_ai_generated}
   match-cta       {category_id, secondary_category, target_keyword, use_db_cta_templates}
   line-guide      {body}   (스킬 추가 기능, UPGRADE_SPEC §8.1)
-  auto-tags       {category_id, target_keyword, keyword_positions[]}  (태그가 없을 때, generateAutoTags 포팅)
+  auto-tags       {category 또는 category_id, target_keyword, keyword_positions[]}  (태그가 없을 때, generateAutoTags 포팅)
+  resolve-category {category}   categoryNo/이름/CAT-* → 정본 행(구분·레거시 별칭·신규 대응·프롬프트 키)
+  match-cta-new   {category, target_keyword, title, office_news}  신규 구조 CTA(_DECISIONS 2절)
 """,
     )
     p.add_argument("command", choices=["build", "strip-markdown", "to-html", "tables", "tags", "format-guide",
                                        "enforce-email", "image-guide", "disclaimer", "match-cta", "line-guide",
-                                       "auto-tags"])
+                                       "auto-tags", "resolve-category", "match-cta-new"])
     p.add_argument("--input", "-i", help="입력 파일 경로 (생략/'-' 이면 표준입력)")
     p.add_argument("--raw", action="store_true", help="입력을 JSON 이 아닌 본문 텍스트로 취급")
     p.add_argument("--format", choices=["json", "text"], default="json", help="build 출력 형식")
@@ -959,8 +1214,24 @@ def main(argv=None):
         result = match_cta_for_content(data, data.get("categories") or DEFAULT_CATEGORIES, db)
     elif cmd == "auto-tags":
         cid = data.get("category_id") or ""
-        result = generate_auto_tags(get_prompt_key(cid), data.get("target_keyword"),
-                                    data.get("keyword_positions"), cid)
+        row = resolve_category(data.get("category")) if data.get("category") not in (None, "") else None
+        if row:
+            cid = row["alias"]
+        pk = (row["prompt_key"] if row and row["prompt_key"] else get_prompt_key(cid))
+        result = generate_auto_tags(pk, data.get("target_keyword"), data.get("keyword_positions"), cid)
+    elif cmd == "resolve-category":
+        result = resolve_category(data.get("category"))
+    elif cmd == "match-cta-new":
+        row = resolve_category(data.get("category"))
+        if not row or row["kind"] == "legacy":
+            result = {"error": "신규 구조/다이어리/고정 카테고리가 아님 — 레거시는 match-cta(CAT-* 입력)를 쓴다"}
+        else:
+            r = cta_for_new_category(row["no"], data.get("target_keyword"), data.get("title"),
+                                     bool(data.get("office_news")), DB_CTA_TEMPLATES_DEFAULT)
+            t = r["template"]
+            result = {"key": t["key"] if t else None, "text": enforce_email(t["text"]) if t else None,
+                      "email_subject": t.get("emailSubjectTag") if t else None,
+                      "matched_by": r["matched_by"], "disclaimer_alias": r["disclaimer_alias"]}
     else:  # line-guide
         result = line_format_guide(data.get("body") or "")
     json.dump(result, sys.stdout, ensure_ascii=False, indent=2)

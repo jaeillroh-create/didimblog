@@ -199,47 +199,258 @@ def validate_generated_draft(text: str, prompt_key: str) -> list[dict]:
     return warnings
 
 
-# ── 카테고리 정본 (references/categories.md 와 동일) ──
-CATEGORIES = [
-    # id, 이름(네이버 표기), tier, parent, role_type, funnel_stage, cta_type, 비고
-    ("CAT-INTRO", "디딤 소개", "primary", None, "fixed", "MULTI", "none", None),
-    ("CAT-A", "변리사의 현장 수첩", "primary", None, "conversion", "ATTRACT", "direct", None),
-    ("CAT-A-01", "절세 시뮬레이션", "secondary", "CAT-A", "conversion", "CONVERT", "direct", None),
-    ("CAT-A-02", "인증 가이드", "secondary", "CAT-A", "conversion", "CONVERT", "direct", None),
-    ("CAT-A-03", "연구소 운영 실무", "secondary", "CAT-A", "conversion", "CONVERT", "direct", None),
-    ("CAT-A-04", "특허·상표 출원 실무", "secondary", "CAT-A", "conversion", None, "direct",
-     "DB 시드(seed.sql)·UPGRADE_SPEC §5.1·briefing.ts 에 없음. role/cta 는 상위 CAT-A 와 FIELD_CTA 기준, funnel_stage 미정의"),
-    ("CAT-B", "IP 라운지", "primary", None, "traffic_branding", "ATTRACT", "neighbor", None),
-    ("CAT-B-01", "특허 전략 노트", "secondary", "CAT-B", "traffic_branding", "TRUST", "neighbor",
-     "ID 충돌: 코드(FIELD_CTA·sub-category-pool)는 CAT-B-01=특허 전략 노트, DB 시드·브리핑 프롬프트는 CAT-B-01=AI와 IP. 이름으로 판단할 것"),
-    ("CAT-B-02", "AI와 IP", "secondary", "CAT-B", "traffic_branding", "ATTRACT", "neighbor",
-     "ID 충돌: 코드는 CAT-B-02=AI와 IP, DB 시드·브리핑 프롬프트는 CAT-B-02=특허 전략 노트. 이름으로 판단할 것"),
-    ("CAT-B-03", "IP 뉴스 한 입", "secondary", "CAT-B", "traffic_branding", "ATTRACT", "neighbor", None),
-    ("CAT-C", "디딤 다이어리", "primary", None, "trust", "TRUST", "none", None),
-    ("CAT-C-01", "컨설팅 후기", "secondary", "CAT-C", "trust", "TRUST", "none", None),
-    ("CAT-C-02", "디딤 일상", "secondary", "CAT-C", "trust", "TRUST", "none", None),
-    ("CAT-C-03", "대표의 생각", "secondary", "CAT-C", "trust", "TRUST", "none", None),
-    ("CAT-CONSULT", "상담 안내", "primary", None, "fixed", "CONVERT", "direct", None),
+
+# ── 발행 단계 CTA 템플릿 (publish-prep-client.tsx FALLBACK_CTA = migration 011) ──
+_SIG = "특허그룹 디딤 | 기업을 아는 변리사"
+_BAR = "━" * 18
+
+
+def _cta(key, category_name, body_lines, subject):
+    return {
+        "key": key,
+        "categoryName": category_name,
+        "text": _BAR + "\n" + body_lines + "\n\n" + _SIG,
+        "note": None,
+        "conversionMethod": "이메일",
+        "emailSubjectTag": subject,
+    }
+
+
+# publish-prep-client.tsx:53-126 (선언 순서 유지)
+FALLBACK_CTA = [
+    _cta("현장수첩_절세", "현장 수첩 · 절세 시뮬레이션",
+         "\"우리 회사도 가능할까?\" 궁금하시다면 재무제표를 보내주세요.\n"
+         "48시간 안에 절세 시뮬레이션을 만들어 드립니다. (무료)\n\n"
+         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '절세 시뮬레이션'이라고 적어주세요)",
+         "절세 시뮬레이션"),
+    _cta("현장수첩_인증", "현장 수첩 · 인증 가이드",
+         "우리 회사가 인증 요건에 해당하는지 5분이면 확인할 수 있습니다.\n\n"
+         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '인증 진단'이라고 적어주세요)",
+         "인증 진단"),
+    _cta("현장수첩_출원", "현장 수첩 · 특허·상표 출원 실무",
+         "출원 전략이 궁금하시면 편하게 연락 주세요.\n"
+         "기술 내용을 보내주시면 출원 가능성과 전략을 검토해 드립니다.\n\n"
+         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '출원 상담'이라고 적어주세요)",
+         "출원 상담"),
+    _cta("현장수첩_연구소", "현장 수첩 · 연구소 운영",
+         "연구소 운영 상태 점검, 무료 진단 가능합니다.\n\n"
+         "📞 02-571-6613\n📧 admin@didimip.com (메일 제목에 '연구소 진단'이라고 적어주세요)",
+         "연구소 진단"),
+    _cta("IP라운지", "IP 라운지",
+         "AI·IP 전략이 궁금하신 대표님, 편하게 연락 주세요.\n\n"
+         "📞 02-571-6613\n📧 admin@didimip.com",
+         "상담 문의"),
 ]
-ROLE_LABELS = {"conversion": "전환형", "traffic_branding": "트래픽/브랜딩형", "trust": "신뢰형", "fixed": "고정"}
-FUNNEL_LABELS = {"ATTRACT": "유입", "TRUST": "신뢰", "CONVERT": "전환", "MULTI": "복합"}
-CTA_TYPE_LABELS = {"direct": "직접 CTA", "neighbor": "이웃 CTA", "none": "없음"}
+
+# migration 011 시드 4건 = FALLBACK_CTA 의 동일 key 4건과 문자열 동일.
+# getCtaTemplates()가 key 오름차순으로 읽으므로 런타임 DB 순서는 아래와 같다.
+_FB = {t["key"]: t for t in FALLBACK_CTA}
+DB_CTA_TEMPLATES_DEFAULT = [dict(_FB[k]) for k in ["IP라운지", "현장수첩_연구소", "현장수첩_인증", "현장수첩_절세"]]
+
+# publish-prep-client.tsx:129-137
+CTA_KEYWORD_MAP = [
+    (re.compile("절세|세액공제|법인세|직무발명보상|비과세|보상금", re.I), "현장수첩_절세"),
+    (re.compile("출원|상표|특허출원|등록|심사|우선심사|pct|디자인출원", re.I), "현장수첩_출원"),
+    (re.compile("인증|벤처|이노비즈|메인비즈", re.I), "현장수첩_인증"),
+    (re.compile("연구소|연구전담|koita|사후관리|연구활동", re.I), "현장수첩_연구소"),
+    (re.compile("ai|인공지능|저작권|생성형", re.I), "IP라운지"),
+    (re.compile("특허전략|포트폴리오|ip전략|기술가치", re.I), "IP라운지"),
+    (re.compile("뉴스|분쟁|판례|정책변화", re.I), "IP라운지"),
+]
 
 
-def category_info(key: str) -> dict | None:
-    rows = [r for r in CATEGORIES if key in (r[0], r[1])] or [r for r in CATEGORIES if key and key in r[1]]
-    for cid, name, tier, parent, role, funnel, cta, note in rows[:1]:
-        return {
-            "id": cid, "name": name, "tier": tier, "parent_id": parent,
-            "role_type": role, "role_label": ROLE_LABELS.get(role),
-            "funnel_stage": funnel, "funnel_label": FUNNEL_LABELS.get(funnel),
-            "cta_type": cta, "cta_type_label": CTA_TYPE_LABELS.get(cta), "note": note,
-            "prompt_key": get_prompt_key(cid),
-            "cta_allowed": not cid.startswith("CAT-C"),
-            "field_cta": get_field_cta(cid) if not cid.startswith("CAT-C") else None,
-            "disclaimer_default": determine_disclaimer_level(cid, "")["level"],
-        }
-    return None
+
+
+# ─────────────────────────────────────────────────────────────
+# 카테고리 정본 = 네이버 categoryNo (skills/_DECISIONS.md 1·2절, 2026-10-01 확정)
+# CAT-* 는 코드(레거시) 별칭으로만 쓴다. legacy_alias 는 원본 함수(면책·포맷 가이드·
+# 태그 접미사 등)에 넘길 때 쓰는 CAT-* 값이다.
+# ─────────────────────────────────────────────────────────────
+NAVER_CATEGORIES = [
+    # categoryNo, 이름(네이버 문자열), 상위 categoryNo, 구분, 레거시 별칭(CAT-*), 신규 대응 categoryNo, 프롬프트 키, 역할, 퍼널
+    {"no": 25, "name": "지원사업·인증과 특허", "parent": None, "kind": "new", "alias": "CAT-A", "maps_to": 25,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "유입+전환"},
+    {"no": 27, "name": "출원·심판 실무", "parent": None, "kind": "new", "alias": "CAT-A-04", "maps_to": 27,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "전환"},
+    {"no": 26, "name": "사례", "parent": None, "kind": "new", "alias": "CAT-A", "maps_to": 26,
+     "prompt_key": "PROMPT_FIELD", "role": "신뢰+전환", "funnel": "신뢰+전환"},
+    {"no": 24, "name": "지식재산 경영", "parent": None, "kind": "new", "alias": "CAT-B", "maps_to": 24,
+     "prompt_key": "PROMPT_LOUNGE_GENERAL", "role": "트래픽/브랜딩형", "funnel": "유입"},
+    {"no": 28, "name": "디딤 소식", "parent": None, "kind": "new", "alias": "CAT-B-03", "maps_to": 28,
+     "prompt_key": "PROMPT_LOUNGE_BITE", "role": "트래픽", "funnel": "유입"},
+    {"no": 17, "name": "디딤 다이어리", "parent": None, "kind": "diary", "alias": "CAT-C", "maps_to": 17,
+     "prompt_key": "PROMPT_DIARY", "role": "신뢰형", "funnel": "신뢰"},
+    {"no": 18, "name": "컨설팅 후기", "parent": 17, "kind": "diary", "alias": "CAT-C-01", "maps_to": 17,
+     "prompt_key": "PROMPT_DIARY", "role": "신뢰형", "funnel": "신뢰"},
+    {"no": 19, "name": "디딤 일상", "parent": 17, "kind": "diary", "alias": "CAT-C-02", "maps_to": 17,
+     "prompt_key": "PROMPT_DIARY", "role": "신뢰형", "funnel": "신뢰"},
+    {"no": 20, "name": "대표의 생각", "parent": 17, "kind": "diary", "alias": "CAT-C-03", "maps_to": 17,
+     "prompt_key": "PROMPT_DIARY", "role": "신뢰형", "funnel": "신뢰"},
+    {"no": 7, "name": "디딤 소개", "parent": None, "kind": "fixed", "alias": "CAT-INTRO", "maps_to": 7,
+     "prompt_key": None, "role": "고정", "funnel": "복합"},
+    {"no": 22, "name": "상담 안내", "parent": None, "kind": "fixed", "alias": "CAT-CONSULT", "maps_to": 22,
+     "prompt_key": None, "role": "고정", "funnel": "전환"},
+    {"no": 9, "name": "변리사의 현장 수첩", "parent": None, "kind": "legacy", "alias": "CAT-A", "maps_to": 25,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "유입"},
+    {"no": 10, "name": "절세 시뮬레이션", "parent": 9, "kind": "legacy", "alias": "CAT-A-01", "maps_to": 25,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "전환"},
+    {"no": 11, "name": "인증 가이드", "parent": 9, "kind": "legacy", "alias": "CAT-A-02", "maps_to": 25,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "전환"},
+    {"no": 12, "name": "연구소 운영 실무", "parent": 9, "kind": "legacy", "alias": "CAT-A-03", "maps_to": 25,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "전환"},
+    {"no": 23, "name": "특허·상표 출원 실무", "parent": 9, "kind": "legacy", "alias": "CAT-A-04", "maps_to": 27,
+     "prompt_key": "PROMPT_FIELD", "role": "전환형", "funnel": "전환"},
+    {"no": 13, "name": "IP 라운지", "parent": None, "kind": "legacy", "alias": "CAT-B", "maps_to": 24,
+     "prompt_key": "PROMPT_LOUNGE_GENERAL", "role": "트래픽/브랜딩형", "funnel": "유입"},
+    {"no": 14, "name": "특허 전략 노트", "parent": 13, "kind": "legacy", "alias": "CAT-B-01", "maps_to": 24,
+     "prompt_key": "PROMPT_LOUNGE_GENERAL", "role": "트래픽/브랜딩형", "funnel": "신뢰"},
+    {"no": 15, "name": "AI와 IP", "parent": 13, "kind": "legacy", "alias": "CAT-B-02", "maps_to": 24,
+     "prompt_key": "PROMPT_LOUNGE_GENERAL", "role": "트래픽/브랜딩형", "funnel": "유입"},
+    {"no": 16, "name": "IP 뉴스 한 입", "parent": 13, "kind": "legacy", "alias": "CAT-B-03", "maps_to": 28,
+     "prompt_key": "PROMPT_LOUNGE_BITE", "role": "트래픽/브랜딩형", "funnel": "유입"},
+]
+# 코드 CAT-* → categoryNo (CAT-B-01/02 는 코드 런타임 기준 이름: B-01=특허 전략 노트, B-02=AI와 IP.
+# DB 시드(seed.sql)는 반대이므로 CAT-B-01/02 단독 입력은 이름 확인이 필요하다.)
+LEGACY_ID_TO_NO = {
+    "CAT-INTRO": 7, "CAT-A": 9, "CAT-A-01": 10, "CAT-A-02": 11, "CAT-A-03": 12, "CAT-A-04": 23,
+    "CAT-B": 13, "CAT-B-01": 14, "CAT-B-02": 15, "CAT-B-03": 16,
+    "CAT-C": 17, "CAT-C-01": 18, "CAT-C-02": 19, "CAT-C-03": 20, "CAT-CONSULT": 22,
+}
+AMBIGUOUS_LEGACY_IDS = {"CAT-B-01", "CAT-B-02"}
+
+
+def resolve_category(value) -> dict | None:
+    """categoryNo(정수/숫자 문자열) · 네이버 이름 · CAT-* 별칭 → 정본 행(dict)."""
+    if value is None or value == "":
+        return None
+    row = None
+    s = str(value).strip()
+    if s.isdigit():
+        row = next((c for c in NAVER_CATEGORIES if c["no"] == int(s)), None)
+    elif s in LEGACY_ID_TO_NO:
+        row = next((c for c in NAVER_CATEGORIES if c["no"] == LEGACY_ID_TO_NO[s]), None)
+        if row is not None:
+            row = {**row, "warning": "CAT-B-01/02 는 소스마다 이름이 뒤바뀌어 있음 — 이름으로 확인 필요"} \
+                if s in AMBIGUOUS_LEGACY_IDS else dict(row)
+    else:
+        row = next((c for c in NAVER_CATEGORIES if c["name"] == s), None)
+        if row is None:
+            norm = re.sub(r"\s+", "", s)
+            row = next((c for c in NAVER_CATEGORIES if re.sub(r"\s+", "", c["name"]) == norm), None)
+    if row is None:
+        return None
+    row = dict(row)
+    row["cta_allowed"] = row["kind"] not in ("diary", "fixed")
+    parent = next((c for c in NAVER_CATEGORIES if c["no"] == row["parent"]), None) if row["parent"] else None
+    row["parent_name"] = parent["name"] if parent else None
+    target = next(c for c in NAVER_CATEGORIES if c["no"] == row["maps_to"])
+    row["maps_to_name"] = target["name"]
+    return row
+
+
+# ─────────────────────────────────────────────────────────────
+# 신규 구조 CTA (skills/_DECISIONS.md 2절) — 원본 코드에 없는 스킬 규칙.
+# 문구는 모두 기존 원문(FALLBACK_CTA = migration 011, seed_data/cta_templates.json
+# "IP라운지" = UPGRADE_SPEC §5.2 NEIGHBOR, prompts.ts FIELD_CTA["CAT-B-03"])을 그대로 쓴다.
+# ─────────────────────────────────────────────────────────────
+NEIGHBOR_CTA = {
+    "key": "이웃추가",
+    "categoryName": "지식재산 경영 · 이웃 추가",
+    "text": "━━━━━━━━━━━━━━━━━━\n이런 IP 이야기가 도움이 되셨다면 디딤 블로그를 이웃 추가해주세요.\n"
+            "매주 화요일, 중소기업 대표님께 실질적인 IP 정보를 전해드립니다.\n\n"
+            "IP 관련 상담이 필요하시면: admin@didimip.com\n\n특허그룹 디딤 | 기업을 아는 변리사",
+    "note": "원문: seed_data/cta_templates.json 'IP라운지' (= UPGRADE_SPEC §5.2 NEIGHBOR). '매주 화요일'은 현재 발행 요일과 맞는지 확인",
+    "conversionMethod": "이웃 추가 유도 + 이메일 안내 → 장기 관계 유지",
+    "emailSubjectTag": None,
+}
+BITE_CTA = {
+    "key": "디딤소식_이웃추가",
+    "categoryName": "디딤 소식 · 가벼운 이웃 추가",
+    "text": "━━━━━━━━━━━━━━━━━━\nIP 이슈에 대해 더 알고 싶으시면 이웃 추가 해주세요.\n\n특허그룹 디딤 | 기업을 아는 변리사",
+    "note": "문장 원문: prompts.ts FIELD_CTA['CAT-B-03'] + 구분선·서명(appendCtaAndSignature 모양). 포맷 가이드 '이웃 추가 유도 (2줄 이내)'",
+    "conversionMethod": "이웃 추가",
+    "emailSubjectTag": None,
+}
+_KEYS_25 = ["현장수첩_절세", "현장수첩_인증", "현장수첩_연구소"]
+_DISCLAIMER_ALIAS_25 = {"현장수첩_절세": "CAT-A-01", "현장수첩_인증": "CAT-A-02", "현장수첩_연구소": "CAT-A-03"}
+
+
+def cta_for_new_category(no: int, target_keyword: str | None, title: str | None = None,
+                         office_news: bool = False, cta_templates: list[dict] | None = None) -> dict:
+    """신규 구조 categoryNo 별 CTA. 반환: {template|None, matched_by, disclaimer_alias}."""
+    pool: dict[str, dict] = {}
+    for t in list(cta_templates or []) + FALLBACK_CTA:
+        pool.setdefault(t["key"], t)
+    texts = [(target_keyword or "").lower(), (title or "").lower()]
+    if no in (17, 18, 19, 20):
+        return {"template": None, "matched_by": "디딤 다이어리 — CTA 금지(절대원칙)", "disclaimer_alias": "CAT-C"}
+    if no in (7, 22):
+        return {"template": None, "matched_by": "고정 페이지 — 자동 생성 대상 아님", "disclaimer_alias": "CAT-INTRO"}
+    if no == 25:
+        for label, txt in zip(("타깃 키워드", "제목"), texts):
+            if not txt:
+                continue
+            for pattern, key in CTA_KEYWORD_MAP:
+                if key in _KEYS_25 and pattern.search(txt):
+                    return {"template": pool[key], "matched_by": f"25 키워드 매칭({label}) → {key}",
+                            "disclaimer_alias": _DISCLAIMER_ALIAS_25[key]}
+        return {"template": pool["현장수첩_인증"], "matched_by": "25 기본값(키워드 불일치) → 현장수첩_인증",
+                "disclaimer_alias": "CAT-A"}
+    if no == 27:
+        return {"template": pool["현장수첩_출원"], "matched_by": "27 출원 CTA", "disclaimer_alias": "CAT-A-04"}
+    if no == 26:
+        for label, txt in zip(("타깃 키워드", "제목"), texts):
+            if not txt:
+                continue
+            for pattern, key in CTA_KEYWORD_MAP:
+                if pattern.search(txt) and key in pool:
+                    return {"template": pool[key], "matched_by": f"26 주제 키워드 매칭({label}) → {key}",
+                            "disclaimer_alias": "CAT-A"}
+        return {"template": pool["현장수첩_출원"], "matched_by": "26 기본값 → 현장수첩_출원", "disclaimer_alias": "CAT-A"}
+    if no == 24:
+        return {"template": NEIGHBOR_CTA, "matched_by": "24 이웃 추가 CTA", "disclaimer_alias": "CAT-B"}
+    if no == 28:
+        if office_news:
+            return {"template": None, "matched_by": "28 사무소 소식 — CTA 없음", "disclaimer_alias": "CAT-B-03"}
+        return {"template": BITE_CTA, "matched_by": "28 가벼운 이웃 추가 CTA", "disclaimer_alias": "CAT-B-03"}
+    raise ValueError(f"신규 구조 categoryNo 가 아님: {no}")
+
+
+def category_info(key) -> dict | None:
+    """categoryNo / 네이버 이름 / CAT-* → 정본 행 + 프롬프트 키·CTA·면책 기본값."""
+    row = resolve_category(key)
+    if row is None:
+        return None
+    out = dict(row)
+    if row["kind"] in ("new", "diary", "fixed"):
+        v2 = cta_for_new_category(row["no"] if row["kind"] != "diary" else 17, None)
+        out["cta_policy"] = v2["matched_by"]
+        out["cta_default_key"] = v2["template"]["key"] if v2["template"] else None
+        alias = v2["disclaimer_alias"]
+    else:
+        out["cta_policy"] = "레거시 — 원본 규칙(field-cta / 발행 화면 matchCtaForContent)에 CAT 별칭 사용"
+        alias = row["alias"]
+    out["disclaimer_default"] = determine_disclaimer_level(alias, "")["level"] if row["kind"] != "fixed" else None
+    return out
+
+
+def cta_for(category, target_keyword=None, title=None, office_news=False) -> dict:
+    """[스킬 규칙] 카테고리별 발행본 CTA 1개를 고른다(_DECISIONS.md 2절)."""
+    row = resolve_category(category)
+    if row is None:
+        return {"error": "카테고리를 찾을 수 없음"}
+    if row["kind"] == "legacy":
+        alias = row["alias"]
+        f = get_field_cta(alias, target_keyword)
+        return {"category": row["name"], "kind": "legacy", "generation_cta": f,
+                "note": "레거시: 생성 단계 FIELD_CTA. 발행 화면 CTA 는 didim-blog-publish-prep match-cta(CAT 별칭)"}
+    no = 17 if row["kind"] == "diary" else row["no"]
+    r = cta_for_new_category(no, target_keyword, title, office_news)
+    t = r["template"]
+    return {"category": row["name"], "kind": row["kind"], "key": t["key"] if t else None,
+            "text": enforce_email(t["text"]) if t else None,
+            "email_subject": t.get("emailSubjectTag") if t else None,
+            "matched_by": r["matched_by"], "disclaimer_alias": r["disclaimer_alias"]}
 
 
 def _read(path):
@@ -260,12 +471,14 @@ def main(argv=None):
   disclaimer     {category_id, body, is_ai_generated}  면책 레벨 A/B/C/none + 문구
   enforce-email  {text}                         이메일을 admin@didimip.com 으로 강제 치환
   check          {text, category_id}            validateGeneratedDraft (분량·다이어리 CTA·이메일)
-  category       {key}                          카테고리 ID/이름으로 역할·퍼널·CTA 조회
+  category       {key}                          categoryNo/네이버 이름/CAT-* → 정본 행(구분·레거시 별칭·신규 대응·프롬프트 키·CTA 정책)
+  cta            {category, target_keyword, title, office_news}  카테고리별 발행본 CTA(신규 구조 _DECISIONS 2절, 레거시는 FIELD_CTA)
+  (disclaimer·prompt-key·field-cta 의 category_id 자리에 네이버 이름/categoryNo 를 넣으면 레거시 별칭으로 바꿔 계산)
   constants      {}                             디딤 상수 출력
 --raw 를 주면 표준입력 텍스트를 body/text 로 사용한다.""",
     )
     p.add_argument("command", choices=["replace-names", "prompt-key", "field-cta", "disclaimer",
-                                       "enforce-email", "check", "category", "constants"])
+                                       "enforce-email", "check", "category", "cta", "constants"])
     p.add_argument("--input", "-i")
     p.add_argument("--raw", action="store_true")
     a = p.parse_args(argv)
@@ -279,10 +492,18 @@ def main(argv=None):
         d = json.loads(raw) if raw.strip() else {}
     c = a.command
     cid = d.get("category_id") or ""
+    raw_cat = d.get("category") if d.get("category") not in (None, "") else (cid if cid and not cid.startswith("CAT-") else None)
+    row = resolve_category(raw_cat) if raw_cat is not None else None
+    if row is not None and c in ("disclaimer", "prompt-key", "field-cta", "check"):
+        if row["kind"] in ("new",):
+            cid = cta_for_new_category(row["no"], d.get("target_keyword"), d.get("title"),
+                                       bool(d.get("office_news")))["disclaimer_alias"]
+        else:
+            cid = row["alias"]
     if c == "replace-names":
         r = replace_deprecated_names(d.get("body") or "")
     elif c == "prompt-key":
-        r = get_prompt_key(cid)
+        r = row["prompt_key"] if row is not None else get_prompt_key(cid)
     elif c == "field-cta":
         r = get_field_cta(cid, d.get("target_keyword"))
     elif c == "disclaimer":
@@ -290,9 +511,12 @@ def main(argv=None):
     elif c == "enforce-email":
         r = enforce_email(d.get("text"))
     elif c == "check":
-        r = validate_generated_draft(d.get("text") or d.get("body") or "", get_prompt_key(cid))
+        pk = row["prompt_key"] if row is not None and row["prompt_key"] else get_prompt_key(cid)
+        r = validate_generated_draft(d.get("text") or d.get("body") or "", pk)
     elif c == "category":
-        r = category_info(d.get("key") or cid)
+        r = category_info(d.get("key") or d.get("category") or cid)
+    elif c == "cta":
+        r = cta_for(d.get("category") or cid, d.get("target_keyword"), d.get("title"), bool(d.get("office_news")))
     else:
         r = {"DIDIM_EMAIL": DIDIM_EMAIL, "DIDIM_PHONE": DIDIM_PHONE, "DIDIM_SIGNATURE": DIDIM_SIGNATURE,
              "DIDIM_PROFILE_NOH": DIDIM_PROFILE_NOH, "DIDIM_PROFILE_LEE": DIDIM_PROFILE_LEE}

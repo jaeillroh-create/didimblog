@@ -66,6 +66,8 @@ def js_num(x):
 
 
 def describe(score):
+    if isinstance(score, float) and score.is_integer():
+        score = int(score)  # JS Number 표기와 맞춤 (100.0 → 100)
     return {
         "score": score,
         "grade": get_quality_grade(score),

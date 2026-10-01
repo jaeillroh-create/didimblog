@@ -12,9 +12,18 @@
   "target_keyword": "직무발명보상금",
   "tags": ["직무발명보상금", "..."],
   "status": "S1",                  // S0~S5, 생략 시 S2
-  "category_id": "CAT-A",          // 1차 카테고리
-  "secondary_category": "CAT-A-01" // 2차(있으면 우선) — 원본: secondary_category || category_id
+  카테고리는 아래 중 하나 이상 (우선순위 secondary_category > category_id > category_no > category):
+  "category": "지원사업·인증과 특허", // 네이버 카테고리 이름(신규·레거시 모두) 또는 categoryNo
+  "category_no": 25,                // 네이버 categoryNo
+  "category_id": "CAT-A",           // 레거시 CAT-* ID (원본 getRubric 규칙)
+  "secondary_category": "CAT-A-01", // 레거시 2차 ID
+  "subtype": "사무소 소식",          // 디딤 소식(28)의 사무소 소식이면 CTA 부재 가점 규칙
+  "legacy_subcategory": "특허 전략 노트" // Notion 카테고리가 "레거시"일 때 '레거시 2차 분류' 값
 }
+status 는 "S1" 또는 Notion 값 "S1 초안완료" 형태 모두 가능.
+카테고리 → 루브릭: 25·27·26 → CAT-A(현장 수첩), 24 → CAT-B(IP 라운지), 28 → CAT-B-03(IP 뉴스 한 입),
+28+사무소 소식 → DIDIM-NEWS-OFFICE(CAT-B-03 수치 + CTA 없으면 +10), 17~20 → CAT-C(다이어리),
+레거시 9~12·23 → CAT-A, 13~15 → CAT-B, 16 → CAT-B-03. (_DECISIONS.md 2026-10-01)
 출력(JSON): totalScore, maxPossibleScore, normalizedScore, items[], verdict, activeItemCount,
            + verdictLabel, scoreColor, scoreBgColor, progressColor, blockedMessage, rubricKey
 """
@@ -89,6 +98,95 @@ STATUS_CHECK_RANGES = {
     "S4": list(_ALL),
     "S5": list(_ALL),
 }
+
+
+# ── 스킬 추가: _DECISIONS.md(2026-10-01) 카테고리 정본(네이버 categoryNo) → 루브릭 매핑 ──
+# 원본 코드에는 없음. 루브릭 수치는 원본 SEO_RUBRICS 를 그대로 재사용한다.
+# '디딤 소식 > 사무소 소식' 은 결정 사항에 따라 CAT-B-03 수치 + 다이어리식 CTA 부재 가점.
+SEO_RUBRICS["DIDIM-NEWS-OFFICE"] = dict(
+    SEO_RUBRICS["CAT-B-03"], ctaRequired=False, ctaWeight=0, ctaAbsenceBonus=10
+)
+
+# categoryNo: (네이버 이름, 루브릭, 구분)
+CATEGORY_NO_MAP = {
+    25: ("지원사업·인증과 특허", "CAT-A", "신규"),
+    27: ("출원·심판 실무", "CAT-A", "신규"),
+    26: ("사례", "CAT-A", "신규"),
+    24: ("지식재산 경영", "CAT-B", "신규"),
+    28: ("디딤 소식", "CAT-B-03", "신규"),
+    17: ("디딤 다이어리", "CAT-C", "유지"),
+    18: ("컨설팅 후기", "CAT-C", "유지"),
+    19: ("디딤 일상", "CAT-C", "유지"),
+    20: ("대표의 생각", "CAT-C", "유지"),
+    9: ("변리사의 현장 수첩", "CAT-A", "레거시"),
+    10: ("절세 시뮬레이션", "CAT-A", "레거시"),
+    11: ("인증 가이드", "CAT-A", "레거시"),
+    12: ("연구소 운영 실무", "CAT-A", "레거시"),
+    23: ("특허·상표 출원 실무", "CAT-A", "레거시"),
+    13: ("IP 라운지", "CAT-B", "레거시"),
+    14: ("특허 전략 노트", "CAT-B", "레거시"),
+    15: ("AI와 IP", "CAT-B", "레거시"),
+    16: ("IP 뉴스 한 입", "CAT-B-03", "레거시"),
+    7: ("디딤 소개", "CAT-A", "고정 페이지"),
+    22: ("상담 안내", "CAT-A", "고정 페이지"),
+}
+OFFICE_NEWS_NAMES = ("사무소 소식",)
+
+
+def _norm_name(s):
+    return re.sub(r"[\s·ㆍ・/>]", "", str(s)).lower()
+
+
+_NAME_INDEX = {_norm_name(v[0]): no for no, v in CATEGORY_NO_MAP.items()}
+
+
+def resolve_category(value, subtype=None):
+    """categoryNo / 네이버 카테고리 이름(신규·레거시) / 레거시 CAT-* ID 를 루브릭 키로 바꾼다.
+
+    반환: (rubric_key, info). CAT-* 는 원본 getRubric 규칙 그대로.
+    """
+    info = {"input": value, "subtype": subtype}
+    is_office = subtype is not None and _norm_name(subtype) in [_norm_name(n) for n in OFFICE_NEWS_NAMES]
+    if value is None or value == "":
+        info["matched_as"] = "none"
+        return get_rubric_key(None), info
+    sval = str(value).strip()
+    if sval.upper().startswith("CAT-"):
+        info["matched_as"] = "legacy-cat-id"
+        return get_rubric_key(sval), info
+    no = None
+    if re.fullmatch(r"[0-9]+", sval):
+        no = int(sval)
+    elif _norm_name(sval) in [_norm_name(n) for n in OFFICE_NEWS_NAMES]:
+        no, is_office = 28, True
+    else:
+        no = _NAME_INDEX.get(_norm_name(sval))
+    if no is None or no not in CATEGORY_NO_MAP:
+        info["matched_as"] = "unknown"
+        info["warning"] = f"알 수 없는 카테고리 '{sval}' — 변리사의 현장 수첩(CAT-A) 루브릭으로 계산"
+        return "CAT-A", info
+    name, rk, kind = CATEGORY_NO_MAP[no]
+    info.update(matched_as="categoryNo" if re.fullmatch(r"[0-9]+", sval) else "name", categoryNo=no, name=name, structure=kind)
+    if no == 28 and is_office:
+        rk = "DIDIM-NEWS-OFFICE"
+        info["name"] = "디딤 소식 > 사무소 소식"
+    if kind == "고정 페이지":
+        info["warning"] = "고정 페이지(자동 생성 대상 아님) — 기본 루브릭(CAT-A)으로 계산"
+    return rk, info
+
+
+def pick_category_input(d):
+    """입력 JSON 에서 카테고리 값을 고른다: 2차 우선(원본 secondary_category || category_id).
+
+    Notion "디딤 블로그 콘텐츠" DB 의 카테고리가 "레거시"이면 "레거시 2차 분류"(legacy_subcategory) 값을 쓴다.
+    """
+    if str(d.get("category") or "").strip() == "레거시" and d.get("legacy_subcategory"):
+        d = dict(d, category=d["legacy_subcategory"])
+    for k in ("secondary_category", "category_id", "category_no", "category"):
+        v = d.get(k)
+        if v not in (None, "", "none"):
+            return v
+    return None
 
 
 def get_rubric_key(category_id):
@@ -177,9 +275,12 @@ def _fmt(n):
     return f"{n:,}"
 
 
-def calculate_seo_score(content, category_id):
-    rubric = SEO_RUBRICS[get_rubric_key(category_id)]
+def calculate_seo_score(content, category_id, rubric_key=None):
+    rubric = SEO_RUBRICS[rubric_key or get_rubric_key(category_id)]
     status = content.get("status")
+    # Notion 상태 값("S1 초안완료" 등)도 받는다 — 앞 두 글자(S0~S5)만 사용
+    if isinstance(status, str) and status[:2] in STATUS_CHECK_RANGES:
+        status = status[:2]
     if status not in STATUS_CHECK_RANGES:
         raise ValueError(f"알 수 없는 상태값: {status} (S0~S5)")
     active = STATUS_CHECK_RANGES[status]
@@ -353,9 +454,11 @@ def main():
     if args.body_file:
         data["body"] = open(args.body_file, encoding="utf-8").read()
     data.setdefault("status", "S2")
-    cat = data.get("secondary_category") or data.get("category_id")
-    res = calculate_seo_score(data, cat)
-    print(json.dumps(decorate(res, get_rubric_key(cat)), ensure_ascii=False, indent=2))
+    rk, info = resolve_category(pick_category_input(data), data.get("subtype"))
+    res = calculate_seo_score(data, None, rubric_key=rk)
+    out = decorate(res, rk)
+    out["categoryInfo"] = info
+    print(json.dumps(out, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

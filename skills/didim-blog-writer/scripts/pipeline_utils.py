@@ -287,12 +287,37 @@ def build_briefing(parsed: dict, source: str, topic_default: str = "") -> dict:
         "episode": g("episode"),
         "additionalContext": g("additionalContext"),
     }
-    valid_secondary = VALID_SECONDARY_GENERATE if source == "generate" else VALID_SECONDARY_FILE
+    # _DECISIONS.md 반영: briefing.ts 의 CAT-A-04 누락은 재현하지 않고 두 경로 모두 file-upload.ts 목록 사용
+    valid_secondary = VALID_SECONDARY_FILE
     if b["categoryId"] not in VALID_PRIMARY:
         b["categoryId"] = "CAT-A"
     if b["secondaryCategoryId"] and b["secondaryCategoryId"] not in valid_secondary:
         b["secondaryCategoryId"] = ""
     return b
+
+
+# 브리핑 프롬프트(원문 유지)가 내놓는 CAT-* → 신규 구조 categoryNo (_DECISIONS.md 2절 '흡수' 열)
+BRIEFING_TO_NEW = {
+    "CAT-A": 25, "CAT-A-01": 25, "CAT-A-02": 25, "CAT-A-03": 25, "CAT-A-04": 27,
+    "CAT-B": 24, "CAT-B-01": 24, "CAT-B-02": 24, "CAT-B-03": 28,
+    "CAT-C": 17, "CAT-C-01": 26, "CAT-C-02": 19, "CAT-C-03": 20,
+}
+
+
+def map_briefing_category(b: dict, force=None) -> dict:
+    from categories import resolve
+    if force:
+        cat = resolve(force)
+        reason = "사용자 지정"
+    else:
+        code = b["secondaryCategoryId"] or b["categoryId"]
+        cat = resolve(str(BRIEFING_TO_NEW.get(code, 25)))
+        reason = f"브리핑 {code} → 신규 구조 매핑"
+    out = {"category_no": cat["category_no"], "name": cat["name"], "structure": cat["structure"],
+           "prompt_key": cat["prompt_key"], "reason": reason}
+    if cat["requires_case_memo"]:
+        out["warning"] = "'사례'는 사용자가 준 사건 메모가 있어야 작성합니다. 주제만으로 만든 브리핑의 에피소드는 메모가 아닙니다."
+    return out
 
 
 def briefing_to_draft_input(b: dict) -> dict:
@@ -320,13 +345,32 @@ def _read(path):
 
 
 def render(a) -> dict:
+    from categories import apply_name_substitutions, name_substitutions, resolve, resolve_cta
     cid = a.category_id or ""
-    key = get_prompt_key(cid)
-    cname = a.category_name if a.category_name is not None else CATEGORY_NAMES.get(cid, "")
     ctx_raw = _read(a.context_file) if a.context_file else ""
     ctx = ctx_raw.strip()
     ctx_block = f"\n\n{CONTEXT_BLOCK_HEADER}\n{ctx}" if ctx else ""
+    briefing_phase = a.phase in ("briefing", "briefing-file", "briefing-vision")
+    if briefing_phase and not cid:
+        cat = None
+    else:
+        cat = resolve(cid, getattr(a, "news_kind", None) or "ip")
+    if cat and cat["structure"] == "code":
+        key = get_prompt_key(cid)  # 원본 코드 동작 그대로
+        default_name = CATEGORY_NAMES.get(cid, "")
+    else:
+        key = cat["prompt_key"] if cat else None
+        default_name = cat["name"] if cat else ""
+    cname = a.category_name if a.category_name is not None else default_name
+    subs = name_substitutions(cat) if cat else []
+    if cat and cat["requires_case_memo"] and not ctx and not briefing_phase:
+        raise SystemExit(json.dumps({
+            "ok": False,
+            "error": "'사례' 카테고리는 사용자가 준 사건 메모(--context-file)가 있어야 작성합니다. 사건 메모를 요청하세요.",
+        }, ensure_ascii=False))
     out = {"phase": a.phase, "prompt_key": key, "category_name": cname}
+    if cat:
+        out["category"] = {k: cat[k] for k in ("category_no", "name", "structure", "alias", "no_cta")}
 
     if a.phase in ("phase1", "phase1-retry"):
         user = replace_template(P["PHASE1_PROMPT"], {
@@ -356,7 +400,12 @@ def render(a) -> dict:
         })
         out.update(system=PHASE3_SYSTEM, user=user, max_tokens=8000, temperature=0.4)
     elif a.phase == "legacy":
-        field_cta = get_field_cta(cid) if key == "PROMPT_FIELD" else {"cta": "", "emailSubject": ""}
+        if key != "PROMPT_FIELD":
+            field_cta = {"cta": "", "emailSubject": ""}
+        elif cat["structure"] == "code":
+            field_cta = get_field_cta(cid)  # 원본: 키워드 인자 없이 호출
+        else:
+            field_cta = resolve_cta(cat, a.keyword or "") or {"cta": "", "emailSubject": ""}
         tv = {
             "topic": a.topic or "", "keyword": a.keyword or "", "target_audience": a.audience or "",
             "additional_context": ctx_raw, "subcategory": "",
@@ -367,7 +416,12 @@ def render(a) -> dict:
                    max_tokens=3000, temperature=0.5)
     elif a.phase in ("briefing", "briefing-file", "briefing-vision"):
         base = P["PROMPT_BRIEFING_GENERATE"] if a.phase == "briefing" else P["PROMPT_BRIEFING_FROM_FILE"]
-        system = base + (f"\n\n카테고리는 반드시 {a.force_category}를 사용하세요." if a.force_category else "")
+        force = a.force_category
+        if force and not force.upper().startswith("CAT-"):
+            # 신규 구조 categoryNo/이름 → 브리핑 프롬프트가 아는 1차 CAT 별칭 (결과는 parse-briefing 에서 다시 신규로 매핑)
+            alias = resolve(force)["alias"]
+            force = alias if alias == "CAT-B-03" else "-".join(alias.split("-")[:2])
+        system = base + (f"\n\n카테고리는 반드시 {force}를 사용하세요." if force else "")
         if a.phase == "briefing":
             user, mt = f"주제: {a.topic or ''}", 1024
         elif a.phase == "briefing-vision":
@@ -383,6 +437,10 @@ def render(a) -> dict:
         out.update(system=system, user=user, max_tokens=mt, temperature=0.7)
     else:
         raise SystemExit(f"알 수 없는 phase: {a.phase}")
+    if subs:
+        out["system"] = apply_name_substitutions(out["system"], subs)
+        out["user"] = apply_name_substitutions(out["user"], subs)
+        out["category_name_substitutions"] = subs
     if ctx and a.phase in ("phase1", "phase1-retry", "phase2"):
         out["skill_extension"] = "additional_context 를 user 메시지 끝에 덧붙임 (원본 Phase 경로는 미사용)"
     return out
@@ -392,12 +450,15 @@ def main():
     ap = argparse.ArgumentParser(description="디딤 블로그 초안 파이프라인 헬퍼 (프롬프트 조립·파싱)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("prompt-key"); s.add_argument("--category-id", required=True)
+    s.add_argument("--news-kind", choices=["ip", "office"], default="ip")
     s = sub.add_parser("cta"); s.add_argument("--category-id", required=True); s.add_argument("--keyword", default="")
+    s.add_argument("--news-kind", choices=["ip", "office"], default="ip")
     s = sub.add_parser("render")
     s.add_argument("--phase", required=True)
     for opt in ("--category-id", "--category-name", "--topic", "--keyword", "--outline-file", "--body-file",
                 "--context-file", "--audience", "--doc-file", "--force-category"):
         s.add_argument(opt, default=None)
+    s.add_argument("--news-kind", choices=["ip", "office"], default="ip", help="디딤 소식(28): ip | office(사무소 소식, CTA 없음)")
     s = sub.add_parser("parse-phase1"); s.add_argument("--file", required=True)
     s = sub.add_parser("merge-continuation")
     s.add_argument("--accumulated-file", required=True); s.add_argument("--continuation-file", required=True)
@@ -405,12 +466,29 @@ def main():
     s = sub.add_parser("parse-briefing")
     s.add_argument("--file", required=True); s.add_argument("--source", choices=["generate", "file"], required=True)
     s.add_argument("--topic", default="")
+    s.add_argument("--force-category", default=None, help="사용자가 지정한 발행 카테고리(categoryNo/이름) — 매핑보다 우선")
     a = ap.parse_args()
 
-    if a.cmd == "prompt-key":
-        out = {"prompt_key": get_prompt_key(a.category_id), "category_name": CATEGORY_NAMES.get(a.category_id, "")}
-    elif a.cmd == "cta":
-        out = get_field_cta(a.category_id, a.keyword)
+    if a.cmd in ("prompt-key", "cta"):
+        from categories import name_substitutions, resolve, resolve_cta
+        try:
+            cat = resolve(a.category_id, a.news_kind)
+        except ValueError as e:
+            out = {"ok": False, "error": str(e)}
+            json.dump(out, sys.stdout, ensure_ascii=False, indent=2)
+            sys.stdout.write("\n")
+            sys.exit(2)
+        if a.cmd == "prompt-key":
+            out = dict(cat)
+            if cat["structure"] == "code":
+                out["category_name"] = CATEGORY_NAMES.get(a.category_id.upper(), "")
+            else:
+                out["category_name"] = cat["name"]
+            out["name_substitutions"] = name_substitutions(cat)
+            # 다이어리는 Phase 2.5(인포그래픽)를 건너뛴다 — 카테고리 정본 기준 판정
+            out["skip_phase25"] = cat["prompt_key"] == "PROMPT_DIARY"
+        else:
+            out = {"cta": resolve_cta(cat, a.keyword)}
     elif a.cmd == "render":
         out = render(a)
     elif a.cmd == "parse-phase1":
@@ -429,7 +507,11 @@ def main():
             out = {"ok": False, "error": "브리핑 JSON 파싱 실패 — 직접 입력 받기"}
         else:
             b = build_briefing(parsed, a.source, a.topic)
-            out = {"ok": True, "briefing": b, "draft_input": briefing_to_draft_input(b)}
+            di = briefing_to_draft_input(b)
+            mapped = map_briefing_category(b, a.force_category)
+            di["category"] = mapped
+            di["category_id"] = str(mapped["category_no"])
+            out = {"ok": True, "briefing": b, "draft_input": di}
     json.dump(out, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
 
