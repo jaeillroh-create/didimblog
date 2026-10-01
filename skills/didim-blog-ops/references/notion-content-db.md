@@ -16,7 +16,8 @@
 | 레거시 2차 분류 | select | 카테고리=레거시일 때 원래 이름: 절세 시뮬레이션 / 인증 가이드 / 연구소 운영 실무 / 특허·상표 출원 실무 / 특허 전략 노트 / AI와 IP / IP 뉴스 한 입 / 컨설팅 후기 / 디딤 일상 / 대표의 생각 |
 | categoryNo | number | 네이버 categoryNo (25·27·26·24·28·17, 레거시는 9~16·18~20·23) |
 | 타깃 키워드 | text | |
-| 발행일 | date | 화요일 발행 기준일. SLA 마감일은 이 값에서 역산(저장 안 함) |
+| 발행예정일 | date | 초안 단계부터 기입하는 화요일 발행 예정일. SLA 마감일 역산·캘린더 기준(마감일 자체는 저장 안 함) |
+| 발행일 | date | **실제 발행 후에만** 기입(S4 전이 시) |
 | 발행 URL | url | S4 전이 시 네이버 글 URL |
 | 추천 소스 | select | `키워드 풀` / `뉴스` / `지원매치 리포트` / `로테이션` / `직접 입력` (didim-blog-planner) |
 | 추천 피드백 | select | `대기` / `적합` / `부적합` |
@@ -43,10 +44,10 @@
 | target_keyword (001) | 타깃 키워드 | |
 | target_audience (001) | (없음) | 메모 |
 | status (001) | 상태 | 값 `S{n} {라벨}` |
-| publish_date (001) | 발행일 | |
-| briefing_due·draft_due·review_due·image_due·publish_due (001) | (없음) | 발행일에서 계산 (scripts/sla.py) |
+| publish_date (001) | 발행예정일 | |
+| briefing_due·draft_due·review_due·image_due·publish_due (001) | (없음) | 발행예정일에서 계산 (scripts/sla.py) |
 | briefing_done_at·draft_done_at·review_done_at·image_done_at (001) | (없음) | 상태로 추정(S1↑·S2↑·S3↑) |
-| published_at (001) | 발행일 | S4 이후 발행일 = 실제 발행일로 덮어씀 |
+| published_at (001) | 발행일 | 실제 발행일 |
 | revision_count (001) | (없음) | 메모의 `[수정 요청]` 개수 |
 | author_id·reviewer_id·designer_id (001) | (없음) | 1인 운영 |
 | views_1w·views_1m (001) | 조회수(최근) | 최근값 하나만 |
@@ -57,7 +58,7 @@
 | body (007) | 페이지 본문 | |
 | is_deleted (007) | (페이지 휴지통) | |
 | tags·seo_keywords·image_alt_texts·seo_score (007) | (없음) | 발행 준비·SEO 스킬 결과로 대체 |
-| scheduled_at (007) | 발행일 | 화 09:00 고정 |
+| scheduled_at (007) | 발행예정일 | 화 09:00 고정 |
 | health_status·health_checked_at (007) | 마지막 업데이트일 | 건강 상태는 저장하지 않고 매번 계산 |
 | series_id·series_order (007) | 시리즈·시리즈 회차 | |
 | ai_generation_id·is_ai_generated·ai_edited_by·ai_edit_ratio (002/007) | (없음) | |
@@ -78,9 +79,9 @@
 ```
 
 ## 4. Notion 에서의 상태 전이 절차
-1. data source 로 대상 행을 찾는다(제목 검색). 현재 `상태`, `카테고리`/`categoryNo`, `발행일`, `메모` 를 읽고, 본문·태그는 페이지 내용/대화에서 받는다.
+1. data source 로 대상 행을 찾는다(제목 검색). 현재 `상태`, `카테고리`/`categoryNo`, `발행예정일`, `발행일`, `메모` 를 읽고, 본문·태그는 페이지 내용/대화에서 받는다.
 2. 행을 JSON(한글 속성명 그대로 가능)으로 만들어 `scripts/transition_check.py check --to <목표>` 실행.
 3. `kind` 처리: `blocked` 중단 / `blocked_required` 필수 목록 제시 후 중단(명시적 "강제" 요청 시만 진행·메모 기록) / `confirm_recommended` 확인 후 진행 / `needs_reason` 사유 받아 진행 / `ok` 진행.
-4. 진행 시 결과의 `notion_update` 를 그대로 쓴다: `상태` = `S{n} {라벨}`. S4 는 `발행일`(실제 발행일)·`발행 URL`. S5 는 `조회수(최근)`·`댓글 수`·`유입 키워드 TOP3`·`성과 갱신일` (didim-blog-performance).
+4. 진행 시 결과의 `notion_update` 를 그대로 쓴다: `상태` = `S{n} {라벨}`. S4 는 `발행일`(실제 발행일, `발행예정일`은 그대로 둔다)·`발행 URL`. S5 는 `조회수(최근)`·`댓글 수`·`유입 키워드 TOP3`·`성과 갱신일` (didim-blog-performance).
 5. 메모에 §3 형식으로 한 블록 덧붙인다(기존 메모를 지우지 않는다).
 6. 쓰기 실패 시 실패 속성과 오류를 보여주고 "반영할 값" 표를 준다.

@@ -1,7 +1,7 @@
 # didim-blog-publish-prep — 네이버 발행 준비 뷰
 
 ## 1. 기능 개요
-작성·검토가 끝난 디딤 블로그 글(마크다운 본문)을 네이버 블로그 에디터에 수동으로 붙여넣을 수 있도록, 제목·순수 텍스트 본문·표 데이터(TSV)·면책조항·CTA·네이버 태그·이미지 ALT·카테고리별 포맷 가이드·발행 전 체크리스트 7개를 "붙여넣기 블록"으로 만든다. CTA 는 타깃 키워드 1순위 정규식 매칭으로 고르고 이메일을 admin@didimip.com 으로 강제하며, 디딤 다이어리는 CTA 를 만들지 않는다. 체크리스트 완료 후 S3→S4(발행완료) 기록까지 안내한다. 자동 발행은 하지 않는다.
+작성·검토가 끝난 디딤 블로그 글(마크다운 본문)을 네이버 블로그 에디터에 수동으로 붙여넣을 수 있도록, 제목·순수 텍스트 본문·표 데이터(TSV)·면책조항·CTA·네이버 태그·이미지 ALT·카테고리별 포맷 가이드·발행 전 체크리스트 7개를 "붙여넣기 블록"으로 만든다. CTA 는 네이버 카테고리(categoryNo) 별 규칙(_DECISIONS.md 2절 신규 구조) 또는 레거시 글이면 원본의 타깃 키워드 1순위 정규식 매칭으로 고르고, 이메일을 admin@didimip.com 으로 강제하며, 디딤 다이어리·사무소 소식은 CTA 를 만들지 않는다. 체크리스트 완료 후 S3→S4(발행완료) 기록까지 안내한다. 자동 발행은 하지 않는다.
 
 ## 2. 원본 코드 위치
 | 파일 | 함수/상수 |
@@ -31,6 +31,7 @@
 | 필드 | 원본 출처 | 비고 |
 |---|---|---|
 | title, body, tags, category_id, secondary_category, target_keyword, status, publish_date, is_ai_generated | contents 행 | 스킬: 사용자 붙여넣기 또는 Notion "디딤 블로그 콘텐츠" |
+| category (네이버 이름) / category_no, office_news | (없음 — 스킬 추가) | 정본 카테고리 입력. 있으면 category_id/secondary_category 대신 사용. CAT-* 만 오면 원본과 같은 경로 |
 | categories | categories 테이블 | 스킬: seed.sql 이름 내장(DEFAULT_CATEGORIES) |
 | cta_templates | cta_templates 테이블 | 스킬: migration 011 4건 내장(key 오름차순), 사용자가 최신 문구를 주면 대체 |
 | cta_override_key, disclaimer_override | 화면 드롭다운 | 선택 입력 |
@@ -53,6 +54,8 @@
 15. [스킬 추가] 붙여넣기 전 점검(extra.warnings): CTA 중복, 남은 표 줄, 코드 잔재, 여러 줄 이미지 블록, 제외 태그, '특허청', 비허용 이메일, 다이어리 CTA 표현.
 16. [스킬 추가] 서식 행 가이드(UPGRADE_SPEC §8.1): 복사용 본문 기준 "N행 소제목 → 제목2", "━━━ → 구분선", "이미지 블록/마커 → 이미지 N 삽입".
 17. [스킬 추가] 태그가 없으면 generateAutoTags 포팅으로 10개 생성(다이어리는 브랜드 2개).
+18. [스킬 추가] 카테고리 라우팅(_route): category/category_no 를 네이버 정본 행으로 해석 → 신규 구조(25/27/26/24/28)는 신규 CTA 규칙(코어 cta-templates.md 0절, publish-screen.md 3-1절)과 면책·포맷 가이드용 CAT 별칭(25: CTA 매칭에 따라 A-01/02/03 또는 CAT-A, 27: A-04, 26: CAT-A, 24: CAT-B, 28: B-03)을 쓰고, 레거시(9·13 하위)·다이어리는 CAT 별칭(1차+2차)을 원본 matchCtaForContent 에 그대로 넘기며, 고정 페이지(7·22)는 CTA 없음. category 가 없고 CAT-* 만 있으면 원본과 완전히 같은 경로.
+19. [스킬 추가] 레거시 카테고리를 쓰면 "신규 구조 대응: …" 경고, CAT-B-01/02 단독 입력이면 이름 확인 경고를 낸다.
 
 ## 5. 출력
 "네이버 에디터에 그대로 붙여넣을 블록"(scripts `build --format text`): 미리보기 배너 → ⚠️ 확인 필요 → [1] 제목 → [2] 본문 → [2-1] 표 데이터 → [3] 면책조항 → [4] CTA(또는 다이어리 안내) → [5] 태그 → [6] 이미지 가이드/ALT → [7] 포맷 가이드 → [7-1] 서식 행 가이드 → [8] 발행 체크리스트 7개 → 콘텐츠 정보. 각 복사 대상은 ````text 코드 블록 하나. JSON 출력(`--format json`)에는 body_html, 칩 상태, 매칭 근거(_matched_by), extra(image_blocks, line_format_guide, warnings, body_has_cta)가 추가로 있다.
@@ -65,23 +68,21 @@
 - 입력 JSON 오류 → 스크립트가 예외로 종료하므로 입력을 다시 받는다.
 
 ## 7. 데이터 저장
-| 백오피스 | 스킬 대체 (Notion "디딤 블로그 콘텐츠") |
+저장소: Notion "디딤 블로그 콘텐츠"(data source collection://463bc815-11ab-4290-9d86-22bd1aa9cfed, 상위 "DIDIM 블로그 운영"). 속성·선택지 전체는 skills/didim-blog-core/references/notion-storage.md.
+| 백오피스 | 스킬 대체 (Notion 속성) |
 |---|---|
 | contents.title | 제목 (title) |
-| contents.body | 본문 (페이지 본문) |
-| contents.category_id / secondary_category | 카테고리(1차) / 2차 분류 (select) |
+| contents.status | 상태 (select: S0 기획중 / S1 초안완료 / S2 검토완료 / S3 발행예정 / S4 발행완료 / S5 성과측정) |
+| contents.category_id / secondary_category | 카테고리 (select: 신규 이름 / 디딤 다이어리 / 레거시) + categoryNo (number) + 레거시 2차 분류 (select) |
 | contents.target_keyword | 타깃 키워드 (text) |
-| contents.tags | 태그 (multi-select 또는 text) |
-| contents.status | 상태 (select: S0 기획중, S1 초안완료, S2 검토완료, S3 발행예정, S4 발행완료, S5 성과측정) |
-| contents.publish_date | 발행예정일 (date) |
-| contents.published_at | 발행일시 (date) — S4 전환 시 기록 |
-| contents.is_ai_generated | AI 생성 여부 (checkbox) |
-| contents.is_deleted | 삭제됨 (checkbox) — true 면 대상 아님 |
-| contents.image_alt_texts | ALT 텍스트 (text) — 원본 화면은 이 컬럼을 쓰지 않고 마커에서 계산 |
-| (없음) | 네이버 URL (url) — 스킬 추가, 발행 후 사용자 입력 |
+| contents.publish_date | 발행예정일 (date) — 화면의 '발행예정일' 표시 |
+| contents.published_at | 발행일 (date) — S4 전환 시 실제 발행일 |
+| (없음) | 발행 URL (url) — 발행 후 사용자 입력 |
+| contents.body, tags, is_ai_generated, image_alt_texts | DB 속성 없음 → 페이지 본문(초안·태그 줄·"AI 도움" 한 줄) 또는 사용자 입력. 원본 화면도 image_alt_texts 컬럼은 쓰지 않고 마커에서 계산 |
+| contents.is_deleted | 해당 없음(Notion 휴지통) |
 | cta_templates | 쓰기 없음. 최신 문구는 사용자 입력 |
 | state_transitions_log | 쓰기 없음(ops 스킬 소관). Notion 페이지 변경 이력으로 대체 |
-쓰기는 사용자 확인 후 상태·발행일시·네이버 URL 만 갱신한다.
+쓰기는 사용자 확인 후 상태·발행일·발행 URL(필요 시 카테고리·categoryNo)만 갱신한다. 커넥터가 없으면 값 표를 출력해 붙여넣기를 요청한다.
 
 ## 8. 원본 코드와 달라진 점
 1. **서식 행 가이드 추가**: UPGRADE_SPEC §8.1 의 "N행 → 네이버 제목2 / 구분선 / 이미지 삽입 위치" 는 코드에 미구현(generateFormatGuide 는 카테고리 고정 문구). 스킬은 `line-guide` 로 복사용 본문 기준 행 번호를 계산해 참고용으로 덧붙인다.
@@ -94,13 +95,15 @@
 8. **상태 전이**: 원본 updateContentStatus 는 state_transitions 조건을 검증하지 않고 S4 로 갱신한다. 스킬은 S3 이상일 때만 진행하고 조건 검증은 didim-blog-ops 로 넘긴다.
 9. 원본 특이 동작은 포팅에서 그대로 재현(publish-helpers.md 2절): 인라인 코드 치환이 코드 블록 삭제보다 먼저라 코드 블록 잔재가 남음, 줄 전체 `***` 가 글머리 "• "로 바뀌고 다음 문단과 합쳐짐, 표 빈 셀 제거로 열 밀림, 100자 초과 태그 무음 제외. CRLF·유니코드 공백도 JS 정규식 의미대로 처리.
 10. 썸네일 규격: §8.1(1200×630, 오렌지 계열)과 FIRST_IMAGE_RULES(1:1 1080×1080, 카테고리별 색) 불일치 — 스킬은 판단하지 않고 infographic 스킬 기준을 따르도록 안내(**확인 필요**).
+11. **카테고리 체계**: 원본은 CAT-* 1·2차 ID 로 CTA·면책·포맷 가이드를 정한다. 스킬은 네이버 categoryNo 정본(_DECISIONS.md 1절)을 받아 신규 구조는 스킬 규칙으로 CTA 를 고르고(25 키워드 불일치 시 '인증 진단', 26 불일치 시 '출원'은 스킬 기본값 — 확인 필요), 면책·포맷 가이드는 CAT 별칭으로 원본 함수를 그대로 호출한다. 그래서 신규 카테고리의 포맷 가이드 머리글은 레거시 이름("변리사의 현장 수첩" 등)이 그대로 나온다(원문 유지). 디딤 소식 사무소 소식은 CTA 없음, 면책은 별칭상 C(필요 시 사용자가 none 선택).
+12. **CTA 하나 원칙**: 신규 구조에서는 카테고리별 CTA 하나만 쓰도록 하고 본문에 이미 CTA 가 있으면 경고한다(백오피스는 생성 단계 FIELD_CTA 블록 + 발행 화면 CTA 카드로 중복 가능).
 
 검증: publish_prep.py 를 원본 TS(sucrase 로 트랜스파일해 node 22 실행; publish-helpers.ts 전체, client-generate.ts:1585-1697, publish-prep-client.tsx:49-221 원문 발췌)와 12개 입력(제목·볼드·홀수 **·목록·번호·인용·수평선·표·이미지 블록·코드 블록·링크·$ 치환 패턴·CRLF·유니코드 공백·이모지 태그·100자 초과 태그·카테고리/키워드 조합별 CTA·DB 유무)으로 대조 — stripMarkdown, markdownToHtml, 표 TSV, 태그, 포맷 가이드, enforceEmail, 이미지 가이드, 면책 레벨·문구, CTA 매칭(DB 有/無), FALLBACK_CTA, 체크리스트 전부 일치. generateAutoTags 는 11개 입력으로 일치.
 
 ## 9. 다른 스킬과의 연결
 | 스킬 | 관계 |
 |---|---|
-| didim-blog-core | CTA·면책·카테고리·이메일 규칙 원문(이 스킬 스크립트에도 동일 문구 내장) |
+| didim-blog-core | 카테고리 정본(categoryNo)·CTA·면책·이메일 규칙 원문, Notion 속성(이 스킬 스크립트에도 동일 표·문구 내장) |
 | didim-blog-writer | 입력(완성 본문, 태그, 타깃 키워드)을 받음. 본문 끝 FIELD_CTA 블록 중복 점검 |
 | didim-blog-infographic | 이미지 블록·첫 이미지 규격, 이미지 파일 준비 |
 | didim-blog-seo / factcheck | 발행 전 품질·사실 검증 완료(S2→S3)를 전제로 함 |

@@ -99,7 +99,9 @@ def content_category(c):
 # 본문·태그·콘텐츠 ID 는 DB 속성이 아니다(본문=페이지 내용). 대화에서 받은 값을 같은 키로 넣으면 된다.
 NOTION_KEYS = {
     "콘텐츠 ID": "id", "제목": "title", "레거시 2차 분류": "legacy_sub", "상담": "consultations", "상태": "status", "카테고리": "category_name",
-    "categoryNo": "category_no", "타깃 키워드": "target_keyword", "발행일": "publish_date",
+    "categoryNo": "category_no", "타깃 키워드": "target_keyword",
+    "발행예정일": "publish_date",  # SLA 역산·캘린더 기준 (초안 단계부터 기입)
+    "발행일": "published_at",      # 실제 발행 후에만 기입
     "발행 URL": "naver_url", "추천 소스": "rec_source", "추천 피드백": "rec_feedback",
     "부적합 사유": "rec_reject_reason", "조회수(최근)": "views_recent", "유입 키워드 TOP3": "top_keywords",
     "댓글 수": "comments", "성과 갱신일": "metrics_updated_at", "시리즈": "series_name",
@@ -127,7 +129,7 @@ def normalize_content(c):
     if isinstance(out.get("tags"), str):
         out["tags"] = [t.strip() for t in out["tags"].replace("#", ",").split(",") if t.strip()]
     if out.get("status") in ("S4", "S5") and not out.get("published_at") and out.get("publish_date"):
-        out["published_at"] = out["publish_date"]  # Notion 은 발행일만 기록
+        out["published_at"] = out["publish_date"]  # 발행일 미기입 시 발행예정일로 대체
     if out.get("views_1m") is None and out.get("views_recent") is not None:
         out["views_1m"] = out["views_recent"]
     return out

@@ -66,6 +66,7 @@ description: 디딤 블로그(특허그룹 디딤 네이버 블로그) 글에 �
 - 본문 인포그래픽은 그 데이터를 설명하는 **문단 바로 뒤**(`p:N`). 이미지 사이에 **문단 2개 이상**(썸네일 뒤 첫 이미지는 p:2 이후).
 - CTA 바로 앞에는 요약형(A 또는 C)을 권장하되 데이터가 없으면 생략.
 - 문단 ID가 없으면 먼저 넣는다(빈 줄로 나뉜 문단마다 1부터): `python3 scripts/insert_markers.py --body body.md --inject-ids > body_ids.md`
+  이후 설계·검사·마커 삽입은 모두 이 `body_ids.md` 하나로 한다(ID를 다시 주입하면 번호가 바뀌어 position이 어긋난다).
 
 ### 4단계 — 설계 JSON 작성 (이미지마다 8항목)
 설계 프롬프트 전문은 `references/design-prompt.md`. Claude가 직접 그 지시를 따라 JSON 배열을 만든다.

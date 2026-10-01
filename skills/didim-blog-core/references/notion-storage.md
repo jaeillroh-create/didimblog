@@ -1,6 +1,6 @@
 # 기록 저장소 — Notion DB 2개 (모든 didim-blog-* 스킬 공통)
 
-> 결정 근거: skills/_DECISIONS.md 4·6절(2026-10-01 생성 완료). 아래 속성 이름·선택지는 2026-10-01 Notion 데이터 소스 스키마를 직접 조회해 옮긴 것이다.
+> 결정 근거: skills/_DECISIONS.md 4·6절(2026-10-01 생성 완료). 아래 속성 이름·선택지는 2026-10-01 Notion 데이터 소스 스키마를 직접 조회해 옮긴 것이다(이후 추가된 '발행예정일' 포함).
 > 측정은 최소화한다. 성과 DB 를 따로 두지 않고 콘텐츠 DB 에 최근 성과 열을 둔다("디딤 블로그 성과" DB 는 만들지 않는다).
 
 ## 1. 위치와 찾는 법
@@ -25,7 +25,8 @@
 | 레거시 2차 분류 | select | `절세 시뮬레이션` / `인증 가이드` / `연구소 운영 실무` / `특허·상표 출원 실무` / `특허 전략 노트` / `AI와 IP` / `IP 뉴스 한 입` / `컨설팅 후기` / `디딤 일상` / `대표의 생각` | contents.secondary_category |
 | categoryNo | number | 네이버 categoryNo (categories.md A-1) | (없음) |
 | 타깃 키워드 | text | | contents.target_keyword |
-| 발행일 | date | | contents.publish_date / published_at |
+| 발행예정일 | date | SLA 역산 기준일(실제 발행일은 '발행일') | contents.publish_date |
+| 발행일 | date | 실제 발행일(S4 전환 시) | contents.published_at |
 | 발행 URL | url | 네이버 글 주소 | (없음) |
 | 추천 소스 | select | `키워드 풀` / `뉴스` / `지원매치 리포트` / `로테이션` / `직접 입력` | content_recommendations.source (keyword_pool/news_api/schedule/manual) |
 | 추천 피드백 | select | `대기` / `적합` / `부적합` | content_recommendations.status (pending/accepted/rejected) |
