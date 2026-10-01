@@ -18,7 +18,7 @@
   "category_id": "CAT-A",           // 레거시 CAT-* ID (원본 getRubric 규칙)
   "secondary_category": "CAT-A-01", // 레거시 2차 ID
   "subtype": "사무소 소식",          // 디딤 소식(28)의 사무소 소식이면 CTA 부재 가점 규칙
-  "legacy_subcategory": "특허 전략 노트" // Notion 카테고리가 "레거시"일 때 '레거시 2차 분류' 값
+  "legacy_subcategory": "특허 전략 노트" // Notion 카테고리가 "레거시"일 때 '2차 분류' 값
 }
 status 는 "S1" 또는 Notion 값 "S1 초안완료" 형태 모두 가능.
 카테고리 → 루브릭: 25·27·26 → CAT-A(현장 수첩), 24 → CAT-B(IP 라운지), 28 → CAT-B-03(IP 뉴스 한 입),
@@ -179,7 +179,7 @@ def resolve_category(value, subtype=None):
 def pick_category_input(d):
     """입력 JSON 에서 카테고리 값을 고른다: 2차 우선(원본 secondary_category || category_id).
 
-    Notion "디딤 블로그 콘텐츠" DB 의 카테고리가 "레거시"이면 "레거시 2차 분류"(legacy_subcategory) 값을 쓴다.
+    Notion "디딤 블로그 콘텐츠" DB 의 카테고리가 "레거시"이면 "2차 분류"(legacy_subcategory) 값을 쓴다.
     """
     if str(d.get("category") or "").strip() == "레거시" and d.get("legacy_subcategory"):
         d = dict(d, category=d["legacy_subcategory"])

@@ -1158,7 +1158,7 @@ CAT_ID_TO_NO = {"CAT-A": 9, "CAT-A-01": 10, "CAT-A-02": 11, "CAT-A-03": 12, "CAT
                 "CAT-INTRO": 7, "CAT-CONSULT": 22}
 ROTATION = [25, 27, 24, 26]  # 1주차 → 4주차
 ROTATION_FALLBACK = {26: 27}  # 사례: 사건 메모 없으면 출원·심판 실무
-# 신규 카테고리별 주제 축 = 흡수한 레거시 2차 분류의 키워드 풀
+# 신규 카테고리별 주제 축 = 흡수한 2차 분류의 키워드 풀
 NEW_TOPIC_SUBS = {25: ["CAT-A-01", "CAT-A-02", "CAT-A-03"], 27: ["CAT-A-04"],
                   24: ["CAT-B-01", "CAT-B-02"], 28: ["CAT-B-03"]}
 # 다이어리 주제 풀 중 '컨설팅 후기'(CAT-C-01) 주제는 사례(26)로 흡수 → 사건 메모 없이 자동 추천하지 않음
@@ -1534,7 +1534,7 @@ def notion_rows_to_input(rows):
     for r in rows or []:
         title = _nget(r, "제목") or ""
         cat = _nget(r, "카테고리")
-        legacy_sub = _nget(r, "레거시 2차 분류")
+        legacy_sub = _nget(r, "2차 분류")
         no = _nget(r, "categoryNo")
         kw = _nget(r, "타깃 키워드")
         base = {"title": title, "keyword": kw}
@@ -1564,7 +1564,7 @@ def notion_rows_to_input(rows):
 
 
 def card_to_notion_row(card):
-    """추천 카드 → 콘텐츠 DB 새 행 속성(추천 피드백=대기). 다이어리 2차는 '레거시 2차 분류' 선택지에 기록."""
+    """추천 카드 → 콘텐츠 DB 새 행 속성(추천 피드백=대기). 다이어리 2차는 '2차 분류' 선택지에 기록."""
     no = card["categoryNo"]
     parent = NAVER_CATEGORIES.get(no, {}).get("parent")
     cat = cat_name(parent or no)
@@ -1572,7 +1572,7 @@ def card_to_notion_row(card):
            "categoryNo": no, "타깃 키워드": ", ".join(card.get("keywords") or []),
            "추천 소스": NOTION_SOURCE.get(card.get("source"), "직접 입력"), "추천 피드백": "대기"}
     if parent == 17:
-        row["레거시 2차 분류"] = cat_name(no)
+        row["2차 분류"] = cat_name(no)
     url = card.get("newsUrl") or card.get("grantUrl")
     if url:
         row["메모"] = f"근거: {url}"

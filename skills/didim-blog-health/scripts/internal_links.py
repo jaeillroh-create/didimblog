@@ -10,7 +10,7 @@
 사용 예:
   python3 internal_links.py --source source.json --contents contents.json [--max 5]
   (source 를 contents 안의 id 또는 제목으로 지정: --source-id W40-01)
-입력은 contents 컬럼명 또는 Notion 한글 속성명(제목·상태·카테고리·categoryNo·레거시 2차 분류·타깃 키워드·조회수(최근)·발행 URL).
+입력은 contents 컬럼명 또는 Notion 한글 속성명(제목·상태·카테고리·categoryNo·2차 분류·타깃 키워드·조회수(최근)·발행 URL).
 """
 import argparse
 import json
@@ -83,9 +83,9 @@ def resolve_category(value):
 
 
 def content_category(c):
-    # Notion: 카테고리="레거시" 이면 "레거시 2차 분류" 값(원래 이름)으로 판정
+    # Notion: 카테고리="레거시" 이면 "2차 분류" 값(원래 이름)으로 판정
     if c.get("category_name") == "레거시" or c.get("카테고리") == "레거시":
-        r = resolve_category(c.get("legacy_sub") or c.get("레거시 2차 분류"))
+        r = resolve_category(c.get("legacy_sub") or c.get("2차 분류"))
         if r:
             return r
     for key in ("category_no", "categoryNo", "category_id", "category_name", "category", "카테고리"):
@@ -98,7 +98,7 @@ def content_category(c):
 # ── Notion "디딤 블로그 콘텐츠" (data source collection://463bc815-11ab-4290-9d86-22bd1aa9cfed) 속성 → 내부 키 ──
 # 본문·태그·콘텐츠 ID 는 DB 속성이 아니다(본문=페이지 내용). 대화에서 받은 값을 같은 키로 넣으면 된다.
 NOTION_KEYS = {
-    "콘텐츠 ID": "id", "제목": "title", "레거시 2차 분류": "legacy_sub", "상담": "consultations", "상태": "status", "카테고리": "category_name",
+    "콘텐츠 ID": "id", "제목": "title", "2차 분류": "legacy_sub", "상담": "consultations", "상태": "status", "카테고리": "category_name",
     "categoryNo": "category_no", "타깃 키워드": "target_keyword",
     "발행예정일": "publish_date",  # SLA 역산·캘린더 기준 (초안 단계부터 기입)
     "발행일": "published_at",      # 실제 발행 후에만 기입

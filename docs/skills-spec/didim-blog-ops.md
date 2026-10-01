@@ -40,7 +40,7 @@
 | docs/UPGRADE_SPEC.md:24-42 | §1.1 콘텐츠 상태 |
 
 ## 3. 입력
-- 콘텐츠 레코드(JSON): contents 컬럼명 또는 Notion 한글 속성명(제목·상태·카테고리·categoryNo·레거시 2차 분류·발행일·메모, 본문·태그는 대화 입력). 원본 필드: status, body, tags, category_id, review_status, revision_count, publish_date, publish_due 외 *_due, *_done_at, published_at, quality_score_final, ai_generation_id.
+- 콘텐츠 레코드(JSON): contents 컬럼명 또는 Notion 한글 속성명(제목·상태·카테고리·categoryNo·2차 분류·발행일·메모, 본문·태그는 대화 입력). 원본 필드: status, body, tags, category_id, review_status, revision_count, publish_date, publish_due 외 *_due, *_done_at, published_at, quality_score_final, ai_generation_id.
 - 전이 목표 상태, 전이 규칙 목록(기본: 시드 7행), SEO 정규화 점수(0~100), 교차검증 수행 여부·심각 이슈 수, 이미지 마커 수(생략 시 본문에서 계산).
 - 검수: 체크한 항목 id 목록 / 수정 요청 메모.
 - 날짜: 발행일(YYYY-MM-DD), 기준 시각(now, ISO), 기존 콘텐츠 ID 목록.
@@ -98,7 +98,7 @@ Notion "디딤 블로그 콘텐츠" (https://app.notion.com/p/4f21a8b7e84d4c818d
 |---|---|---|
 | contents.title | 제목 (title) | |
 | contents.status | 상태 (select: S0 기획중 / S1 초안완료 / S2 검토완료 / S3 발행예정 / S4 발행완료 / S5 성과측정) | |
-| contents.category_id, secondary_category | 카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시), categoryNo (number), 레거시 2차 분류 (select) | CAT-* → categoryNo 별칭 |
+| contents.category_id, secondary_category | 카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시), categoryNo (number), 2차 분류 (select) | CAT-* → categoryNo 별칭 |
 | contents.target_keyword | 타깃 키워드 (text) | |
 | contents.publish_date, scheduled_at | 발행예정일 (date) | 초안 단계부터 기입, SLA 역산·캘린더 기준 |
 | contents.published_at | 발행일 (date) | 실제 발행 후에만 기입(S4) |

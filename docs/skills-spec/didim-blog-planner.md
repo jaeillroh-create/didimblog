@@ -76,7 +76,7 @@
 27. 대안: 나머지 로테이션 카테고리 1건씩(26 은 메모 있을 때만, 25 는 공고가 있으면 공고 1건). 로테이션 외: 원본 `buildNewsCard` 결과를 디딤 소식(28)으로, 다이어리 주제 풀(컨설팅 후기 주제 제외)에서 디딤 다이어리 1건.
 28. 지원매치 공고 필터: 자격·가점 원문에 특허·인증 용어(16개) 포함 → 자격이면 요건, 가점만이면 가점. 마감 지남 제외, 7일 이내 URGENT(_DECISIONS.md §3, references/grant-source-draft.md).
 29. 우선순위: 뉴스·마감 7일 이내 공고 = URGENT, 메인·직접 주제 = PRIMARY, 나머지 = SECONDARY.
-30. 기록: 표의 각 카드를 콘텐츠 DB 행 속성(`notion_rows_to_create`: 제목, 카테고리, categoryNo, 타깃 키워드, 추천 소스, 추천 피드백=대기, 다이어리 하위는 레거시 2차 분류, 근거 URL 은 메모)으로 변환한다(_DECISIONS.md §6).
+30. 기록: 표의 각 카드를 콘텐츠 DB 행 속성(`notion_rows_to_create`: 제목, 카테고리, categoryNo, 타깃 키워드, 추천 소스, 추천 피드백=대기, 다이어리 하위는 2차 분류, 근거 URL 은 메모)으로 변환한다(_DECISIONS.md §6).
 
 ## 5. 출력
 
@@ -110,7 +110,7 @@ Notion(결정 사항 §4·§6, 2026-10-01 생성 완료). 상위 페이지 "DIDI
 | contents.title / content_recommendations.recommended_topic | 제목 |
 | contents.status | 상태 (S0 기획중 / S1 초안완료 / S2 검토완료 / S3 발행예정 / S4 발행완료 / S5 성과측정) |
 | contents.category_id | 카테고리 (지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시) + categoryNo(숫자) |
-| contents.secondary_category | 레거시 2차 분류 (절세 시뮬레이션 … 대표의 생각 10종; 다이어리 하위도 여기) |
+| contents.secondary_category | 2차 분류 (절세 시뮬레이션 … 대표의 생각 10종; 다이어리 하위도 여기) |
 | contents.target_keyword / recommended_keywords | 타깃 키워드 |
 | contents.published_at | 발행일 |
 | (없음) | 발행 URL |

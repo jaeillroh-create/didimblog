@@ -55,7 +55,7 @@ https://app.notion.com/p/4f21a8b7e84d4c818de1c673ed9cbbcb
 | 상태 | 선택 | `S0 기획중` / `S1 초안완료` / `S2 검토완료` / `S3 발행예정` / `S4 발행완료` / `S5 성과측정` — 이력은 S4·S5 | contents.status |
 | 카테고리 | 선택 | `지원사업·인증과 특허` / `출원·심판 실무` / `사례` / `지식재산 경영` / `디딤 소식` / `디딤 다이어리` / `레거시` | contents.category_id |
 | categoryNo | 숫자 | 네이버 categoryNo(정본) | (신규) |
-| 레거시 2차 분류 | 선택 | 카테고리=레거시일 때 원래 이름(절세 시뮬레이션, 인증 가이드, 연구소 운영 실무, 특허·상표 출원 실무, 특허 전략 노트, AI와 IP, IP 뉴스 한 입, 컨설팅 후기, 디딤 일상, 대표의 생각). 다이어리 하위(디딤 일상·대표의 생각)도 여기에 | contents.secondary_category |
+| 2차 분류 | 선택 | 카테고리=레거시일 때 원래 이름(절세 시뮬레이션, 인증 가이드, 연구소 운영 실무, 특허·상표 출원 실무, 특허 전략 노트, AI와 IP, IP 뉴스 한 입, 컨설팅 후기, 디딤 일상, 대표의 생각). 다이어리 하위(디딤 일상·대표의 생각)도 여기에 | contents.secondary_category |
 | 타깃 키워드 | 텍스트 | 쉼표 구분 | contents.target_keyword |
 | 발행일 | 날짜 | | contents.published_at |
 | 발행 URL | URL | 네이버 글 주소 | (신규) |

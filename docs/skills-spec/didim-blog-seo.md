@@ -87,7 +87,7 @@
 |---|---|
 | contents.title / body / target_keyword / tags | 사용자 입력, 또는 Notion "디딤 블로그 콘텐츠" 의 제목·타깃 키워드 + 해당 글 페이지 본문(본문·태그 열 없음 → 태그는 사용자 입력) |
 | contents.status | "디딤 블로그 콘텐츠".상태 ("S0 기획중"~"S5 성과측정") |
-| contents.category_id / secondary_category | "디딤 블로그 콘텐츠".카테고리(신규 이름 또는 "레거시" + 레거시 2차 분류), categoryNo |
+| contents.category_id / secondary_category | "디딤 블로그 콘텐츠".카테고리(신규 이름 또는 "레거시" + 2차 분류), categoryNo |
 | contents.seo_score | 전용 열 없음 — 요청 시 메모에 "SEO 72 (YYYY-MM-DD, 수정 필요)" 한 줄, 커넥터 없으면 대화 출력 |
 | seo_checks (items, pass counts, verdict) | 저장하지 않음(대화 출력). 필요하면 메모 |
 | contents.quality_score_1st / quality_score_final / quality_grade | 전용 열 없음 — 계산해 대화로 보고. 입력값 조회수는 "조회수(최근)" 열, 체류시간·CTA 클릭은 사용자 입력 |

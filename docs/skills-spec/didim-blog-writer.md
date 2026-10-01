@@ -98,7 +98,7 @@
 | contents.title | 제목 (title) | Phase 1 제목 |
 | contents.status | 상태 (select: S0 기획중 / S1 초안완료 / S2 검토완료 / S3 발행예정 / S4 발행완료 / S5 성과측정) | "S1 초안완료" (정확한 값 우선, 없으면 'S1' 접두사 선택지로 폴백, 새 선택지 생성 금지) |
 | contents.category_id | 카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시) | 신규 이름, 레거시면 "레거시" |
-| (2차 분류) | 레거시 2차 분류 (select: 절세 시뮬레이션 … 대표의 생각) | 레거시 2차·다이어리 하위(18~20) 이름 |
+| (2차 분류) | 2차 분류 (select: 절세 시뮬레이션 … 대표의 생각) | 레거시 2차·다이어리 하위(18~20) 이름 |
 | (신규) | categoryNo (number) | 네이버 categoryNo |
 | contents.target_keyword | 타깃 키워드 (text) | 핵심 키워드 |
 | contents.publish_date | 발행예정일 (date) | 다음 화요일(`publish_date`) |

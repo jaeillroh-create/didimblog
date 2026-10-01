@@ -78,7 +78,7 @@
 | contents.title | "디딤 블로그 콘텐츠".제목 (title) |
 | contents.status | 〃.상태 (select: S0 기획중 / S1 초안완료 / S2 검토완료 / S3 발행예정 / S4 발행완료 / S5 성과측정) |
 | contents.category_id | 〃.카테고리 (select: 지원사업·인증과 특허 / 출원·심판 실무 / 사례 / 지식재산 경영 / 디딤 소식 / 디딤 다이어리 / 레거시) + categoryNo (number) |
-| contents.secondary_category | 〃.레거시 2차 분류 (select: 레거시·다이어리 2차 이름 10개) |
+| contents.secondary_category | 〃.2차 분류 (select: 레거시·다이어리 2차 이름 10개) |
 | contents.target_keyword | 〃.타깃 키워드 (text) |
 | contents.body, tags, is_ai_generated | DB 속성 없음 → 페이지 본문(초안, 태그 줄, "AI 도움" 한 줄) 또는 사용자 입력 |
 | consultations(리드) | "디딤 블로그 상담" (회사명, 상담일, 유입 경로, 경유 글, 관심 서비스, 상태, 계약 여부, 계약 금액, 메모) |
